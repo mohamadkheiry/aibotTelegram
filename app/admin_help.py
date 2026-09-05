@@ -8,7 +8,7 @@ ADMIN_HELP = """🛠 <b>راهنمای مدیریت ربات</b>
 <b>مدیریت کلی</b>
 <code>/admin_help</code>
 <code>/bot_on</code> — روشن‌کردن ربات
-<code>/bot_off</code> — حالت تعمیرات
+<code>/bot_off</code> — غیرفعال‌کردن ربات برای کاربران
 <code>/set_card شماره کارت | نام صاحب حساب</code>
 <code>/set_channel https://t.me/channel</code>
 <code>/payment wallet|card|crypto on|off</code>

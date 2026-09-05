@@ -157,17 +157,16 @@ class AdminButtonUI:
         return rows
 
     def bot_status(self) -> tuple[str, list[list[dict]]]:
-        """Two views of one access flag; callbacks set an explicit target.
+        """One public-access switch, as specified; no duplicate maintenance action.
 
         Never invert the live flag on click: a cached button or replay must
         retain the operation the administrator actually chose and confirmed.
         """
         enabled = bool(self.db.get_setting("bot_enabled", True))
-        status = "ربات: فعال\nحالت تعمیرات: غیرفعال" if enabled else "ربات: غیرفعال\nحالت تعمیرات: فعال"
-        labels = ("غیرفعال‌کردن ربات", "فعال‌کردن حالت تعمیرات") if enabled else (
-            "فعال‌کردن ربات", "غیرفعال‌کردن حالت تعمیرات")
+        status = "ربات: فعال\nدسترسی کاربران: باز" if enabled else "ربات: غیرفعال\nدسترسی کاربران: بسته (نمایش پیام بروزرسانی)"
+        label = "غیرفعال‌کردن ربات" if enabled else "فعال‌کردن ربات"
         target = "a:bot_off" if enabled else "a:bot_on"
-        rows = [[self._button(label, target, style="danger" if enabled else "success")] for label in labels]
+        rows = [[self._button(label, target, style="danger" if enabled else "success")]]
         return status, rows
 
     def payment_context(self, state: dict) -> str:
@@ -616,8 +615,8 @@ class AdminButtonUI:
                 lines.append(payment_context)
             if action.key in {"bot_on", "bot_off"}:
                 lines.extend(["وضعیت فعلی:\n" + self.bot_status()[0],
-                              "پس از تأیید: " + ("ربات فعال و حالت تعمیرات غیرفعال می‌شود." if action.key == "bot_on" else
-                                                 "ربات غیرفعال و حالت تعمیرات فعال می‌شود."),
+                              "پس از تأیید: " + ("ربات فعال می‌شود و دسترسی کاربران باز می‌شود." if action.key == "bot_on" else
+                                                 "ربات غیرفعال می‌شود؛ کاربران پیام بروزرسانی می‌بینند."),
                               "دسترسی مدیران برای فعال‌سازی دوباره محفوظ می‌ماند."])
             for field in form_fields(action, state["values"]):
                 if payment_context and field.key == "method":

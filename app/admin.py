@@ -1042,7 +1042,7 @@ class AdminController:
             chat_id,
             "<b>تنظیمات ربات</b>"
             f"\nربات: {enabled('bot_enabled', True)}"
-            f"\nحالت تعمیرات: {'غیرفعال' if bool(self.db.get_setting('bot_enabled', True)) else 'فعال'}"
+            f"\nدسترسی کاربران: {'باز' if bool(self.db.get_setting('bot_enabled', True)) else 'بسته (نمایش پیام بروزرسانی)'}"
             f"\nکیف پول: {enabled('payment_wallet_enabled', True)}"
             f"\nکارت: {enabled('payment_card_enabled', True)}"
             f"\nارز دیجیتال: {enabled('payment_crypto_enabled')}"
@@ -1274,13 +1274,13 @@ class AdminController:
         if rest:
             raise AdminInputError("فرمان /bot_on آرگومان نمی‌گیرد.")
         self.db.set_setting("bot_enabled", True)
-        self._send(self._chat_id(message, user), "ربات فعال شد و حالت تعمیرات غیرفعال شد.")
+        self._send(self._chat_id(message, user), "ربات فعال شد؛ دسترسی کاربران باز است.")
 
     def _bot_off(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         if rest:
             raise AdminInputError("فرمان /bot_off آرگومان نمی‌گیرد.")
         self.db.set_setting("bot_enabled", False)
-        self._send(self._chat_id(message, user), "ربات غیرفعال شد و در حالت تعمیرات قرار گرفت.")
+        self._send(self._chat_id(message, user), "ربات غیرفعال شد؛ کاربران پیام بروزرسانی می‌بینند. دسترسی مدیران محفوظ است.")
 
     def _set_card(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 2)
