@@ -54,7 +54,7 @@ sequenceDiagram
         end
         Note over DB,Worker: crash پس از ثبت completed evidence در run بعد بدون network بازیابی می‌شود
     else تأیید فیش دستی
-        User->>TG: فیش card؛ نخستین قبل expiry یا replacement قبل expiry+7d
+        User->>TG: فیش card؛ نخستین قبل expiry یا replacement تا تصمیم مدیر
         TG->>Bot: photo/document با file_id
         Bot->>DB: submit receipt با file kind و status verifying
         Bot->>DB: queue alert پایدار owner/admin با hash نسخه فیش
@@ -62,6 +62,9 @@ sequenceDiagram
         Bot->>DB: settlement یا failed/reconcile
     else کیف پول کافی
         Bot->>DB: wallet hold و capture اتمیک
+    else محصول رایگان یا تخفیف صددرصد
+        User->>TG: تأیید صریح پرداخت در خلاصه سفارش
+        Bot->>DB: confirm_zero_payable_order اتمیک و idempotent
     end
 
     opt payment به paid رسیده است
@@ -70,7 +73,7 @@ sequenceDiagram
     end
 
     opt موفقیت بدون external payment
-        Worker->>DB: recover wallet-confirmed یا discount-confirmed فاقد outbox با cursor/wrap
+        Worker->>DB: recover wallet/discount/free-confirmed فاقد outbox با cursor/wrap
     end
 
     DB-->>Bot: order paid، topup credited یا terminal compensation
@@ -93,7 +96,7 @@ sequenceDiagram
         Worker->>DB: selector مستقل status=paid برای fulfillment؛ marker پاداش شرط نیست
 
         alt محصول آماده و موجود
-            Bot->>DB: validate render حداکثر ۳۹۰۰؛ سپس assign و queue delivery اتمیک
+            Bot->>DB: validate render حداکثر ۳۹۰۰ و FIFO پرداخت؛ سپس assign و queue delivery اتمیک
             DB->>DB: assign item و complete order
             Note over Admin,DB: inventory_assign مستقیم فقط وقتی backlog ready همان محصول خالی است؛ وگرنه FIFO مقدم است
         else محصول آماده و قابل رزرو

@@ -98,6 +98,19 @@ class FakeTelegram:
         self.documents.append(item)
         return copy.deepcopy(item)
 
+    def edit_message_reply_markup(
+        self, chat_id: int, message_id: int, reply_markup: dict[str, Any] | None = None, **kwargs: Any
+    ) -> dict[str, Any] | bool:
+        self.calls.append({
+            "method": "editMessageReplyMarkup",
+            "params": {"chat_id": chat_id, "message_id": message_id, "reply_markup": copy.deepcopy(reply_markup), **kwargs},
+        })
+        for message in self.messages:
+            if message["chat_id"] == chat_id and message["message_id"] == message_id:
+                message["reply_markup"] = copy.deepcopy(reply_markup)
+                return copy.deepcopy(message)
+        return True
+
     def send_photo(self, chat_id: int, photo: str, **kwargs: Any) -> dict[str, Any]:
         item = {
             "message_id": self._allocate_message_id(),
@@ -382,7 +395,7 @@ class BotApplicationIntegrationTests(unittest.TestCase):
         customer = self.db.get_user_by_chat_id(self.CUSTOMER["id"])
         self.assertIsNotNone(customer)
 
-        menu = self.telegram.messages[-1]["reply_markup"]["keyboard"]
+        menu = self.telegram.messages[-1]["reply_markup"]["inline_keyboard"]
         self.assertEqual(
             [[button["text"] for button in row] for row in menu],
             [list(row) for row in MAIN_MENU_ROWS],
@@ -957,12 +970,12 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             )
         )
 
-        # /menu remains a direct route back to the exact main reply keyboard.
+        # /menu returns to the exact main inline keyboard with a direct channel link.
         self.send_message(self.CUSTOMER, text="/menu")
         self.assertEqual(
             [
                 [button["text"] for button in row]
-                for row in self.telegram.messages[-1]["reply_markup"]["keyboard"]
+                for row in self.telegram.messages[-1]["reply_markup"]["inline_keyboard"]
             ],
             [list(row) for row in MAIN_MENU_ROWS],
         )
@@ -1991,8 +2004,8 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             reminder_days=(1,),
             idempotency_key="expired-reminder-product",
         )
-        # Simulate a zero-day setting stored by an earlier release. It must be
-        # ignored rather than producing a misleading post-expiry reminder.
+        # A zero-day setting schedules before expiry on the local expiry date.
+        # If delivery is delayed beyond expiry, cancel it without sending.
         connection = sqlite3.connect(self.db.path)
         try:
             connection.execute(
@@ -2028,7 +2041,9 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             ).fetchone()
         finally:
             connection.close()
-        self.assertIsNone(reminder)
+        self.assertIsNotNone(reminder)
+        self.assertEqual(reminder[0], "cancelled")
+        self.assertIn("subscription ended", reminder[1])
 
     def test_card_confirmation_reference_is_idempotent_and_delivers_once(self) -> None:
         customer, order, payment = self.create_pending_card_payment_without_wallet()
@@ -3388,6 +3403,7 @@ class BotApplicationIntegrationTests(unittest.TestCase):
                 idempotency_key=f"discount-success-order:{index}",
             )
             self.db.apply_discount(order["id"], discount["code"])
+            self.db.confirm_zero_payable_order(order["id"], customer["id"])
             deferred_discount = self.app.fulfill_order(order["id"])
             self.assertEqual(deferred_discount["status"], "paid")
             discount_orders.append(order)

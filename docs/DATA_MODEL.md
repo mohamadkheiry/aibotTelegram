@@ -27,9 +27,9 @@
 | `categories` | دسته و زیردسته | FK خودارجاع، حذف محدودشده؛ `source_admin_update_id` برای create replay-safe |
 | `products` | محصول آماده/دستی و سیاست فروش | soft delete، قیمت فقط `TOMAN`، `rules_url` فقط HTTPS مطلق بدون host literal محلی/خصوصی و snapshot در سفارش |
 | `inventory_items` | payload محرمانه محصولات آماده | hash یکتا در هر محصول، تخصیص یک‌باره و `source_admin_update_id` برای create replay-safe |
-| `reservations` | صف محصول ناموجود | برای سفارش‌ها بر اساس order و به ترتیب ID |
+| `reservations` | صف محصول ناموجود | برای سفارش یکتا؛ اولویت تخصیص بر زمان پرداخت Order و سپس Order ID |
 | `orders` | قرارداد خرید/تخصیص و snapshot محصول | تمام مبلغ‌ها، lifecycle و `order_origin=customer|admin_assignment` |
-| `reminders` | یادآوری پایان اشتراک | برای هر order و days_before مثبت یکتا؛ صفر legacy schedule نمی‌شود |
+| `reminders` | یادآوری پایان اشتراک | برای هر order و days_before نامنفی یکتا؛ صفر آغاز روز محلی پایان اشتراک است |
 
 ### قیمت، پرداخت و کیف پول
 
@@ -63,7 +63,7 @@
 
 `processed_admin_updates` یک preclaim دائمی نیست. `begin_admin_update` payload را fingerprint می‌کند: `completed` skip، `started` در replay همان payload دوباره اجرا و payload متفاوت برای update ID یکسان conflict می‌شود. `get_or_store_admin_update_effect` مقصد عملیات non-idempotent مانند toggle را پیش از mutation در `effect_json` freeze می‌کند؛ `complete_admin_update` فقط پس از بازگشت عادی handler زمان `completed_at` را ثبت می‌کند. خطای موقت پایهٔ دیتابیس در begin، mutation یا complete به `False` صریح تبدیل می‌شود تا poller offset همان update و موارد بعدی batch را ذخیره نکند و از offset ثابت retry کند. createهای category/inventory با `source_admin_update_id` و mutationهای دامنه‌ای با idempotency خودشان replay را مهار می‌کنند؛ خطای terminal دامنه/Telegram ACK می‌شود و ارسال شبکه‌ای exactly-once تضمین نمی‌شود.
 
-در first-contact، `create_order(..., order_notice=...)` خود Order و پیام خلاصه `order:{id}:created-summary` را در یک transaction می‌سازد و state خرید فقط پس از این commit پاک می‌شود. پیام canonical موفقیت فروش برای Payment بیرونی کلید `payment:{id}:order-confirmed` و برای wallet-only/تخفیف کامل کلیدهای `order:{id}:wallet-confirmed` و `order:{id}:discount-confirmed` دارد. `order_success_notice_ready` تا وقتی outbox وجود ندارد یا `queued/sending` است fulfillment را می‌بندد؛ `sent|failed|cancelled` آن را باز می‌کند. بنابراین شکست terminal پیام در outbox قابل مشاهده می‌ماند ولی paid Order را برای همیشه متوقف نمی‌کند.
+در first-contact، `create_order(..., order_notice=...)` خود Order و پیام خلاصه `order:{id}:created-summary` را در یک transaction می‌سازد و state خرید فقط پس از این commit پاک می‌شود. پیام canonical موفقیت فروش برای Payment بیرونی کلید `payment:{id}:order-confirmed` و برای wallet-only/تخفیف کامل/خرید رایگان تأییدشده کاربر کلیدهای `order:{id}:wallet-confirmed`، `order:{id}:discount-confirmed` و `order:{id}:free-confirmed` دارد. `order_success_notice_ready` تا وقتی outbox وجود ندارد یا `queued/sending` است fulfillment را می‌بندد؛ `sent|failed|cancelled` آن را باز می‌کند. بنابراین شکست terminal پیام در outbox قابل مشاهده می‌ماند ولی paid Order را برای همیشه متوقف نمی‌کند.
 
 ### دعوت، پاداش و عملیات
 
@@ -87,6 +87,8 @@ page size فرمان‌های مدیریتی پرتعداد ثابت و براب
 صفحه کمتر از ۱ یا بیشتر از تعداد صفحات fail closed است. search شماره سفارش در `/user_orders` علاوه بر lookup، `order.user_id` را با user هدف تطبیق می‌دهد. `_send_blocks` محدودیت Telegram را با چند پیام حل می‌کند و نباید ردیفی از همان صفحه را drop کند.
 
 ## وضعیت سفارش
+
+فهرست‌های category/product/inventory/discount/reward/FAQ/admin نیز count هم‌فیلتر و page size بیست دارند؛ `_management_rows` و `_send_page` کل صفحه را نگه می‌دارند. `list_reward_rules` پارامتر offset دارد تا هم مدیر و هم توضیح قواعد فعال کاربر به رکوردهای پس از حد پیش‌فرض دسترسی داشته باشند؛ تغییر schema لازم نیست.
 
 | status | معنا | وضعیت مالی/عملیاتی |
 |---|---|---|
@@ -120,7 +122,7 @@ page size فرمان‌های مدیریتی پرتعداد ثابت و براب
 
 `purpose` فقط `order` یا `wallet_topup` و `currency` فقط `TOMAN` است. در اولی `order_id` اجباری و در دومی باید NULL باشد. هر order در هر لحظه حداکثر یک payment بیرونی با status `pending/verifying` در هر دو روش card/crypto دارد؛ این invariant داخل transaction ساخت payment اعمال می‌شود. Payment crypto هر دو purpose می‌تواند پیش از تماس شبکه provisional و دارای invoice ID/URL تهی باشد؛ base amount و terms آن immutable و `payment_number` merchant order ثابت provider است. `attach_crypto_invoice` نتیجه exact همان invoice را اتمیک attach می‌کند. `external_reference` و invoice ID یکتا هستند. `provider_invoice_url`، در صورت وجود، باید URL مطلق HTTPS بدون credential، `localhost`، IP literal محلی/خصوصی/reserved یا host عددی مبهم باشد؛ validator DNS را resolve نمی‌کند. renderer Order/Wallet همین URL ذخیره‌شده را دوباره اعتبارسنجی می‌کند و برای provisional دکمه retry و فقط برای crypto attach‌شده دکمه resume می‌سازد؛ فیش فقط card است.
 
-فیش تنها برای payment نوع `card` و status یکی از `pending/verifying` پذیرفته می‌شود. اگر `receipt_file_id` هنوز NULL است، زمان ثبت باید strictly پیش از `expires_at` باشد؛ پس از ثبت نخستین فیش، جایگزینی آن فقط strictly پیش از `expires_at + 7 days` ممکن است و deadline اولیه تغییر نمی‌کند. لغو کاربر تنها روی card payment متعلق به او با status=`pending` و `receipt_file_id IS NULL` انجام می‌شود و لغو payment، reconciliation سفارش والد، release hold/discount و cancellation reminder/reservation یک transaction واحد است. crypto invoice صادرشده با repository یا callback قدیمی کاربر لغو نمی‌شود؛ deadline محلی آن را terminal نمی‌کند و poll تا شاهد terminal provider و بررسی late transition ادامه دارد. تغییر card به crypto پس از لغو card به ساخت order تازه نیاز دارد.
+فیش تنها برای payment نوع `card` و status یکی از `pending/verifying` پذیرفته می‌شود. اگر `receipt_file_id` هنوز NULL است، زمان ثبت باید strictly پیش از `expires_at` باشد؛ پس از ثبت نخستین فیش در مهلت، پرداخت تا تأیید یا رد صریح مدیر verifying می‌ماند؛ جایگزینی فیش تا تصمیم نهایی مجاز است و deadline نخستین ارسال تغییر نمی‌کند. لغو کاربر تنها روی card payment متعلق به او با status=`pending` و `receipt_file_id IS NULL` انجام می‌شود و لغو payment، reconciliation سفارش والد، release hold/discount و cancellation reminder/reservation یک transaction واحد است. crypto invoice صادرشده با repository یا callback قدیمی کاربر لغو نمی‌شود؛ deadline محلی آن را terminal نمی‌کند و poll تا شاهد terminal provider و بررسی late transition ادامه دارد. تغییر card به crypto پس از لغو card به ساخت order تازه نیاز دارد.
 
 مبلغ یکتای payment کارت بعد از terminalشدن فوراً آزاد نمی‌شود. هر `(TOMAN, payable_amount)` کارت تا ۲۴ ساعت پس از `max(expires_at, updated_at)` سابقه terminal quarantine است؛ lookup تخصیص مبلغ هم active collision و هم این تاریخچه را می‌بیند. index `idx_payments_amount_history` این scan محدود را پشتیبانی می‌کند.
 
@@ -182,6 +184,8 @@ WHERE user_id = ?;
 
 ## مدل inventory و رزرو
 
+نخستین transition به paid از `_allocate_paid_timestamp` استفاده می‌کند: زمان پرداخت‌های تازه در یک ثانیه با میکروثانیه افزایشی ترتیب می‌گیرد و replay همان timestamp را حفظ می‌کند. created_at، expires_at و شواهد زمانی provider دقت قبلی خود را نگه می‌دارند. در tie قدیمی، reservation موجود سپس Order ID ترتیب قطعی می‌سازند؛ chronology پرداختی که قبلاً ثبت نشده قابل تضمین نیست.
+
 - payload باید non-empty باشد و hash تکراری در همان محصول پذیرفته نمی‌شود.
 - متن نهایی `ready_delivery` شامل snapshot محصول، payload و دستور تحویل باید حداکثر `TELEGRAM_SAFE_MESSAGE_LENGTH=3900` نویسه باشد. این شرط هنگام add/edit موجودی، تغییر نام/icon/instruction محصول و دوباره پیش از assignment بررسی می‌شود؛ داده legacy بلند پیش از هر mutation رد می‌شود و secret به چند پیام شکسته یا truncate نمی‌شود.
 - status آیتم یکی از `available/assigned/disabled` است.
@@ -190,12 +194,12 @@ WHERE user_id = ?;
 - پیش از `/inventory_assign` مستقیم، همان transaction وجود هر Order ready همان product با status `paid|processing|awaiting_stock` و بدون item assigned را بررسی می‌کند؛ اگر backlog وجود داشته باشد عملیات conflict است و آیتم باید از مسیر FIFO به قدیمی‌ترین Order واجد شرایط برسد.
 - `fulfill_next_processing_ready_order` نباید processing-ready همان product را تا وقتی reservation معتبر قدیمی‌تری باقی است انتخاب کند؛ این guard داخل query/transaction است و مستقل از cap پردازش reservationهای همان چرخه عمل می‌کند.
 - رزرو سفارش پرداخت‌شده با `order_id` یکتا است؛ چند سفارش جداگانه یک user می‌توانند رزروهای جدا داشته باشند.
-- fulfillment رزرو بر اساس `created_at/id` قدیمی‌تر انجام می‌شود.
+- همه مسیرهای تخصیص ready، از خرید تازه تا رزرو و processing، بر زمان پرداخت Order، با paid_at میکروثانیه‌ای افزایشی برای داده تازه و tie-break قطعی برای داده قدیمی ترتیب می‌گیرند. guard تراکنشی `_assign_inventory` وجود سفارش پرداخت‌شده قدیمی‌ترِ فاقد item را حتی پیش از ساخته‌شدن reservation آن بررسی می‌کند؛ زمان ایجاد صف نمی‌تواند اولویت پرداخت را عوض کند.
 - در `/inventory_assign` مجازِ بدون backlog، تخصیص آیتم، سفارش completed نوع `ADM-...` با `order_origin=admin_assignment` و marker پاداش ازپیش‌پردازش‌شده، و `outbound_messages` تحویل با کلید `order:{id}:delivery` در همان transaction ساخته می‌شوند؛ وجود صف قدیمی یا نبود امکان queue پیام باید کل عملیات را rollback کند. این Order داخلی در گزارش فروش/خریدار و eligibility پاداش وارد نمی‌شود.
 
 ## تخفیف
 
-eligibility شامل active flag، بازه `starts_at/ends_at`، محصول، کاربر، حداقل مبلغ، سقف کلی و محدودیت هر کاربر است. درصد حداکثر ۱۰۰ و مبلغ تخفیف هرگز بیشتر از subtotal نیست. سفارش صفرمبلغی پس از تخفیف ۱۰۰٪ باید مستقیماً وارد مسیر paid و fulfillment شود؛ نباید payment با مبلغ صفر ساخته شود.
+eligibility شامل active flag، بازه `starts_at/ends_at`، محصول، کاربر، حداقل مبلغ، سقف کلی و محدودیت هر کاربر است. درصد حداکثر ۱۰۰ و مبلغ تخفیف هرگز بیشتر از subtotal نیست. کد ۱۰۰٪ فقط مبلغ خلاصه را صفر می‌کند و وضعیت pending_payment باقی می‌ماند؛ confirm_zero_payable_order پس از دکمه پرداخت، مالکیت و مهلت را بررسی و سفارش را paid می‌کند. Payment صفرمبلغ ساخته نمی‌شود. همین تأیید برای محصول رایگان در مسیر کاربر لازم است.
 
 ## پاداش دعوت
 
@@ -210,11 +214,13 @@ eligibility خرید فقط برای Order با `order_origin=customer` و `subt
 
 ## outbox و retry
 
+کلید `payment:{id}:topup-expired` اعلان انقضای شارژ کیف پول است. `list_expired_wallet_topups_missing_notice` فقط Paymentهای منقضی فاقد notice را برای بازیابی محدود انتخاب می‌کند؛ terminal شدن notice جلوی تکرار را می‌گیرد. این مسیر status پرداخت یا مانده کیف پول را تغییر نمی‌دهد.
+
 stateها `queued/sending/sent/failed/cancelled` هستند. claim فقط از queued و موعدرسیده انجام می‌شود. claim مانده بیش از پنج دقیقه دوباره queued می‌شود. retry نمی‌تواند پیام `sent` را زنده کند. کلید تکراری با recipient، body، audience یا markup متفاوت conflict است.
 
 alert فیش کارت با hash کوتاه `file_kind + file_id` و alert اطلاعات سفارش manual با hash JSON کامل `customer_info_json` نسخه‌بندی می‌شود. همان نسخه پس از restart/outbox retry اعلان دوم نمی‌سازد، اما جایگزینی واقعی فایل یا اطلاعات، کلید outbox تازه و قابل بازیابی می‌گیرد. hash فقط هویت نسخه برای idempotency است و جای رمزنگاری یا کنترل دسترسی را نمی‌گیرد.
 
-`reminder_days` ورودی تازه فقط integer مثبت است؛ صفر/منفی در create/update/schedule رد می‌شود و صفر موجود در JSON قدیمی هنگام schedule نادیده گرفته می‌شود. reminder با `remind_at <= زمان schedule` اصلاً ساخته نمی‌شود. reminderهای موعدرسیده به‌صورت batch محدود claim می‌شوند و هر عضو مستقل ادامه می‌یابد؛ blocked/terminalشدن گیرنده نخست نباید head-of-line blocking برای اعضای بعدی بسازد. پیش از queue پیام، worker `subscription_ends_at` را دوباره می‌خواند: پایان‌یافته را `cancelled` می‌کند و برای مورد دیررسِ هنوز معتبر، تعداد روز واقعی را با ceiling و حداقل ۱ از فاصله اکنون تا پایان محاسبه می‌کند. اگر delivery durable با همان `reminder:{id}` در outbox به `queued` یا `sending` رسیده باشد، outbox مالک retry است و reminder در `processing` می‌ماند تا stale recovery آن را با status نهایی outbox reconcile کند. فقط وقتی outbox اصلاً ساخته نشده باشد reminder فوراً برای retry آزاد می‌شود.
+`reminder_days` فقط integer نامنفی می‌پذیرد. صفر، آغاز روز محلی پایان در `Database.reminder_timezone` است؛ startup این timezone را از Settings می‌دهد. اگر schedule در همان روز پیش از پایان باشد، موعد صفر برابر اکنون است؛ انقضای دقیق نیمه‌شب و اشتراک پایان‌یافته reminder صفر ندارند. موعد مثبتِ گذشته ساخته نمی‌شود. یکتایی `(order_id, days_before)` در replay حفظ می‌شود. worker پیش از queue و دوباره پیش از ارسال outbox، پایان واقعی و مالکیت را می‌سنجد؛ مورد پایان‌یافته همراه outbox بدون پیام cancelled می‌شود. متن روزهای مثبت زمان مطلق پایان را دارد؛ صفر «امروز» و ساعت پایان را نمایش می‌دهد. retry به outbox با کلید `reminder:{id}` تعلق دارد و reminder تا stale reconciliation در processing می‌ماند؛ failure دائمی یک گیرنده پردازش اعضای بعدی batch را متوقف نمی‌کند.
 
 ## indexها و query patternها
 

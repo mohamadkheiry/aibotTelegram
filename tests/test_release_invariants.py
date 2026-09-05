@@ -49,6 +49,15 @@ class RecordingTelegram:
         self.photos.append(result)
         return result
 
+    def edit_message_reply_markup(
+        self, chat_id: int, message_id: int, reply_markup: dict[str, Any] | None = None, **kwargs: Any
+    ) -> dict[str, Any] | bool:
+        for message in self.messages:
+            if message["chat_id"] == chat_id and message["message_id"] == message_id:
+                message["reply_markup"] = reply_markup
+                return message
+        return True
+
     def send_document(self, chat_id: int, document: Any, **kwargs: Any) -> dict[str, Any]:
         result = {"chat_id": int(chat_id), "document": document, **kwargs}
         self.documents.append(result)

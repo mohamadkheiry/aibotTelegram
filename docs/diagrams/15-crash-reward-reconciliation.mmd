@@ -6,9 +6,10 @@ flowchart TD
     C2["partial، unknown، mismatch یا completed پس از resolution: review پرخطر"]
     D["reconcile alert و notice تصمیم provider/card review، فیش، اطلاعات manual، ticket و security"]
     D1["reconcile alert no-stock و هر reward_event فاقد notice با cursor/wrap"]
-    E0["expire سفارش unpaid و paymentهای card؛ crypto با deadline محلی expire نمی‌شود"]
+    E0["expire unpaid/card بدون فیش؛ فیش تا تصمیم مدیر و crypto تا نتیجه provider باز است"]
+    E1["reconcile هشدار پایدار شارژ کیف پول منقضی: دیگر پرداخت نکنید"]
     M2["reconcile paid payment notice فاقد outbox"]
-    M3["reconcile wallet-only/full-discount success notice فاقد outbox با cursor/wrap"]
+    M3["reconcile wallet/discount/free-confirmed notice فاقد outbox با cursor/wrap"]
     M4{"order_success_notice_ready؟"}
     M5["queued/sending: defer همه شاخه‌های fulfillment"]
     M6["sent یا terminal failed/cancelled: اجازه ادامه"]
@@ -24,11 +25,11 @@ flowchart TD
     M0["selector مستقل همه سفارش‌های status=paid؛ مستقل از reward_processed_at"]
     M["تلاش idempotent برای fulfillment ready/manual"]
     N["بازسازی noticeهای awaiting_stock و awaiting_info"]
-    O["تکمیل reservationهای دارای موجودی به ترتیب FIFO"]
+    O["تکمیل موجودی با FIFO همه سفارش‌های پرداخت‌شده؛ حتی قبل از ساخت reservation"]
     O2["fulfil سفارش ready در processing پس از restock"]
     P["بازسازی delivery سفارش ready تکمیل‌شده"]
-    Q["claim batch reminder؛ cancel منقضی و محاسبه روز واقعی"]
-    Q2["outbox مالک retry؛ claim پیام‌ها یک‌به‌یک"]
+    Q["claim reminder؛ زمان پایان دقیق و روز صفر در TIMEZONE؛ لغو منقضی"]
+    Q2["outbox مالک retry؛ claim تک‌پیام و بازبینی انقضا پیش از ارسال reminder"]
     R{"ارسال موفق است؟"}
     S["ثبت sent و telegram_message_id"]
     T{"خطا دائمی است؟"}
@@ -40,7 +41,7 @@ flowchart TD
     C --> C1 --> D
     C --> C2 --> D
     C -->|"pending یا network failure"| D
-    D --> D1 --> E0 --> M2 --> M3 --> M4
+    D --> D1 --> E0 --> E1 --> M2 --> M3 --> M4
     M4 -->|"خیر"| M5 --> Q2
     M4 -->|"بله"| M6 --> D0 --> E
     E -->|"بله"| F --> H

@@ -41,7 +41,7 @@ def main() -> int:
     args = _arguments()
     settings = load_settings(args.env_file)
     configure_logging(settings.log_level)
-    database = Database(settings.database_path)
+    database = Database(settings.database_path, reminder_timezone=settings.timezone)
     if args.migrate_only:
         database.initialize()
         logging.getLogger(__name__).info("Database schema is ready at %s", settings.database_path)

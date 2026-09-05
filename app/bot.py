@@ -10,9 +10,9 @@ import uuid
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from math import ceil
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from . import texts
 from .config import Settings
@@ -39,6 +39,7 @@ from .keyboards import (
     contains_emoji,
     copy_text_button,
     inline_keyboard,
+    inline_main_menu_keyboard,
     main_menu_keyboard,
     remove_keyboard,
     url_button,
@@ -82,6 +83,7 @@ class BotApplication:
     MAINTENANCE_ORDER_NOTICE_RECONCILE_LIMIT = 100
     MAINTENANCE_TICKET_ALERT_RECONCILE_LIMIT = 100
     MAINTENANCE_ZERO_EXTERNAL_NOTICE_LIMIT = 100
+    MAINTENANCE_EXPIRED_TOPUP_NOTICE_LIMIT = 100
     _REWARD_RECONCILE_CURSOR_SETTING = "maintenance_reward_reconcile_cursor"
     _FULFILLMENT_RECONCILE_CURSOR_SETTING = "maintenance_fulfillment_reconcile_cursor"
     _CRYPTO_POLL_CURSOR_SETTING = "maintenance_crypto_poll_cursor"
@@ -97,6 +99,7 @@ class BotApplication:
     _INFO_NOTICE_CURSOR_SETTING = "maintenance_info_notice_cursor"
     _DELIVERY_NOTICE_CURSOR_SETTING = "maintenance_delivery_notice_cursor"
     _EXPIRED_NOTICE_CURSOR_SETTING = "maintenance_expired_notice_cursor"
+    _EXPIRED_TOPUP_NOTICE_CURSOR_SETTING = "maintenance_expired_topup_notice_cursor"
     _TICKET_ALERT_CURSOR_SETTING = "maintenance_ticket_alert_cursor"
     _READY_STOCK_ALERT_CURSOR_SETTING = "maintenance_ready_stock_alert_cursor"
     _REWARD_NOTICE_CURSOR_SETTING = "maintenance_reward_notice_cursor"
@@ -678,10 +681,29 @@ class BotApplication:
     def show_main_menu(self, user: dict[str, Any]) -> None:
         self.db.clear_user_state(user["id"])
         name = user.get("customer_name") or user.get("first_name") or "دوست عزیز"
-        self.telegram.send_message(
+        markup = inline_main_menu_keyboard(
+            self.settings.button_icon_ids,
+            str(self.db.get_setting("main_channel_url", "") or ""),
+        )
+        message = self.telegram.send_message(
             user["chat_id"],
             texts.main_menu(name),
-            reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+            reply_markup=remove_keyboard(),
+        )
+        message_id = message.get("message_id") if isinstance(message, Mapping) else None
+        if isinstance(message_id, int) and not isinstance(message_id, bool) and message_id > 0:
+            try:
+                self.telegram.edit_message_reply_markup(
+                    user["chat_id"], message_id, reply_markup=markup
+                )
+                return
+            except TelegramRequestCancelled:
+                raise
+            except TelegramError:
+                LOG.warning("Could not attach main-menu buttons; sending a selection message")
+        # Keep the canonical welcome text single even when an edit fails.
+        self.telegram.send_message(
+            user["chat_id"], "یکی از گزینه‌های زیر را انتخاب کن:", reply_markup=markup
         )
 
     def _dispatch_user_callback(
@@ -695,6 +717,10 @@ class BotApplication:
         if data == "menu":
             self.telegram.answer_callback_query(query_id)
             self.show_main_menu(user)
+            return True
+        if data == "channel":
+            self.telegram.answer_callback_query(query_id)
+            self.show_channel(user)
             return True
         if data == "store" or data.startswith("store:"):
             page = self._callback_page(data, "store")
@@ -1106,10 +1132,13 @@ class BotApplication:
         content = texts.product_summary(product, self.settings.currency_label)
         if not product.get("is_available", 1):
             content += "\n\n⛔️ این محصول فعلاً موجود نیست."
-        if query:
-            self._edit_or_send(query, content, markup)
-        else:
-            self.telegram.send_message(chat_id, content, reply_markup=markup)
+        parts = split_telegram_html(content)
+        for index, part in enumerate(parts):
+            part_markup = markup if index == len(parts) - 1 else None
+            if query and index == 0:
+                self._edit_or_send(query, part, part_markup)
+            else:
+                self.telegram.send_message(chat_id, part, reply_markup=part_markup)
 
     def show_product_details(
         self,
@@ -1128,10 +1157,13 @@ class BotApplication:
         rows.append([back_button(f"prod:{product_id}")])
         markup = inline_keyboard(rows)
         content = texts.product_details(product)
-        if query:
-            self._edit_or_send(query, content, markup)
-        else:
-            self.telegram.send_message(chat_id, content, reply_markup=markup)
+        parts = split_telegram_html(content)
+        for index, part in enumerate(parts):
+            part_markup = markup if index == len(parts) - 1 else None
+            if query and index == 0:
+                self._edit_or_send(query, part, part_markup)
+            else:
+                self.telegram.send_message(chat_id, part, reply_markup=part_markup)
 
     # -- profile, wallet and referrals ------------------------------------
 
@@ -1243,11 +1275,13 @@ class BotApplication:
         for entry in entries:
             sign = "+" if int(entry["amount_signed"]) > 0 else ""
             reason = clamp_text(
-                escape(entry.get("reason") or entry.get("entry_type") or ""),
+                escape(entry.get("reason") or ""),
                 240,
             )
+            kind = texts.transaction_type(entry.get("entry_type"), entry.get("method"))
             lines.append(
                 f"{escape(str(entry['created_at'])[:16])} | {sign}{money(entry['amount_signed'], self.settings.currency_label)}\n"
+                f"نوع: {kind}\n"
                 f"{reason}"
             )
         rows: list[list[dict[str, Any]]] = []
@@ -1376,6 +1410,37 @@ class BotApplication:
 
     def show_referral(self, user: dict[str, Any], *, query: dict[str, Any] | None = None) -> None:
         stats = self.db.referral_summary(user["id"])
+        current_rules: list[dict[str, Any]] = []
+        now = utc_now()
+        offset = 0
+        product_names: dict[int, str] = {}
+        while True:
+            rules = self.db.list_reward_rules(active_only=True, limit=200, offset=offset)
+            for rule in rules:
+                starts_at = parse_iso(rule.get("starts_at"))
+                ends_at = parse_iso(rule.get("ends_at"))
+                if (starts_at and starts_at > now) or (ends_at and ends_at <= now):
+                    continue
+                conditions = json.loads(rule.get("conditions_json") or "{}")
+                scoped_ids = (
+                    [int(rule["product_id"])]
+                    if rule.get("product_id") is not None
+                    else list(conditions.get("product_ids") or [])
+                )
+                for product_id in scoped_ids:
+                    if product_id not in product_names:
+                        product = self.db.get_product(product_id)
+                        product_names[product_id] = (
+                            str(product["name"]) if product else f"محصول {product_id}"
+                        )
+                current_rules.append({
+                    **rule,
+                    "conditions": conditions,
+                    "product_names": [product_names[item] for item in scoped_ids],
+                })
+            offset += len(rules)
+            if len(rules) < 200:
+                break
         link = f"https://t.me/{self.bot_username}?start=ref_{user['telegram_user_id']}"
         share = "https://t.me/share/url?url=" + quote(link, safe="")
         markup = inline_keyboard(
@@ -1389,11 +1454,23 @@ class BotApplication:
             stats.get("reward_total", 0),
             link,
             self.settings.currency_label,
+            current_rules,
         )
-        if query:
-            self._edit_or_send(query, content, markup)
-        else:
-            self.telegram.send_message(user["chat_id"], content, reply_markup=markup)
+        # Keep each ordinary rule together, so its amount and conditions are
+        # readable in one message; split only a single unusually long block.
+        parts: list[str] = []
+        for block in content.split("\n\n"):
+            for part in split_telegram_html(block):
+                if parts and len(parts[-1]) + len(part) + 2 <= 3900:
+                    parts[-1] += "\n\n" + part
+                else:
+                    parts.append(part)
+        for index, part in enumerate(parts):
+            part_markup = markup if index == len(parts) - 1 else None
+            if query and index == 0:
+                self._edit_or_send(query, part, part_markup)
+            else:
+                self.telegram.send_message(user["chat_id"], part, reply_markup=part_markup)
 
     def show_channel(self, user: dict[str, Any]) -> None:
         url = str(self.db.get_setting("main_channel_url", "") or "")
@@ -1492,11 +1569,14 @@ class BotApplication:
             f"❓ <b>{escape(faq['question'])}</b>\n\n"
             f"{render_rich_text(faq['answer'])}"
         )
-        self._edit_or_send(
-            query,
-            text,
-            inline_keyboard([[back_button(f"faqcat:{faq['category_id']}")]]),
-        )
+        markup = inline_keyboard([[back_button(f"faqcat:{faq['category_id']}")]])
+        parts = split_telegram_html(text)
+        for index, part in enumerate(parts):
+            part_markup = markup if index == len(parts) - 1 else None
+            if index == 0:
+                self._edit_or_send(query, part, part_markup)
+            else:
+                self.telegram.send_message(user["chat_id"], part, reply_markup=part_markup)
 
     def show_tickets(
         self,
@@ -1741,6 +1821,7 @@ class BotApplication:
             product_id,
             idempotency_key=key,
             expires_in_minutes=self.settings.order_expiry_minutes,
+            defer_free_confirmation=True,
             order_notice=created_notice,
         )
         notice_key = f"order:{int(order['id'])}:created-summary"
@@ -1869,6 +1950,29 @@ class BotApplication:
             return True
         if data.startswith("checkout:"):
             order_id = self._callback_id(data, "checkout", label="شناسه سفارش")
+            order = self.db.get_order(order_id)
+            if not order or order["user_id"] != user["id"]:
+                raise NotFoundError("سفارش پیدا نشد.")
+            if (
+                order["status"] == "pending_payment"
+                and int(order["subtotal_amount"]) - int(order["discount_amount"]) == 0
+            ):
+                order = self.db.confirm_zero_payable_order(order_id, int(user["id"]))
+                is_free = int(order["subtotal_amount"]) == 0
+                self._notify_user_durable(
+                    user,
+                    texts.payment_success(
+                        self._order_view(order), 0,
+                        "سفارش رایگان" if is_free else "تخفیف کامل",
+                        self.settings.currency_label,
+                    ),
+                    idempotency_key=(
+                        f"order:{order['id']}:{'free' if is_free else 'discount'}-confirmed"
+                    ),
+                )
+                self._after_order_paid(int(order["id"]))
+                self.telegram.answer_callback_query(query_id, "سفارش تأیید شد.")
+                return True
             self.show_payment_methods(user, order_id, query=query)
             self.telegram.answer_callback_query(query_id)
             return True
@@ -2589,21 +2693,7 @@ class BotApplication:
                 )
                 return True
             self.db.clear_user_state(user["id"])
-            if order["status"] == "paid":
-                self._notify_user_durable(
-                    user,
-                    texts.payment_success(
-                        self._order_view(order),
-                        0,
-                        "تخفیف کامل",
-                        self.settings.currency_label,
-                    ),
-                    idempotency_key=f"order:{order['id']}:discount-confirmed",
-                )
-                self._after_order_paid(int(order["id"]))
-                self.show_order(user, int(order["id"]))
-            else:
-                self.show_order_summary(user, order)
+            self.show_order_summary(user, order)
             return True
 
         if name == "wallet_topup_amount":
@@ -3304,6 +3394,7 @@ class BotApplication:
         if hasattr(self.db, "expire_pending_payments"):
             self.db.expire_pending_payments(limit=500)
         for stage in (
+            self._reconcile_expired_wallet_topup_notices,
             self._reconcile_paid_payment_notices,
             self._reconcile_zero_external_payment_notices,
             self._reconcile_paid_orders,
@@ -3507,8 +3598,39 @@ class BotApplication:
             self._PAID_NOTICE_CURSOR_SETTING, cursor if payments else 0
         )
 
+    def _reconcile_expired_wallet_topup_notices(self) -> None:
+        """Notify owners of expired top-up bills with a restart-safe cursor."""
+        try:
+            cursor = max(
+                0, int(self.db.get_setting(self._EXPIRED_TOPUP_NOTICE_CURSOR_SETTING, 0))
+            )
+        except (TypeError, ValueError):
+            cursor = 0
+        payments = self.db.list_expired_wallet_topups_missing_notice(
+            limit=max(1, int(self.MAINTENANCE_EXPIRED_TOPUP_NOTICE_LIMIT)), after_id=cursor
+        )
+        if not payments and cursor:
+            payments = self.db.list_expired_wallet_topups_missing_notice(
+                limit=max(1, int(self.MAINTENANCE_EXPIRED_TOPUP_NOTICE_LIMIT)), after_id=0
+            )
+        for payment in payments:
+            if self.stop_event.is_set():
+                return
+            user = self.db.get_user(int(payment["user_id"]))
+            if user is not None:
+                self._notify_user_durable(
+                    user,
+                    texts.wallet_topup_expired(payment, self.settings.currency_label),
+                    idempotency_key=f"payment:{int(payment['id'])}:topup-expired",
+                    reply_markup=inline_keyboard([[callback_button("کیف پول", "wallet")]]),
+                )
+            cursor = int(payment["id"])
+        self.db.set_setting(
+            self._EXPIRED_TOPUP_NOTICE_CURSOR_SETTING, cursor if payments else 0
+        )
+
     def _reconcile_zero_external_payment_notices(self) -> None:
-        """Recover wallet-only and full-discount success notices."""
+        """Recover wallet-only, full-discount, and free-checkout success notices."""
 
         if not hasattr(self.db, "list_zero_external_paid_orders_missing_notice"):
             return
@@ -3535,20 +3657,24 @@ class BotApplication:
             user = self.db.get_user(int(order["user_id"]))
             if user is not None:
                 success_kind = str(order["success_kind"])
-                is_discount = success_kind == "discount"
+                method = {
+                    "discount": "تخفیف کامل",
+                    "free": "سفارش رایگان",
+                    "wallet": "کیف پول",
+                }[success_kind]
                 self._notify_user_durable(
                     user,
                     texts.payment_success(
                         self._order_view(order),
                         0
-                        if is_discount
+                        if success_kind in {"discount", "free"}
                         else int(order["wallet_captured_amount"]),
-                        "تخفیف کامل" if is_discount else "کیف پول",
+                        method,
                         self.settings.currency_label,
                     ),
                     idempotency_key=(
                         f"order:{int(order['id'])}:"
-                        f"{'discount' if is_discount else 'wallet'}-confirmed"
+                        f"{success_kind}-confirmed"
                     ),
                 )
             cursor = int(order["id"])
@@ -4598,15 +4724,20 @@ class BotApplication:
                     error_text="subscription ended before reminder delivery",
                 )
                 continue
-            remaining_days = max(
-                1,
-                ceil((subscription_ends_at - current).total_seconds() / 86_400),
+            local_end = subscription_ends_at.astimezone(ZoneInfo(self.settings.timezone))
+            # Keep the durable body stable across delayed retries. Relative
+            # day counts become false after a midnight or multi-day outage.
+            remaining_text = (
+                f"امروز ساعت {local_end:%H:%M}"
+                if int(reminder["days_before"]) == 0
+                else f"در تاریخ {local_end:%Y-%m-%d} ساعت {local_end:%H:%M}"
             )
             outbox_key = f"reminder:{reminder['id']}"
             delivered = self._notify_user_durable(
                 user,
                 "⏰ <b>یادآوری پایان اشتراک</b>\n\n"
-                f"اشتراک {escape(order['product_name_snapshot'])} تا {remaining_days} روز دیگر پایان می‌یابد.",
+                f"اشتراک {escape(order['product_name_snapshot'])} {remaining_text} پایان می‌یابد.\n"
+                f"زمان پایان: {local_end:%Y-%m-%d %H:%M} ({escape(self.settings.timezone)})",
                 idempotency_key=outbox_key,
             )
             outbox = self.db.get_outbound_message_by_idempotency_key(outbox_key)
@@ -4654,6 +4785,25 @@ class BotApplication:
             if not recipient:
                 self.db.mark_outbound_message(item["id"], success=False, error="missing user")
                 continue
+            reminder_key = re.fullmatch(r"reminder:(\d+)", str(item.get("idempotency_key") or ""))
+            if reminder_key:
+                reminder = self.db.get_reminder(int(reminder_key.group(1)))
+                order = self.db.get_order(reminder["order_id"]) if reminder else None
+                try:
+                    end_at = parse_iso(order.get("subscription_ends_at")) if order else None
+                except (TypeError, ValueError):
+                    end_at = None
+                if (
+                    not reminder or not order or end_at is None or end_at <= utc_now()
+                    or int(reminder["user_id"]) != int(item["recipient_user_id"])
+                    or reminder["status"] == "cancelled"
+                ):
+                    self.db.mark_outbound_message(
+                        item["id"], "cancelled", error_text="reminder no longer valid before delivery",
+                    )
+                    if reminder:
+                        self.db.mark_reminder(reminder["id"], "cancelled")
+                    continue
             try:
                 reply_markup = None
                 if item.get("reply_markup_json"):

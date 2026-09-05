@@ -28,7 +28,7 @@ BOOTSTRAP_ADMIN_CHAT_ID=123456789
 مشاهده مدیران:
 
 ```text
-/admins
+/admins [PAGE]
 ```
 
 افزودن مدیر جدید با هر دو شناسه:
@@ -65,6 +65,8 @@ BOOTSTRAP_ADMIN_CHAT_ID=123456789
 ```
 
 شناسه‌هایی مانند `CATEGORY_ID`، `PRODUCT_ID` و `ITEM_ID` را ابتدا از فرمان فهرست همان بخش بگیرید. همه مبلغ‌ها عدد صحیح و فقط به تومان هستند؛ currency ذخیره‌شده فقط `TOMAN` است. `CURRENCY_LABEL` صرفاً برچسب نمایشی است و در production باید «تومان» بماند.
+
+فهرست مدیران، دسته‌ها، محصولات، موجودی انبار، تخفیف‌ها، دسته و سوالات FAQ و قواعد پاداش همگی ۲۰ ردیف در صفحه دارند. شماره `PAGE` اختیاری و پیش‌فرض ۱ است؛ سربرگ مجموع دقیق و فرمان‌های قبلی/بعدی را نشان می‌دهد. برای صفحه‌های همه محصولات یا همه سوالات، `all` را به‌جای دسته بنویسید؛ یک عدد تنها بعد از `/products` یا `/faqs` همچنان شناسه دسته است. محدودیت طول پیام باعث حذف ردیف‌های همان صفحه نمی‌شود.
 
 ### متن غنی با `html:`
 
@@ -143,7 +145,7 @@ blockquote, span class="tg-spoiler", tg-spoiler, tg-emoji
 ## ۶. دسته و زیردسته
 
 ```text
-/categories
+/categories [PAGE]
 /category_add عنوان | آیکون|0 | توضیح|0
 /subcategory_add PARENT_ID | عنوان | آیکون|0 | توضیح|0
 /category_toggle CATEGORY_ID
@@ -168,8 +170,9 @@ blockquote, span class="tg-spoiler", tg-spoiler, tg-emoji
 فهرست و ساخت محصول:
 
 ```text
-/products
-/products CATEGORY_ID
+/products [CATEGORY_ID|all] [PAGE]
+/products all 2
+/products CATEGORY_ID 1
 /product_add CATEGORY_ID | عنوان | قیمت | مدت | ready
 /product_add CATEGORY_ID | عنوان | قیمت | مدت | manual
 ```
@@ -213,7 +216,7 @@ reminder_days
 
 مقدار `type` فقط `ready` یا `manual` و currency فقط `TOMAN` است. برای برداشتن سقف موجودی، `stock_limit` را `none` بگذارید. `rules_url` فقط URL مطلق HTTPS بدون credential، whitespace/control، `localhost`، IP literal محلی/خصوصی/reserved یا host عددی مبهم می‌پذیرد؛ validator DNS را resolve نمی‌کند. برای پاک‌کردن آن از `none` استفاده کنید. با تغییر `duration`، اگر مقدار به شکل عدد، «N روز» یا `N days` باشد `duration_days` نیز به N تنظیم می‌شود؛ هر برچسب دیگری انقضای عددی را پاک می‌کند. تغییر مستقیم `duration_days` به یک عدد مثبت، برچسب را به «N روز» همگام می‌کند و مقدار `none`، `null`، `-`، «بدون انقضا» یا «مادام العمر» هر دو را روی بدون انقضا می‌گذارد. تبدیل محصول آماده به manual تا وقتی هر نوع آیتم انبار به آن متصل باشد رد می‌شود؛ ابتدا آیتم‌های آزاد یا غیرفعال را حذف کنید. دسته مقصد نیز باید از قبل وجود داشته باشد.
 
-`reminder_days` فهرست اعداد صحیح مثبت و جداشده با ویرگول است؛ مقدار پیشنهادی `7,3,1` است و `0` یا مقدار منفی در ساخت/ویرایش رد می‌شود. اگر دیتابیس قدیمی هنوز مقدار صفر داشته باشد، scheduler آن را بدون ساخت پیام نادیده می‌گیرد.
+`reminder_days` فهرست اعداد صحیح نامنفی و جداشده با ویرگول است؛ مانند `7,3,1,0`. اعداد مثبت تعداد روز پیش از پایان‌اند و `0` یادآوری همان روز پایان اشتراک را فعال می‌کند. زمان آن ابتدای روز پایان در `TIMEZONE` ربات است؛ اگر ثبت یادآوری در همان روز باشد، تا زمانی که اشتراک هنوز معتبر است موعد فوری می‌گیرد. برای پایان دقیقاً در نیمه‌شب یا اشتراک پایان‌یافته، پیام دیرهنگام ساخته نمی‌شود. عدد منفی رد می‌شود.
 
 تغییر flagهای محصول:
 
@@ -242,7 +245,7 @@ reminder_days
 پس از فرمان، ربات پیام بعدی را به‌عنوان payload محرمانه موجودی می‌گیرد؛ برای مثال لینک، ایمیل، رمز، کد 2FA و توضیح. هر اکانت را در یک پیام جدا ثبت کنید.
 
 ```text
-/inventory_list PRODUCT_ID
+/inventory_list PRODUCT_ID [PAGE]
 /inventory_edit ITEM_ID
 /inventory_disable ITEM_ID
 /inventory_enable ITEM_ID
@@ -274,6 +277,8 @@ reminder_days
 ```
 
 فهرست `/orders` با ترتیب `id` نزولی و ۲۰ ردیف در هر صفحه نمایش داده می‌شود. سربرگ هر صفحه «صفحه X از Y | مجموع: N» و در صورت وجود، فرمان آماده قبلی/بعدی را نشان می‌دهد؛ `_send_blocks` همه ردیف‌های همان صفحه را زیر سقف Telegram در چند پیام حفظ می‌کند. صفحه کمتر از ۱ یا بیشتر از آخرین صفحه رد می‌شود. آرگومان‌های سازگار عبارت‌اند از: بدون فیلتر، فقط status، فقط بازه، status+بازه، و در همه حالت‌ها شماره صفحه به‌عنوان آخرین عدد صحیح.
+
+`/order ORDER_NUMBER` و جست‌وجوی شماره دقیق در `/user_orders` تمام متن اطلاعات فعال‌سازی ارسال‌شده توسط کاربر را نمایش می‌دهند. متن بلند به بخش‌های escapeشده و کامل زیر سقف Telegram تقسیم می‌شود و انتهای آن حذف نمی‌شود. این نمایش در همان دسترسی مشاهده سفارش است؛ بازفرستادن فایل پیوست همچنان فقط از `/order_attachment` و با مجوز `owner/admin` انجام می‌شود.
 
 وضعیت‌های قابل ذخیره:
 
@@ -328,8 +333,8 @@ refunded
 - قبل از approve، مبلغ، شماره پرداخت، کاربر و تصویر فیش را تطبیق دهید. replay همان تصمیم نهایی با همان شناسه idempotent است؛ تصمیم مخالف یا reference متفاوت conflict محسوب می‌شود.
 - رد آخرین پرداخت بیرونی سفارش، hold قابل‌آزادسازی را برمی‌گرداند و اگر سفارش هنوز منقضی نشده باشد آن را به `pending_payment` بازمی‌گرداند.
 - سفارش unpaid بدون crypto فعال و intent کارت بدون فیش طبق `ORDER_EXPIRY_MINUTES`، به‌طور پیش‌فرض پس از ۳۰ دقیقه، منقضی می‌شوند. invoice crypto با deadline محلی terminal نمی‌شود و تا شاهد provider پایش می‌گردد.
-- فیش فقط برای روش `card` است. نخستین photo/document باید پیش از `expires_at` ثبت شود؛ اگر نخستین فیش ثبت شده باشد، جایگزینی فقط تا پیش از `expires_at + 7 days` پذیرفته می‌شود و deadline با تعویض فیش تمدید نمی‌گردد.
-- پرداخت دارای فیش با وضعیت `verifying` تا حداکثر ۷ روز پس از پایان مهلت اولیه باز می‌ماند تا مدیریت آن را تأیید یا رد کند؛ فیش‌های بلاتکلیف پس از این بازه منقضی می‌شوند. payment دارای فیش/`verifying` حتی با دکمه لغو قدیمی کاربر قابل لغو نیست.
+- فیش فقط برای روش `card` است. نخستین photo/document باید پیش از `expires_at` ثبت شود؛ پس از ثبت نخستین فیش، جایگزینی آن تا زمانی که بررسی دستی باز است پذیرفته می‌شود.
+- پرداخت دارای فیش با وضعیت `verifying` تا تصمیم صریح مدیریت باز می‌ماند و به‌دلیل گذشت زمان به‌صورت خودکار منقضی نمی‌شود. payment دارای فیش/`verifying` حتی با دکمه لغو قدیمی کاربر قابل لغو نیست.
 - هر سفارش فقط یک external intent فعال در مجموع card/crypto دارد. کاربر برای تغییر card به crypto باید card بدون فیش را لغو کند؛ چون این کار سفارش را terminal می‌کند، سپس باید خرید تازه بسازد. invoice ارزی صادرشده دکمه لغو ندارد، callback لغو نسخه قدیمی را نیز رد می‌کند و deadline محلی آن را terminal نمی‌کند؛ provider evidence تا نتیجه قطعی یا late transition پایش می‌شود.
 - در جزئیات سفارش و صفحه کیف پول، intent ارزی `pending/verifying` با URL ذخیره‌شده‌ای که دوباره اعتبارسنجی امنیتی شود، دکمه «ادامه پرداخت ارزی» دارد. «ارسال فیش» فقط برای card است؛ اگر URL legacy نامعتبر یا خالی باشد لینک نمایش داده نمی‌شود و کاربر به پشتیبانی هدایت می‌شود.
 - مبلغ یکتای کارت پس از terminalشدن intent تا ۲۴ ساعت بعد از `max(expires_at, updated_at)` دوباره تخصیص داده نمی‌شود. مصرف موقت window مبلغ در ترافیک بالا رفتار حفاظتی است؛ window را با SQL دستی آزاد نکنید.
@@ -386,6 +391,8 @@ refunded
 
 `/user` یک پیش‌نمایش از آخرین سفارش‌ها/تراکنش‌ها، totalها، مانده و اولین/آخرین تاریخ خرید تجاری را نشان می‌دهد؛ MIN/MAX خرید از کل تاریخچه و بدون cap محاسبه می‌شود. چهار فرمان `/user_*` تاریخچه کامل را ۲۰تایی نشان می‌دهند: سفارش‌ها به ترتیب `id` نزولی و قابل فیلتر status یا جست‌وجوی `ORDER_NUMBER` متعلق به همان user؛ تراکنش و رخداد پاداش جدیدترین‌اول؛ و زیرمجموعه‌ها به ترتیب `id` نزولی همراه status/date و تعداد/مجموع پاداش. شماره سفارش متعلق به کاربر دیگر به‌صورت «پیدا نشد» رد می‌شود. این چهار سطح برای `owner/admin/support` مشاهده‌ای است؛ مجوز mutation نقش support را افزایش نمی‌دهد.
 
+در تراکنش‌ها، تاریخ و مبلغ همراه «نوع» فارسی تراکنش و «دلیل» جداگانه نمایش داده می‌شود؛ دلیل آزاد مدیر یا پرداخت، نوعی مثل اصلاح موجودی، خرید، شارژ یا پاداش را پنهان نمی‌کند.
+
 تغییر موجودی:
 
 ```text
@@ -398,7 +405,7 @@ refunded
 ## ۱۲. تخفیف
 
 ```text
-/discounts
+/discounts [PAGE]
 /discount_add CODE | fixed|percent | VALUE | MAX_USES|0 | PRODUCT_ID|0 | USER_CHAT_ID|0 | YYYY-MM-DD|0
 /discount_add CODE | fixed|percent | VALUE | MAX_USES|0 | PRODUCT_ID|0 | USER_CHAT_ID|0 | END_DATE|0 | MINIMUM|0 | PER_USER_LIMIT|0 | START_DATE|0
 /discount_toggle CODE
@@ -435,17 +442,17 @@ refunded
 
 `/ticket_status` برای هر سه نقش `owner`، `admin` و `support` مجاز است. مقدار `open` تیکت بسته را باز می‌کند و زمان بسته‌شدن را پاک می‌کند؛ `answered` پاسخ‌داده‌شدن و `closed` بسته‌شدن را ثبت می‌کند. مدیر اجراکننده نیز به‌عنوان مدیر مسئول تیکت ثبت می‌شود و تغییر وضعیت به کاربر اعلام می‌گردد. `/ticket_close` میان‌بری برای بستن تیکت است.
 
-`/ticket` به‌جای افشای raw file ID، برای هر پیام فایل‌دار شناسه `MESSAGE_ID` را نشان می‌دهد. `/ticket_attachment MESSAGE_ID` برای `owner/admin/support` همان photo/document ذخیره‌شده را پس از بررسی دوباره role، وجود پیام و تیکت مرتبط بازمی‌فرستد؛ این فرمان را فقط در گفت‌وگوی خصوصی مدیریتی اجرا کنید. دسترسی به پیوست تیکت مجوز `/payment_detail` یا `/order_attachment` نیست.
+`/ticket` تمام متن پیام‌های گفت‌وگو را، حتی وقتی یک پیام بلند یا دارای نویسه‌های HTML باشد، در بخش‌های کامل نشان می‌دهد. به‌جای افشای raw file ID، برای هر پیام فایل‌دار شناسه `MESSAGE_ID` را نشان می‌دهد. `/ticket_attachment MESSAGE_ID` برای `owner/admin/support` همان photo/document ذخیره‌شده را پس از بررسی دوباره role، وجود پیام و تیکت مرتبط بازمی‌فرستد؛ این فرمان را فقط در گفت‌وگوی خصوصی مدیریتی اجرا کنید. دسترسی به پیوست تیکت مجوز `/payment_detail` یا `/order_attachment` نیست.
 
 ```text
-/faq_categories
+/faq_categories [PAGE]
 /faq_category_add عنوان دسته
 /faq_category_toggle CATEGORY_ID
 /faq_category_set CATEGORY_ID | name | عنوان تازه
 /faq_category_set CATEGORY_ID | sort_order | 10
 /faq_category_delete CATEGORY_ID
-/faqs
-/faqs CATEGORY_ID
+/faqs [CATEGORY_ID|all] [PAGE]
+/faqs CATEGORY_ID 1
 /faq_add دسته | سوال | جواب
 /faq_toggle FAQ_ID
 /faq_set FAQ_ID | question | متن سوال تازه
@@ -494,7 +501,7 @@ refunded
 ## ۱۵. قوانین پاداش دعوت
 
 ```text
-/rewards
+/rewards [PAGE]
 /reward_add start | AMOUNT | 0
 /reward_add first_purchase | AMOUNT | PRODUCT_ID|0
 /reward_add product_purchase | AMOUNT | PRODUCT_ID|0

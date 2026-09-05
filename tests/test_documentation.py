@@ -28,12 +28,26 @@ class DocumentationIntegrityTests(unittest.TestCase):
             "SECURITY.md",
             "TRACEABILITY.md",
             "ADMIN_GUIDE_FA.md",
+            "SPEC_AUDIT.md",
         )
         for name in required:
             path = DOCS_ROOT / name
             with self.subTest(path=path):
                 self.assertTrue(path.is_file())
                 self.assertGreater(path.stat().st_size, 100)
+
+    def test_training_videos_and_reproducible_sources_are_present(self) -> None:
+        training = DOCS_ROOT / "training"
+        for name in ("README.md", "slides.json", "generate-videos.cjs", "verify-videos.cjs"):
+            with self.subTest(source=name):
+                self.assertGreater((training / name).stat().st_size, 100)
+        for name in ("admin-usage-fa.mp4", "deployment-transfer-fa.mp4"):
+            with self.subTest(video=name):
+                path = training / name
+                self.assertGreater(path.stat().st_size, 10_000)
+                self.assertLess(path.stat().st_size, 100_000_000)
+                with path.open("rb") as stream:
+                    self.assertEqual(stream.read(12)[4:8], b"ftyp")
 
     def test_reference_checksums_match_every_listed_source(self) -> None:
         manifest = REFERENCE_ROOT / "SHA256SUMS.txt"

@@ -14,7 +14,7 @@ stateDiagram-v2
     state "refunded (رزرو؛ بدون transition فعلی)" as Refunded
 
     PendingPayment --> AwaitingConfirmation: انتظار تأیید
-    PendingPayment --> Paid: تسویه
+    PendingPayment --> Paid: تأیید و تسویه
     PendingPayment --> Rejected
     PendingPayment --> Expired
     PendingPayment --> Cancelled
@@ -48,6 +48,7 @@ stateDiagram-v2
         order_status هنگام payment باز آن‌ها را نمی‌پذیرد؛
         لغو اختصاصی فقط card بدون فیش است و crypto
         تا شاهد terminal ارائه‌دهنده محلی بسته نمی‌شود.
+        فیش ارسال‌شده تا تصمیم مدیر خودکار منقضی نمی‌شود.
         رد فیش پیش از expiry سفارش به pending برمی‌گردد.
     end note
 

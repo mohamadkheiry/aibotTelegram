@@ -18,28 +18,27 @@ ADMIN_HELP = """🛠 <b>راهنمای مدیریت ربات</b>
 <code>/backup</code>
 
 <b>مدیران</b>
-<code>/admins</code>
+<code>/admins [PAGE]</code>
 <code>/admin_add @username CHAT_ID owner|admin|support</code>
 <code>/admin_enable CHAT_ID</code>
 <code>/admin_disable CHAT_ID</code>
 
 <b>دسته و محصول</b>
-<code>/categories</code>
+<code>/categories [PAGE]</code>
 <code>/category_add عنوان</code>
 <code>/subcategory_add PARENT_ID | عنوان</code>
 <code>/category_toggle ID</code>
 <code>/category_set CATEGORY_ID | name|parent|sort_order | VALUE</code>
 <code>/category_delete CATEGORY_ID</code> — فقط دسته خالی
-<code>/products [CATEGORY_ID]</code>
+<code>/products [CATEGORY_ID|all] [PAGE]</code>
 <code>/product_add CATEGORY_ID | عنوان | قیمت | مدت | ready|manual</code>
 <code>/product_set PRODUCT_ID | FIELD | VALUE</code>
 <code>/product_toggle PRODUCT_ID visible|available|reserve</code>
 <code>/product_delete PRODUCT_ID</code> — حذف نرم
-فیلدهای قابل ویرایش: <code>name, category, type, stock_limit, icon, short_description, long_description, price, duration, duration_days, account_type, activation, renewable, warranty, features, activation_instructions, usage_terms, rules, rules_url, info_request_text, completion_text, delivery_instructions, reminder_days</code>
 
 <b>انبار</b>
 <code>/inventory_add PRODUCT_ID</code> — سپس payload محرمانه را بفرستید
-<code>/inventory_list PRODUCT_ID</code>
+<code>/inventory_list PRODUCT_ID [PAGE]</code>
 <code>/inventory_disable ITEM_ID</code>
 <code>/inventory_enable ITEM_ID</code>
 <code>/inventory_delete ITEM_ID</code> — فقط available/disabled
@@ -63,7 +62,7 @@ ADMIN_HELP = """🛠 <b>راهنمای مدیریت ربات</b>
 <code>/message CHAT_ID | متن</code>
 
 <b>تخفیف</b>
-<code>/discounts</code>
+<code>/discounts [PAGE]</code>
 <code>/discount_add CODE | fixed|percent | VALUE | MAX_USES|0 | PRODUCT_ID|0 | USER_CHAT_ID|0 | END_DATE|0 [| MINIMUM|0 | PER_USER_LIMIT|0 | START_DATE|0]</code>
 <code>/discount_toggle CODE</code>
 <code>/discount_delete CODE</code> — فقط کد استفاده‌نشده
@@ -73,12 +72,12 @@ ADMIN_HELP = """🛠 <b>راهنمای مدیریت ربات</b>
 <code>/ticket TICKET_NUMBER</code>
 <code>/ticket_reply TICKET_NUMBER | پاسخ</code>
 <code>/ticket_close TICKET_NUMBER</code>
-<code>/faq_categories</code>
+<code>/faq_categories [PAGE]</code>
 <code>/faq_category_add عنوان</code>
 <code>/faq_category_toggle CATEGORY_ID</code>
 <code>/faq_category_set CATEGORY_ID | name|sort_order | VALUE</code>
 <code>/faq_category_delete CATEGORY_ID</code> — فقط دسته خالی
-<code>/faqs [CATEGORY_ID]</code>
+<code>/faqs [CATEGORY_ID|all] [PAGE]</code>
 <code>/faq_add دسته | سوال | جواب</code>
 <code>/faq_toggle FAQ_ID</code>
 <code>/faq_set FAQ_ID | question|answer|category|sort_order | VALUE</code>
@@ -91,7 +90,7 @@ ADMIN_HELP = """🛠 <b>راهنمای مدیریت ربات</b>
 <code>/report orders|users|finance FROM_DATE TO_DATE</code>
 
 <b>پاداش دعوت</b>
-<code>/rewards</code>
+<code>/rewards [PAGE]</code>
 <code>/reward_add EVENT | AMOUNT | PRODUCT_ID|0 [| START|0 | END|0]</code>
 <code>/reward_toggle RULE_ID</code>
 
@@ -99,6 +98,10 @@ ADMIN_HELP = """🛠 <b>راهنمای مدیریت ربات</b>
 
 
 ADMIN_HELP_MORE = """<b>فرمان‌های تکمیلی و قالب‌بندی</b>
+
+فهرست‌های مدیریتی ۲۰ ردیف در صفحه و مسیر قبلی/بعدی دارند.
+فیلدهای محصول: <code>name, category, type, stock_limit, icon, short_description, long_description, price, duration, duration_days, account_type, activation, renewable, warranty, features, activation_instructions, usage_terms, rules, rules_url, info_request_text, completion_text, delivery_instructions, reminder_days</code>
+در <code>reminder_days</code>، صفر یعنی روز پایان اشتراک؛ نمونه: <code>7,3,1,0</code>.
 
 <code>/joins</code> — فهرست کانال‌های جوین اجباری
 <code>/inventory_edit ITEM_ID</code> — ویرایش امن موجودی

@@ -159,14 +159,17 @@ class AdminControllerTests(unittest.TestCase):
         self.assertLessEqual(len(ADMIN_HELP), 3_900)
         self.assertTrue(ADMIN_HELP.rstrip().endswith("</code>"))
 
-    def test_product_reminder_days_require_at_least_one_day(self) -> None:
+    def test_product_reminder_days_accept_same_day_and_reject_negative_days(self) -> None:
         product = self.product(product_type="manual")
 
         self.handle(f"/product_set {product['id']} | reminder_days | 7,0,1")
 
-        self.assertIn("حداقل ۱ روز", self.telegram.messages[-1]["text"])
         stored = self.db.get_product(product["id"])
-        self.assertEqual(json.loads(stored["reminder_days_json"]), [7, 3, 1])
+        self.assertEqual(json.loads(stored["reminder_days_json"]), [7, 1, 0])
+        self.handle(f"/product_set {product['id']} | reminder_days | 7,-1")
+        self.assertIn("منفی", self.telegram.messages[-1]["text"])
+        stored = self.db.get_product(product["id"])
+        self.assertEqual(json.loads(stored["reminder_days_json"]), [7, 1, 0])
 
     def test_ticket_attachments_are_retrievable_after_restart_by_support(self) -> None:
         customer = self.db.upsert_user(2201, 2201, username="ticket_customer")

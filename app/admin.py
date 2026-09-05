@@ -920,6 +920,25 @@ class AdminController:
             blocks.append("\n".join(navigation))
         self._send_blocks(chat_id, blocks)
 
+    def _management_rows(
+        self,
+        page: int,
+        query: str,
+        parameters: Sequence[Any] = (),
+    ) -> tuple[list[dict[str, Any]], int, int]:
+        """Page an internal read-only listing with the same count/filter query."""
+
+        count = self._query_one(
+            f"SELECT COUNT(*) AS total FROM ({query})", parameters
+        )
+        total = int((count or {}).get("total") or 0)
+        pages, offset = _page_bounds(total, page)
+        rows = self._query(
+            f"{query} LIMIT ? OFFSET ?",
+            (*parameters, _ADMIN_PAGE_SIZE, offset),
+        )
+        return rows, total, pages
+
     def _answer(self, callback_id: str, text: str = "", *, show_alert: bool = False) -> Any:
         if not callback_id:
             return None
@@ -1433,11 +1452,13 @@ class AdminController:
         return target
 
     def _admins(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        if rest:
-            raise AdminInputError("فرمان /admins آرگومان نمی‌گیرد.")
-        admins = self.db.list_admins(active_only=False)
-        lines = ["<b>مدیران</b>"]
-        for item in admins[:100]:
+        page = _page_number(rest) if rest else 1
+        admins, total, pages = self._management_rows(
+            page,
+            "SELECT * FROM admins ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, id",
+        )
+        lines = []
+        for item in admins:
             if not item.get("identity_verified_at"):
                 status = "در انتظار تأیید هویت"
             else:
@@ -1446,9 +1467,11 @@ class AdminController:
                 f"<code>{item['chat_id']}</code> | @{escape(item['username'])} | "
                 f"{escape(item['role'])} | {status}"
             )
-        if not admins:
-            lines.append("موردی ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="مدیران", rows=lines,
+            total=total, page=page, pages=pages, command_prefix="/admins",
+            empty_text="موردی ثبت نشده است.",
+        )
 
     def _admin_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
         parts = rest.split()
@@ -1562,11 +1585,12 @@ class AdminController:
         return result
 
     def _categories(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        if rest:
-            raise AdminInputError("فرمان /categories آرگومان نمی‌گیرد.")
-        categories = self._all_categories()
-        lines = ["<b>دسته‌ها</b>"]
-        for item in categories[:150]:
+        page = _page_number(rest) if rest else 1
+        categories, total, pages = self._management_rows(
+            page, "SELECT * FROM categories ORDER BY sort_order, id"
+        )
+        lines = []
+        for item in categories:
             marker = "فعال" if item["is_active"] else "غیرفعال"
             parent = f" | والد {item['parent_id']}" if item.get("parent_id") else ""
             icon = f"{escape(item['icon'])} " if item.get("icon") else ""
@@ -1579,9 +1603,11 @@ class AdminController:
                 f"<code>{item['id']}</code> | {icon}{escape(item['name'])}"
                 f"{parent} | {marker}{description}"
             )
-        if not categories:
-            lines.append("دسته‌ای ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="دسته‌ها", rows=lines,
+            total=total, page=page, pages=pages, command_prefix="/categories",
+            empty_text="دسته‌ای ثبت نشده است.",
+        )
 
     def _category_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         if not rest.strip():
@@ -1692,11 +1718,25 @@ class AdminController:
         self._send(self._chat_id(message, user), f"دسته <code>{category_id}</code> حذف شد.")
 
     def _products(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        category_id = _as_int(rest, "شناسه دسته") if rest.strip() else None
-        products = self.db.list_products(category_id=category_id, visible_only=False)
+        tokens = rest.split()
+        if len(tokens) > 2:
+            raise AdminInputError("نمونه: /products [CATEGORY_ID|all] [PAGE]")
+        category_id = (
+            _as_int(tokens[0], "شناسه دسته")
+            if tokens and tokens[0].lower() != "all" else None
+        )
+        page = _page_number(tokens[1]) if len(tokens) == 2 else 1
+        query = "SELECT * FROM products"
+        parameters: tuple[Any, ...] = ()
+        if category_id is not None:
+            query += " WHERE category_id = ?"
+            parameters = (category_id,)
+        products, total, pages = self._management_rows(
+            page, query + " ORDER BY id", parameters
+        )
         currency = getattr(self.settings, "currency_label", "تومان")
-        lines = ["<b>محصولات</b>"]
-        for item in products[:150]:
+        lines = []
+        for item in products:
             flags = "/".join(
                 (
                     "فعال" if item["is_active"] else "حذف‌شده",
@@ -1709,9 +1749,12 @@ class AdminController:
                 f"<code>{item['id']}</code> | {escape(item['name'])} | "
                 f"{money(item['price_amount'], currency)} | {escape(item['product_type'])} | {flags}"
             )
-        if not products:
-            lines.append("محصولی پیدا نشد.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="محصولات", rows=lines,
+            total=total, page=page, pages=pages,
+            command_prefix=f"/products {category_id if category_id is not None else 'all'}",
+            empty_text="محصولی پیدا نشد.",
+        )
 
     def _product_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = pipe_parts(rest, 5)
@@ -1780,9 +1823,9 @@ class AdminController:
                 value = [int(item.strip()) for item in value.replace("؛", ",").split(",") if item.strip()]
             except ValueError as exc:
                 raise AdminInputError("روزهای یادآوری باید عدد و با ویرگول جدا شوند.") from exc
-            if any(day <= 0 for day in value):
+            if any(day < 0 for day in value):
                 raise AdminInputError(
-                    "روزهای یادآوری باید حداقل ۱ روز پیش از پایان اشتراک باشند."
+                    "روزهای یادآوری نمی‌توانند منفی باشند؛ صفر یعنی روز پایان اشتراک."
                 )
         elif field == "rules_url":
             normalized = value.strip().casefold()
@@ -1848,22 +1891,28 @@ class AdminController:
         )
 
     def _inventory_list(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        product_id = _as_int(rest, "شناسه محصول")
-        method = self._public("list_inventory_items")
-        items = method(product_id) if method is not None else self._query(
+        tokens = rest.split()
+        if len(tokens) not in {1, 2}:
+            raise AdminInputError("نمونه: /inventory_list PRODUCT_ID [PAGE]")
+        product_id = _as_int(tokens[0], "شناسه محصول")
+        page = _page_number(tokens[1]) if len(tokens) == 2 else 1
+        items, total, pages = self._management_rows(
+            page,
             "SELECT id, product_id, status, assigned_order_id, assigned_user_id, assigned_at, created_at "
-            "FROM inventory_items WHERE product_id = ? ORDER BY id DESC LIMIT 200",
+            "FROM inventory_items WHERE product_id = ? ORDER BY id DESC",
             (product_id,),
         )
-        lines = [f"<b>انبار محصول {product_id}</b>"]
+        lines = []
         for item in items:
             lines.append(
                 f"<code>{item['id']}</code> | {escape(item['status'])} | "
                 f"سفارش {escape(item.get('assigned_order_id') or '—')}"
             )
-        if not items:
-            lines.append("آیتمی ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title=f"انبار محصول {product_id}", rows=lines,
+            total=total, page=page, pages=pages,
+            command_prefix=f"/inventory_list {product_id}", empty_text="آیتمی ثبت نشده است.",
+        )
 
     def _inventory_disable(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         item_id = _as_int(rest, "شناسه آیتم")
@@ -2041,7 +2090,7 @@ class AdminController:
 
     def _order(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         order = self._require_order(rest)
-        self._send(self._chat_id(message, user), self._format_order(order))
+        self._send_order_details(self._chat_id(message, user), order)
 
     def _order_attachment(
         self,
@@ -2100,6 +2149,10 @@ class AdminController:
             f"\nمانده پرداخت: {money(int(order.get('payable_amount') or 0), currency)}"
             f"\nزمان ثبت: {escape(order.get('created_at') or '—')}"
         )
+        return content
+
+    def _send_order_details(self, chat_id: int, order: Mapping[str, Any]) -> None:
+        self._send(chat_id, self._format_order(order))
         raw_info = order.get("customer_info_json")
         if raw_info:
             try:
@@ -2108,10 +2161,18 @@ class AdminController:
                 info = {"text": str(raw_info)}
             if isinstance(info, Mapping):
                 if info.get("text"):
-                    content += f"\n\n<b>اطلاعات کاربر:</b>\n{escape(clamp_text(str(info['text']), 1500))}"
+                    # Escape small raw chunks independently, so HTML entities and
+                    # Telegram limits never hide the end of activation input.
+                    body = str(info["text"])
+                    for index in range(0, len(body), 600):
+                        self._send(
+                            chat_id,
+                            "<b>اطلاعات کاربر:</b>"
+                            f"\nسفارش: <code>{escape(order['order_number'])}</code>"
+                            f"\n{escape(body[index:index + 600])}",
+                        )
                 if info.get("file_kind"):
-                    content += f"\nپیوست: {escape(info['file_kind'])}"
-        return content
+                    self._send(chat_id, f"پیوست: {escape(info['file_kind'])}")
 
     def _order_status(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = pipe_parts(rest, 1)
@@ -2823,7 +2884,8 @@ class AdminController:
             lines.extend(
                 f"{escape(str(item['created_at'])[:16])} | "
                 f"{money(int(item['amount_signed']), currency)} | "
-                f"{escape(item.get('reason') or item.get('entry_type') or '')} | "
+                f"نوع: {escape(texts.transaction_type(item.get('entry_type'), item.get('method')))} | "
+                f"دلیل: {escape(item.get('reason') or '—')} | "
                 f"{escape(item.get('payment_number') or item.get('order_number') or '—')}"
                 for item in transactions
             )
@@ -2855,7 +2917,7 @@ class AdminController:
             order = self.db.get_order_by_number(tail[0])
             if order is None or int(order["user_id"]) != int(target["id"]):
                 raise AdminInputError("سفارش موردنظر برای این کاربر پیدا نشد.")
-            self._send(self._chat_id(message, user), self._format_order(order))
+            self._send_order_details(self._chat_id(message, user), order)
             return
 
         page = 1
@@ -2928,7 +2990,8 @@ class AdminController:
         rows = [
             f"{escape(str(item['created_at'])[:19])} | "
             f"{money(int(item['amount_signed']), currency)} | "
-            f"{escape(item.get('reason') or item.get('entry_type') or '')} | "
+            f"نوع: {escape(texts.transaction_type(item.get('entry_type'), item.get('method')))} | "
+            f"دلیل: {escape(item.get('reason') or '—')} | "
             f"{escape(item.get('payment_number') or item.get('order_number') or '—')}"
             for item in transactions
         ]
@@ -3102,20 +3165,22 @@ class AdminController:
     # -- Discounts -------------------------------------------------------
 
     def _discounts(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        if rest:
-            raise AdminInputError("فرمان /discounts آرگومان نمی‌گیرد.")
-        method = self._public("list_discounts")
-        items = method() if method is not None else self._query("SELECT * FROM discounts ORDER BY id DESC LIMIT 200")
-        lines = ["<b>کدهای تخفیف</b>"]
+        page = _page_number(rest) if rest else 1
+        items, total, pages = self._management_rows(
+            page, "SELECT * FROM discounts ORDER BY id DESC"
+        )
+        lines = []
         for item in items:
             lines.append(
                 f"<code>{escape(item['code'])}</code> | {escape(item['discount_type'])} "
                 f"{item['value']} | {item['used_count']}/{item.get('max_uses') or '∞'} | "
                 f"{'فعال' if item['is_active'] else 'غیرفعال'}"
             )
-        if not items:
-            lines.append("کد تخفیفی ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="کدهای تخفیف", rows=lines,
+            total=total, page=page, pages=pages, command_prefix="/discounts",
+            empty_text="کد تخفیفی ثبت نشده است.",
+        )
 
     def _discount_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = pipe_parts(rest, 7)
@@ -3268,13 +3333,14 @@ class AdminController:
         ]
         for entry in entries:
             sender = "مدیریت" if entry["sender_type"] == "admin" else "کاربر"
-            block = f"<b>{sender}</b>: {escape(entry['body'])}"
+            body = str(entry["body"] or "")
+            for index in range(0, max(1, len(body)), 600):
+                blocks.append(f"<b>{sender}</b>: {escape(body[index:index + 600])}")
             if entry.get("attachment_file_id"):
-                block += (
-                    "\nپیوست ذخیره شده است؛ دریافت امن: "
+                blocks.append(
+                    "پیوست ذخیره شده است؛ دریافت امن: "
                     f"<code>/ticket_attachment {int(entry['id'])}</code>"
                 )
-            blocks.append(block)
         self._send_blocks(self._chat_id(message, user), blocks)
 
     def _ticket_attachment(
@@ -3428,19 +3494,22 @@ class AdminController:
         )
 
     def _faq_categories(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        if rest:
-            raise AdminInputError("فرمان /faq_categories آرگومان نمی‌گیرد.")
-        categories = self.db.list_faq_categories(active_only=False)
-        lines = ["<b>دسته‌های سوالات متداول</b>"]
+        page = _page_number(rest) if rest else 1
+        categories, total, pages = self._management_rows(
+            page, "SELECT * FROM faq_categories ORDER BY sort_order, id"
+        )
+        lines = []
         for category in categories:
             count = len(self.db.list_faqs(category_id=int(category["id"]), active_only=False))
             lines.append(
                 f"<code>{category['id']}</code> | {escape(category['name'])} | "
                 f"{'فعال' if category['is_active'] else 'غیرفعال'} | {count} سوال"
             )
-        if not categories:
-            lines.append("دسته‌ای ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="دسته‌های سوالات متداول", rows=lines,
+            total=total, page=page, pages=pages, command_prefix="/faq_categories",
+            empty_text="دسته‌ای ثبت نشده است.",
+        )
 
     def _faq_category_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         if not rest.strip():
@@ -3508,19 +3577,36 @@ class AdminController:
         )
 
     def _faqs(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        category_id = _as_int(rest, "شناسه دسته سوالات") if rest.strip() else None
+        tokens = rest.split()
+        if len(tokens) > 2:
+            raise AdminInputError("نمونه: /faqs [CATEGORY_ID|all] [PAGE]")
+        category_id = (
+            _as_int(tokens[0], "شناسه دسته سوالات")
+            if tokens and tokens[0].lower() != "all" else None
+        )
         if category_id is not None and self.db.get_faq_category(category_id) is None:
             raise AdminInputError("دسته سوالات پیدا نشد.")
-        items = self.db.list_faqs(category_id=category_id, active_only=False)
-        lines = ["<b>سوالات متداول</b>"]
+        page = _page_number(tokens[1]) if len(tokens) == 2 else 1
+        query = "SELECT * FROM faqs"
+        parameters: tuple[Any, ...] = ()
+        if category_id is not None:
+            query += " WHERE category_id = ?"
+            parameters = (category_id,)
+        items, total, pages = self._management_rows(
+            page, query + " ORDER BY sort_order, id", parameters
+        )
+        lines = []
         for item in items:
             lines.append(
                 f"<code>{item['id']}</code> | دسته {item.get('category_id') or '—'} | "
                 f"{escape(item['question'])} | {'فعال' if item['is_active'] else 'غیرفعال'}"
             )
-        if not items:
-            lines.append("سوالی ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="سوالات متداول", rows=lines,
+            total=total, page=page, pages=pages,
+            command_prefix=f"/faqs {category_id if category_id is not None else 'all'}",
+            empty_text="سوالی ثبت نشده است.",
+        )
 
     def _faq_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = pipe_parts(rest, 3)
@@ -3974,11 +4060,11 @@ class AdminController:
     # -- Referral rewards ------------------------------------------------
 
     def _rewards(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        if rest:
-            raise AdminInputError("فرمان /rewards آرگومان نمی‌گیرد.")
-        method = self._public("list_reward_rules")
-        items = method() if method is not None else self._query("SELECT * FROM reward_rules ORDER BY id DESC LIMIT 200")
-        lines = ["<b>قواعد پاداش</b>"]
+        page = _page_number(rest) if rest else 1
+        items, total, pages = self._management_rows(
+            page, "SELECT * FROM reward_rules ORDER BY id DESC"
+        )
+        lines = []
         for item in items:
             window = ""
             if item.get("starts_at") or item.get("ends_at"):
@@ -3991,9 +4077,11 @@ class AdminController:
                 f"{item['amount']} | محصول {item.get('product_id') or 'همه'} | "
                 f"{'فعال' if item['is_active'] else 'غیرفعال'}{window}"
             )
-        if not items:
-            lines.append("قاعده‌ای ثبت نشده است.")
-        self._send(self._chat_id(message, user), "\n".join(lines))
+        self._send_page(
+            self._chat_id(message, user), title="قواعد پاداش", rows=lines,
+            total=total, page=page, pages=pages, command_prefix="/rewards",
+            empty_text="قاعده‌ای ثبت نشده است.",
+        )
 
     def _reward_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = pipe_parts(rest, 3)

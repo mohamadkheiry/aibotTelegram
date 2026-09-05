@@ -1,9 +1,9 @@
 flowchart TD
     A(["سفارش pending_payment یا درخواست شارژ کیف پول"])
     B{"نوع عملیات"}
-    C["محاسبه بدهی، تخفیف و hold کیف پول"]
+    C["پس از تأیید صریح کاربر: محاسبه بدهی، تخفیف و hold کیف پول"]
     D{"بدهی کاملاً پوشش داده شد؟"}
-    E["capture کیف پول و پرداخت کامل"]
+    E["capture کیف پول یا تأیید صفرمبلغ؛ ثبت پرداخت کامل"]
     F{"intent فعال Order یا topup کاربر وجود دارد؟"}
     F1{"روش، مبلغ و terms دقیقاً یکسان است؟"}
     F2["بازیابی همان intent"]
@@ -21,7 +21,7 @@ flowchart TD
     M{"رخداد دقیقاً منطبق و در مهلت است؟"}
     M1["ثبت card event تأییدشده و settlement اتمیک"]
     M2["ثبت card review؛ alert و resolve فقط owner، بدون credit خودکار"]
-    N["فیش card: نخستین ارسال قبل expiry؛ replacement تا expiry+7d"]
+    N["فیش card: نخستین ارسال قبل expiry؛ بررسی و replacement تا تصمیم مدیر"]
     O["ذخیره file kind، payment verifying و alert owner/admin با hash نسخه"]
     P{"تأیید مدیر؟"}
     Q["failed و reconciliation والد"]

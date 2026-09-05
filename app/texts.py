@@ -20,6 +20,26 @@ STATUS_LABELS = {
 }
 
 
+def transaction_type(entry_type: str | None, method: str | None = None) -> str:
+    """Keep transaction kind visible independently of its free-form reason."""
+    labels = {
+        "topup": "شارژ کیف پول",
+        "admin_adjustment": "اصلاح موجودی توسط مدیر",
+        "wallet_hold": "پرداخت یا رزرو کیف پول برای سفارش",
+        "wallet_refund": "آزادسازی مبلغ رزروشده کیف پول",
+        "order_refund": "بازپرداخت سفارش",
+        "referral_reward": "پاداش دعوت",
+        "manual_credit": "افزایش اعتبار",
+        "manual_debit": "کاهش اعتبار",
+        "external_purchase": "پرداخت خرید",
+    }
+    if entry_type == "external_purchase":
+        return {"card": "پرداخت خرید با کارت", "crypto": "پرداخت ارزی خرید"}.get(
+            method or "", labels["external_purchase"],
+        )
+    return labels.get(entry_type or "", "تراکنش کیف پول")
+
+
 def provider_review_resolution(action: str, settlement: str) -> str:
     if action == "credit_confirmed":
         if settlement == "wallet_topup_credited":
@@ -92,8 +112,11 @@ def category_title(icon: str, title: str, description: str = "") -> str:
 
 def product_summary(product: dict[str, Any], currency: str) -> str:
     icon = f"{escape(product.get('icon') or '')} " if product.get("icon") else ""
+    description = product.get("short_description") or ""
+    primary_description = f"{render_rich_text(description)}\n\n" if description else ""
     return (
         f"{icon}<b>{escape(product['title'])}</b>\n\n"
+        f"{primary_description}"
         f"💵 قیمت: {money(product['price'], currency)}\n\n"
         f"🗓 مدت اشتراک: {escape(product.get('duration') or '—')}\n"
         f"🔒 نوع اشتراک: {render_rich_text(product.get('account_type') or '—')}\n"
@@ -265,6 +288,16 @@ def order_expired(order_no: str) -> str:
     )
 
 
+def wallet_topup_expired(payment: dict[str, Any], currency: str) -> str:
+    return (
+        "⌛️ <b>مهلت شارژ کیف پول تمام شد</b>\n\n"
+        f"شماره پرداخت: <code>{escape(payment['payment_number'])}</code>\n"
+        f"مبلغ: {money(payment['payable_amount'], currency)}\n\n"
+        "این درخواست شارژ منقضی شد. لطفاً دیگر مبلغ این پرداخت را واریز نکن.\n"
+        "برای افزایش اعتبار، از بخش کیف پول یک درخواست شارژ تازه ثبت کن."
+    )
+
+
 def wallet_page(balance: int, currency: str) -> str:
     return (
         "👛 <b>کیف پول</b>\n\n"
@@ -273,12 +306,74 @@ def wallet_page(balance: int, currency: str) -> str:
     )
 
 
-def referral_page(invited: int, rewards: int, link: str, currency: str) -> str:
+def referral_rule(rule: dict[str, Any], currency: str) -> str:
+    """Explain public reward terms without exposing internal rule keys."""
+    event_descriptions = {
+        "start": "شروع ربات توسط هر دوست جدید پس از عضویت اجباری؛ یک‌بار برای هر دوست",
+        "first_purchase": "اولین خرید موفق هر دوست دعوت‌شده؛ یک‌بار برای هر دوست",
+        "product_purchase": "هر خرید موفق دوست دعوت‌شده از محصولات مشمول",
+        "combined": "هر خرید موفق دوست دعوت‌شده با برقرار بودن هم‌زمان همه شرایط زیر",
+    }
+    event = str(rule.get("event_type") or "")
+    lines = [
+        f"• <b>{money(int(rule['amount']), currency)}</b> — "
+        f"{event_descriptions.get(event, 'طبق شرایط این پاداش')}",
+    ]
+    if rule.get("product_names"):
+        lines.append(
+            "محصولات مشمول: "
+            + "، ".join(escape(name) for name in rule["product_names"])
+        )
+    elif event != "start":
+        lines.append("محصولات مشمول: همه محصولات")
+    conditions = rule.get("conditions") or {}
+    if conditions.get("first_purchase"):
+        lines.append("این سفارش باید اولین خرید موفق دوستت باشد.")
+    if conditions.get("minimum_successful_purchases"):
+        lines.append(
+            f"دوستت باید حداقل {int(conditions['minimum_successful_purchases'])} خرید موفق داشته باشد."
+        )
+    if conditions.get("minimum_referrals"):
+        lines.append(
+            f"دوستت باید حداقل {int(conditions['minimum_referrals'])} دعوت ثبت‌شده داشته باشد."
+        )
+    if conditions.get("minimum_qualified_referrals"):
+        lines.append(
+            f"دوستت باید حداقل {int(conditions['minimum_qualified_referrals'])} دعوت واجد پاداش داشته باشد."
+        )
+    if conditions.get("minimum_order_amount"):
+        lines.append(
+            "حداقل مبلغ سفارش دوستت پس از تخفیف: "
+            + money(int(conditions["minimum_order_amount"]), currency)
+        )
+    if rule.get("starts_at"):
+        lines.append(f"از: {escape(rule['starts_at'])} (UTC)")
+    if rule.get("ends_at"):
+        lines.append(f"تا پیش از: {escape(rule['ends_at'])} (UTC)")
+    return "\n".join(lines)
+
+
+def referral_page(
+    invited: int,
+    rewards: int,
+    link: str,
+    currency: str,
+    reward_rules: list[dict[str, Any]] | None = None,
+) -> str:
+    rules = "\n\n".join(referral_rule(rule, currency) for rule in reward_rules or [])
+    if rules:
+        explanation = (
+            "پاداش‌های فعال به کیف پول تو اضافه می‌شوند. زمان رویداد دعوت یا خرید، "
+            "مبنای بررسی بازه اعتبار است؛ اگر چند قانون برقرار باشد، پاداش‌هایشان جمع می‌شوند.\n\n"
+            "<b>نحوه دریافت پاداش‌ها:</b>\n" + rules
+        )
+    else:
+        explanation = "در حال حاضر پاداش فعالی تعریف نشده است؛ لینک دعوتت همچنان قابل استفاده است."
     return (
         "🪙 <b>دعوت و کسب درآمد</b>\n\n"
         f"تعداد دوستان دعوت‌شده: {invited}\n"
         f"مجموع پاداش: {money(rewards, currency)}\n\n"
         "دوستانت باید ربات را برای اولین بار با لینک اختصاصی تو شروع کنند. "
-        "پاداش‌ها مطابق قوانین فعال مدیریت به کیف پولت اضافه می‌شوند.\n\n"
+        f"{explanation}\n\n"
         f"لینک دعوت:\n<code>{escape(link)}</code>"
     )

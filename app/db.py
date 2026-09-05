@@ -23,6 +23,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 from .utils import is_safe_https_url, is_safe_telegram_invite_url
 
@@ -233,6 +234,7 @@ class Database:
         *,
         busy_timeout_ms: int = 5_000,
         schema_path: str | Path | None = None,
+        reminder_timezone: str = "Asia/Tehran",
     ) -> None:
         if str(path) == ":memory:":
             raise ValueError("per-operation connections require a file-backed SQLite database")
@@ -240,6 +242,7 @@ class Database:
             raise ValueError("busy_timeout_ms must be positive")
         self.path = Path(path).expanduser().resolve()
         self.busy_timeout_ms = int(busy_timeout_ms)
+        self.reminder_timezone = ZoneInfo(reminder_timezone)
         self.schema_path = (
             Path(schema_path).expanduser().resolve()
             if schema_path is not None
@@ -1947,9 +1950,7 @@ class Database:
                 raise ValidationError("stock_limit cannot be negative")
         if rules_url is not None and not is_safe_https_url(rules_url):
             raise ValidationError("rules_url must be a safe absolute HTTPS URL")
-        normalized_reminders = sorted({int(day) for day in reminder_days}, reverse=True)
-        if any(day <= 0 for day in normalized_reminders):
-            raise ValidationError("reminder days must be positive")
+        normalized_reminders = self._normalize_reminder_days(reminder_days)
         clean_name = name.strip()
         if not clean_name:
             raise ValidationError("product name cannot be empty")
@@ -2137,9 +2138,7 @@ class Database:
                 value = _json_dump(list(value or []))
             elif key == "reminder_days":
                 column = "reminder_days_json"
-                values = sorted({int(day) for day in value}, reverse=True)
-                if any(day <= 0 for day in values):
-                    raise ValidationError("reminder days must be positive")
+                values = self._normalize_reminder_days(value)
                 value = _json_dump(values)
             assignments.append(f"{column} = ?")
             parameters.append(value)
@@ -2437,6 +2436,23 @@ class Database:
 
     # -- Orders, reservations and atomic inventory --------------------------
 
+    @staticmethod
+    def _allocate_paid_timestamp(connection: sqlite3.Connection, stamp: str) -> str:
+        """Preserve first-payment commit order within one UTC second.
+
+        Only paid_at uses the extra precision. Receipt deadlines and provider
+        evidence timestamps retain their original timestamps. Call this inside
+        the first-payment transaction, never during replay.
+        """
+        current = _parse_timestamp(stamp)
+        latest = connection.execute(
+            "SELECT MAX(paid_at) FROM orders WHERE substr(paid_at, 1, 19) = ?",
+            (current.isoformat(timespec="seconds")[:19],),
+        ).fetchone()[0]
+        if latest is not None:
+            current = max(current, _parse_timestamp(latest) + timedelta(microseconds=1))
+        return current.isoformat(timespec="microseconds")
+
     def create_order(
         self,
         user_id: int,
@@ -2445,6 +2461,7 @@ class Database:
         quantity: int = 1,
         idempotency_key: str | None = None,
         expires_in_minutes: int = 30,
+        defer_free_confirmation: bool = False,
         order_notice: (
             Callable[
                 [Mapping[str, Any]],
@@ -2521,7 +2538,10 @@ class Database:
             if not product["is_available"]:
                 raise OutOfStockError("product is currently unavailable")
             subtotal = int(product["price_amount"]) * int(quantity)
-            initially_paid = subtotal == 0
+            # Internal callers historically use zero-price orders as already
+            # confirmed allocations. The customer UI explicitly defers them
+            # until the buyer presses Payment on the saved summary.
+            initially_paid = subtotal == 0 and not defer_free_confirmation
             status = "paid" if initially_paid else "pending_payment"
             # A subscription starts when credentials/service are delivered,
             # not when the payment is merely accepted.
@@ -2557,7 +2577,8 @@ class Database:
                             product["currency"],
                             status,
                             expires,
-                            stamp if initially_paid else None,
+                            self._allocate_paid_timestamp(connection, stamp)
+                            if initially_paid else None,
                             subscription_ends,
                             stamp,
                             stamp,
@@ -2728,7 +2749,7 @@ class Database:
         limit: int = 100,
         after_id: int = 0,
     ) -> list[dict[str, Any]]:
-        """Return successful wallet-only/full-discount orders lacking notice."""
+        """Return successful wallet-only/discount/free UI orders lacking notice."""
 
         with self._read() as connection:
             return _rows(
@@ -2736,6 +2757,7 @@ class Database:
                     """
                     SELECT o.*,
                            CASE
+                               WHEN o.subtotal_amount = 0 THEN 'free'
                                WHEN o.subtotal_amount > 0
                                 AND o.discount_amount >= o.subtotal_amount
                                    THEN 'discount'
@@ -2749,6 +2771,15 @@ class Database:
                       )
                       AND o.external_paid_amount = 0
                       AND (
+                          (
+                              o.subtotal_amount = 0
+                              AND EXISTS (
+                                  SELECT 1 FROM outbound_messages created
+                                  WHERE created.idempotency_key =
+                                      'order:' || o.id || ':created-summary'
+                              )
+                          )
+                          OR
                           (
                               o.subtotal_amount > 0
                               AND o.discount_amount >= o.subtotal_amount
@@ -2764,6 +2795,7 @@ class Database:
                           WHERE om.idempotency_key =
                               'order:' || o.id || ':' ||
                               CASE
+                                  WHEN o.subtotal_amount = 0 THEN 'free-confirmed'
                                   WHEN o.subtotal_amount > 0
                                    AND o.discount_amount >= o.subtotal_amount
                                       THEN 'discount-confirmed'
@@ -2791,8 +2823,14 @@ class Database:
                 (int(order_id),),
                 "order",
             )
+            is_free_ui_order = False
             if int(order["subtotal_amount"]) <= 0:
-                return True
+                is_free_ui_order = connection.execute(
+                    "SELECT 1 FROM outbound_messages WHERE idempotency_key = ?",
+                    (f"order:{int(order_id)}:created-summary",),
+                ).fetchone() is not None
+                if not is_free_ui_order:
+                    return True
             payment = connection.execute(
                 """
                 SELECT id FROM payments
@@ -2801,7 +2839,9 @@ class Database:
                 """,
                 (int(order_id),),
             ).fetchone()
-            if payment is not None:
+            if is_free_ui_order:
+                key = f"order:{int(order_id)}:free-confirmed"
+            elif payment is not None:
                 key = f"payment:{int(payment['id'])}:order-confirmed"
             elif int(order["discount_amount"]) >= int(order["subtotal_amount"]):
                 key = f"order:{int(order_id)}:discount-confirmed"
@@ -3079,6 +3119,20 @@ class Database:
                 self._required(connection, "SELECT * FROM reservations WHERE id = ?", (cursor.lastrowid,), "reservation")
             )
 
+    @staticmethod
+    def _ready_order_priority_sql(alias: str) -> str:
+        # New paid_at values carry the durable first-payment sequence. For
+        # legacy equal timestamps, preserve known queue order; where there is
+        # no queue evidence the final ID is only a deterministic fallback.
+        if alias not in {"older", "o", "current_order"}:
+            raise ValueError("unsupported order alias")
+        return (
+            f"COALESCE({alias}.paid_at, {alias}.created_at), "
+            "COALESCE((SELECT MIN(queue.id) FROM reservations queue "
+            f"WHERE queue.order_id = {alias}.id AND queue.status = 'queued'), "
+            f"9223372036854775807), {alias}.id"
+        )
+
     def _assign_inventory(
         self,
         connection: sqlite3.Connection,
@@ -3096,6 +3150,28 @@ class Database:
         ).fetchone()
         if existing:
             return existing
+        # A fresh checkout must not consume a restock before an earlier paid
+        # order, including an order whose reservation has not yet been queued.
+        # Keep the fairness check in the same transaction as the stock claim.
+        prior_order = connection.execute(
+            f"""
+            SELECT older.id FROM orders older
+            JOIN orders current_order ON current_order.id = ?
+            WHERE older.product_id = ?
+              AND older.product_type_snapshot = 'ready'
+              AND older.status IN ('paid', 'processing', 'awaiting_stock')
+              AND NOT EXISTS (
+                  SELECT 1 FROM inventory_items assigned
+                  WHERE assigned.assigned_order_id = older.id
+              )
+              AND ({self._ready_order_priority_sql('older')})
+                < ({self._ready_order_priority_sql('current_order')})
+            LIMIT 1
+            """,
+            (order_id, order["product_id"]),
+        ).fetchone()
+        if prior_order is not None:
+            raise OutOfStockError("available inventory belongs to an earlier paid order")
         candidate = connection.execute(
             """
             SELECT inventory.*, product.delivery_instructions
@@ -3179,12 +3255,20 @@ class Database:
         stamp = _timestamp(now)
         with self._transaction() as connection:
             reservation = connection.execute(
-                """
+                f"""
                 SELECT r.* FROM reservations r
                 JOIN orders o ON o.id = r.order_id
                 WHERE r.product_id = ? AND r.status = 'queued'
                   AND o.status IN ('paid', 'processing', 'awaiting_stock')
-                ORDER BY r.id LIMIT 1
+                  AND NOT EXISTS (
+                      SELECT 1 FROM orders older
+                      WHERE older.product_id = o.product_id
+                        AND older.product_type_snapshot = 'ready'
+                        AND older.status IN ('paid', 'processing', 'awaiting_stock')
+                        AND ({self._ready_order_priority_sql('older')})
+                          < ({self._ready_order_priority_sql('o')})
+                  )
+                ORDER BY {self._ready_order_priority_sql('o')} LIMIT 1
                 """,
                 (product_id,),
             ).fetchone()
@@ -3205,17 +3289,25 @@ class Database:
         stamp = _timestamp(now)
         with self._transaction() as connection:
             reservation = connection.execute(
-                """
+                f"""
                 SELECT r.* FROM reservations r
                 JOIN orders o ON o.id = r.order_id
                 WHERE r.status = 'queued'
                   AND o.status IN ('paid', 'processing', 'awaiting_stock')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM orders older
+                      WHERE older.product_id = o.product_id
+                        AND older.product_type_snapshot = 'ready'
+                        AND older.status IN ('paid', 'processing', 'awaiting_stock')
+                        AND ({self._ready_order_priority_sql('older')})
+                          < ({self._ready_order_priority_sql('o')})
+                  )
                   AND EXISTS (
                       SELECT 1 FROM inventory_items i
                       WHERE i.product_id = r.product_id
                         AND i.status = 'available'
                   )
-                ORDER BY r.id LIMIT 1
+                ORDER BY {self._ready_order_priority_sql('o')} LIMIT 1
                 """
             ).fetchone()
             if reservation is None:
@@ -3235,7 +3327,7 @@ class Database:
         stamp = _timestamp(now)
         with self._transaction() as connection:
             candidate = connection.execute(
-                """
+                f"""
                 SELECT o.id FROM orders o
                 WHERE o.status = 'processing'
                   AND o.product_type_snapshot = 'ready'
@@ -3244,21 +3336,19 @@ class Database:
                       WHERE assigned.assigned_order_id = o.id
                   )
                   AND NOT EXISTS (
-                      SELECT 1 FROM reservations queued
-                      JOIN orders reserved_order
-                        ON reserved_order.id = queued.order_id
-                      WHERE queued.product_id = o.product_id
-                        AND queued.status = 'queued'
-                        AND reserved_order.status IN (
-                            'paid', 'processing', 'awaiting_stock'
-                        )
+                      SELECT 1 FROM orders older
+                      WHERE older.product_id = o.product_id
+                        AND older.product_type_snapshot = 'ready'
+                        AND older.status IN ('paid', 'processing', 'awaiting_stock')
+                        AND ({self._ready_order_priority_sql('older')})
+                          < ({self._ready_order_priority_sql('o')})
                   )
                   AND EXISTS (
                       SELECT 1 FROM inventory_items available
                       WHERE available.product_id = o.product_id
                         AND available.status = 'available'
                   )
-                ORDER BY o.id LIMIT 1
+                ORDER BY {self._ready_order_priority_sql('o')} LIMIT 1
                 """
             ).fetchone()
             if candidate is None:
@@ -3771,6 +3861,10 @@ class Database:
             new_held = order["wallet_held_amount"] + held
             payable = order["subtotal_amount"] - order["discount_amount"] - new_held
             paid = payable == 0
+            paid_at = (
+                order["paid_at"] or self._allocate_paid_timestamp(connection, stamp)
+                if paid else order["paid_at"]
+            )
             subscription_ends = order["subscription_ends_at"]
             connection.execute(
                 """
@@ -3789,7 +3883,7 @@ class Database:
                     new_held,
                     int(paid),
                     int(paid),
-                    stamp,
+                    paid_at,
                     subscription_ends,
                     stamp,
                     order_id,
@@ -4130,25 +4224,48 @@ class Database:
                 "UPDATE discounts SET used_count = used_count + 1, updated_at = ? WHERE id = ?",
                 (stamp, discount["id"]),
             )
-            fully_discounted = amount >= int(order["subtotal_amount"])
             connection.execute(
                 """
                 UPDATE orders
                 SET discount_amount = ?, payable_amount = subtotal_amount - ?,
-                    status = CASE WHEN ? THEN 'paid' ELSE status END,
-                    paid_at = CASE WHEN ? THEN COALESCE(paid_at, ?) ELSE paid_at END,
                     updated_at = ?
                 WHERE id = ?
                 """,
-                (
-                    amount,
-                    amount,
-                    int(fully_discounted),
-                    int(fully_discounted),
-                    stamp,
-                    stamp,
-                    order_id,
-                ),
+                (amount, amount, stamp, order_id),
+            )
+            return dict(self._required(connection, "SELECT * FROM orders WHERE id = ?", (order_id,), "order"))
+
+    def confirm_zero_payable_order(
+        self,
+        order_id: int,
+        user_id: int,
+        *,
+        now: datetime | str | None = None,
+    ) -> dict[str, Any]:
+        """Confirm a zero-total summary without creating a financial payment."""
+        stamp = _timestamp(now)
+        with self._transaction() as connection:
+            order = self._required(
+                connection, "SELECT * FROM orders WHERE id = ?", (order_id,), "order"
+            )
+            if int(order["user_id"]) != int(user_id):
+                raise NotFoundError("order not found")
+            if (
+                int(order["subtotal_amount"]) - int(order["discount_amount"]) != 0
+                or int(order["wallet_held_amount"])
+                or int(order["wallet_captured_amount"])
+                or int(order["external_paid_amount"])
+            ):
+                raise ValidationError("only a zero-total order can be confirmed without payment")
+            if order["status"] in {"paid", "processing", "awaiting_stock", "awaiting_info", "completed"}:
+                return dict(order)
+            if order["status"] != "pending_payment":
+                raise ValidationError("order does not accept confirmation")
+            if _parse_timestamp(order["expires_at"]) <= _parse_timestamp(stamp):
+                raise ValidationError("order has expired")
+            connection.execute(
+                "UPDATE orders SET status = 'paid', paid_at = ?, updated_at = ? WHERE id = ?",
+                (self._allocate_paid_timestamp(connection, stamp), stamp, order_id),
             )
             return dict(self._required(connection, "SELECT * FROM orders WHERE id = ?", (order_id,), "order"))
 
@@ -5845,6 +5962,29 @@ class Database:
                 ).fetchall()
             )
 
+    def list_expired_wallet_topups_missing_notice(
+        self, *, limit: int = 100, after_id: int = 0
+    ) -> list[dict[str, Any]]:
+        """Recover expiry warnings even when the expiry sweep already committed."""
+        with self._read() as connection:
+            return _rows(
+                connection.execute(
+                    """
+                    SELECT payment.* FROM payments payment
+                    WHERE payment.purpose = 'wallet_topup'
+                      AND payment.status = 'expired' AND payment.id > ?
+                      AND NOT EXISTS (
+                          SELECT 1 FROM outbound_messages outbound
+                          WHERE outbound.idempotency_key =
+                              'payment:' || payment.id || ':topup-expired'
+                            AND outbound.status IN ('sent', 'failed', 'cancelled')
+                      )
+                    ORDER BY payment.id LIMIT ?
+                    """,
+                    (max(0, int(after_id)), max(1, min(int(limit), 1_000))),
+                ).fetchall()
+            )
+
     def list_verifying_card_receipts(
         self, *, limit: int = 100, after_id: int = 0
     ) -> list[dict[str, Any]]:
@@ -5931,9 +6071,13 @@ class Database:
         *,
         file_kind: str | None = None,
         now: datetime | str | None = None,
-        review_grace_days: int = 7,
+        review_grace_days: int | None = None,
     ) -> dict[str, Any]:
-        """Persist a receipt and enter manual review atomically."""
+        """Persist a receipt and enter manual review until an admin decides.
+
+        review_grace_days is accepted for compatibility only; a submitted
+        receipt must never become terminal solely because an admin is delayed.
+        """
 
         clean_file_id = str(file_id).strip()
         if not clean_file_id:
@@ -5941,8 +6085,6 @@ class Database:
         clean_file_kind = str(file_kind or "document").strip().lower()
         if clean_file_kind not in {"photo", "document"}:
             raise ValidationError("receipt file kind must be photo or document")
-        if review_grace_days < 1:
-            raise ValidationError("receipt review grace must be positive")
         stamp = _timestamp(now)
         with self._transaction() as connection:
             payment = self._required(
@@ -5959,8 +6101,6 @@ class Database:
             received_at = _parse_timestamp(stamp)
             if payment["receipt_file_id"] is None and received_at >= deadline:
                 raise ValidationError("the first receipt arrived after payment expiry")
-            if received_at >= deadline + timedelta(days=int(review_grace_days)):
-                raise ValidationError("the receipt review grace has expired")
             connection.execute(
                 """
                 UPDATE payments
@@ -6386,6 +6526,10 @@ class Database:
                     committed_wallet = order["wallet_held_amount"] - order["wallet_refunded_amount"]
                     total_due = order["subtotal_amount"] - order["discount_amount"]
                     fully_paid = external_paid + committed_wallet >= total_due
+                    paid_at = (
+                        order["paid_at"] or self._allocate_paid_timestamp(connection, stamp)
+                        if fully_paid else order["paid_at"]
+                    )
                     connection.execute(
                         """
                         UPDATE orders
@@ -6402,7 +6546,7 @@ class Database:
                             committed_wallet,
                             int(fully_paid),
                             int(fully_paid),
-                            stamp,
+                            paid_at,
                             stamp,
                             order["id"],
                         ),
@@ -6708,14 +6852,9 @@ class Database:
         *,
         now: datetime | str | None = None,
         limit: int = 500,
-        receipt_review_grace_days: int = 7,
+        receipt_review_grace_days: int | None = None,
     ) -> list[int]:
         stamp = _timestamp(now)
-        if receipt_review_grace_days < 1:
-            raise ValidationError("receipt review grace must be positive")
-        review_cutoff = _timestamp(
-            _parse_timestamp(stamp) - timedelta(days=int(receipt_review_grace_days))
-        )
         expired_ids: list[int] = []
         with self._transaction() as connection:
             candidates = connection.execute(
@@ -6734,11 +6873,10 @@ class Database:
                       WHERE p.order_id = o.id
                         AND p.status IN ('pending', 'verifying')
                         AND p.receipt_file_id IS NOT NULL
-                        AND p.expires_at > ?
                   )
                 ORDER BY o.expires_at LIMIT ?
                 """,
-                (stamp, review_cutoff, max(1, min(int(limit), 5_000))),
+                (stamp, max(1, min(int(limit), 5_000))),
             ).fetchall()
             for order in candidates:
                 self._refund_wallet_hold(
@@ -6767,30 +6905,19 @@ class Database:
         *,
         now: datetime | str | None = None,
         limit: int = 500,
-        receipt_review_grace_days: int = 7,
+        receipt_review_grace_days: int | None = None,
     ) -> list[int]:
         stamp = _timestamp(now)
-        if receipt_review_grace_days < 1:
-            raise ValidationError("receipt review grace must be positive")
-        review_cutoff = _timestamp(
-            _parse_timestamp(stamp) - timedelta(days=int(receipt_review_grace_days))
-        )
         with self._transaction() as connection:
             rows = connection.execute(
                 """
                 SELECT id, order_id FROM payments
-                WHERE method <> 'crypto' AND (
-                    (status = 'pending' AND expires_at <= ? AND receipt_file_id IS NULL)
-                    OR (
-                        status IN ('pending', 'verifying') AND (
-                            (receipt_file_id IS NULL AND expires_at <= ?)
-                            OR (receipt_file_id IS NOT NULL AND expires_at <= ?)
-                        )
-                    )
-                )
+                WHERE method <> 'crypto'
+                  AND status IN ('pending', 'verifying')
+                  AND receipt_file_id IS NULL AND expires_at <= ?
                 ORDER BY expires_at LIMIT ?
                 """,
-                (stamp, stamp, review_cutoff, max(1, min(int(limit), 5_000))),
+                (stamp, max(1, min(int(limit), 5_000))),
             ).fetchall()
             ids = [int(row["id"]) for row in rows]
             if ids:
@@ -8242,16 +8369,16 @@ class Database:
             return dict(self._required(connection, "SELECT * FROM reward_rules WHERE id = ?", (cursor.lastrowid,), "reward rule"))
 
     def list_reward_rules(
-        self, *, active_only: bool = False, limit: int = 200
+        self, *, active_only: bool = False, limit: int = 200, offset: int = 0
     ) -> list[dict[str, Any]]:
         query = "SELECT * FROM reward_rules"
         if active_only:
             query += " WHERE is_active = 1"
-        query += " ORDER BY id DESC LIMIT ?"
+        query += " ORDER BY id DESC LIMIT ? OFFSET ?"
         with self._read() as connection:
             return _rows(
                 connection.execute(
-                    query, (max(1, min(int(limit), 1_000)),)
+                    query, (max(1, min(int(limit), 1_000)), max(0, int(offset)))
                 ).fetchall()
             )
 
@@ -8876,6 +9003,12 @@ class Database:
 
     # -- Subscription reminders --------------------------------------------
 
+    @staticmethod
+    def _normalize_reminder_days(days: Sequence[int]) -> list[int]:
+        if any(type(day) is not int or day < 0 for day in days):
+            raise ValidationError("reminder days must be non-negative integers")
+        return sorted(set(days), reverse=True)
+
     def _schedule_order_reminders(
         self,
         connection: sqlite3.Connection,
@@ -8898,18 +9031,21 @@ class Database:
         end_at = _parse_timestamp(order["subscription_ends_at"])
         current = _parse_timestamp(stamp)
         ids: list[int] = []
-        for raw_day in selected:
-            day = int(raw_day)
-            if day < 0:
-                raise ValidationError("reminder days cannot be negative")
-            # Version 7 and earlier accepted zero, which schedules exactly at
-            # subscription expiry and can never produce a truthful reminder.
-            # Ignore such legacy rows while all new inputs are rejected below.
+        for day in self._normalize_reminder_days(selected):
             if day == 0:
-                continue
-            remind_at = end_at - timedelta(days=day)
-            if remind_at <= current:
-                continue
+                # "Same day" means the beginning of the local expiry date,
+                # not the expiry instant. If scheduled during that date it is
+                # due now, but an already expired subscription is never sent.
+                day_start = end_at.astimezone(self.reminder_timezone).replace(
+                    hour=0, minute=0, second=0, microsecond=0,
+                ).astimezone(timezone.utc)
+                remind_at = max(day_start, current)
+                if remind_at >= end_at:
+                    continue
+            else:
+                remind_at = end_at - timedelta(days=day)
+                if remind_at <= current:
+                    continue
             connection.execute(
                 """
                 INSERT OR IGNORE INTO reminders(
@@ -8933,8 +9069,8 @@ class Database:
         days_before: Sequence[int] | None = None,
         now: datetime | str | None = None,
     ) -> list[dict[str, Any]]:
-        if days_before is not None and any(int(day) <= 0 for day in days_before):
-            raise ValidationError("reminder days must be positive")
+        if days_before is not None:
+            self._normalize_reminder_days(days_before)
         stamp = _timestamp(now)
         with self._transaction() as connection:
             ids = self._schedule_order_reminders(connection, order_id, stamp, days_before)
@@ -8947,6 +9083,12 @@ class Database:
                     ids,
                 ).fetchall()
             )
+
+    def get_reminder(self, reminder_id: int) -> dict[str, Any] | None:
+        with self._read() as connection:
+            return _row(connection.execute(
+                "SELECT * FROM reminders WHERE id = ?", (int(reminder_id),),
+            ).fetchone())
 
     def claim_due_reminders(
         self,

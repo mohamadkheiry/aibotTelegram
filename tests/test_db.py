@@ -324,17 +324,17 @@ class IdentityAndStateTests(DatabaseTestCase):
 
 
 class CatalogAndInventoryTests(DatabaseTestCase):
-    def test_zero_day_reminders_are_rejected_and_one_day_is_schedulable(self) -> None:
+    def test_negative_reminders_are_rejected_and_one_day_is_schedulable(self) -> None:
         category = self.db.create_category("Reminder validation", now=BASE_TIME)
-        with self.assertRaisesRegex(ValidationError, "must be positive"):
+        with self.assertRaisesRegex(ValidationError, "non-negative integers"):
             self.db.create_product(
                 category["id"],
-                "Invalid same-day reminder",
+                "Invalid negative reminder",
                 product_type="manual",
                 price_amount=0,
                 duration_days=2,
-                reminder_days=(1, 0),
-                idempotency_key="invalid-zero-reminder",
+                reminder_days=(1, -1),
+                idempotency_key="invalid-negative-reminder",
                 now=BASE_TIME,
             )
 
@@ -348,8 +348,8 @@ class CatalogAndInventoryTests(DatabaseTestCase):
             idempotency_key="valid-one-day-reminder",
             now=BASE_TIME,
         )
-        with self.assertRaisesRegex(ValidationError, "must be positive"):
-            self.db.update_product(product["id"], reminder_days=(0,), now=BASE_TIME)
+        with self.assertRaisesRegex(ValidationError, "non-negative integers"):
+            self.db.update_product(product["id"], reminder_days=(-1,), now=BASE_TIME)
 
         user = self.user(88)
         order = self.db.create_order(
@@ -367,8 +367,8 @@ class CatalogAndInventoryTests(DatabaseTestCase):
             [item["id"] for item in self.db.claim_due_reminders(now=BASE_TIME + timedelta(days=1))],
             [reminders[0]["id"]],
         )
-        with self.assertRaisesRegex(ValidationError, "must be positive"):
-            self.db.schedule_order_reminders(order["id"], days_before=(0,), now=BASE_TIME)
+        with self.assertRaisesRegex(ValidationError, "non-negative integers"):
+            self.db.schedule_order_reminders(order["id"], days_before=(-1,), now=BASE_TIME)
 
     def test_rich_catalog_and_unavailable_visible_product(self) -> None:
         parent = self.db.create_category("Digital")
@@ -1387,7 +1387,7 @@ class CommerceTests(DatabaseTestCase):
         self.assertEqual(self.db.get_order(order["id"])["status"], "awaiting_confirmation")
         self.assertEqual(self.db.get_payment(payment["id"])["status"], "verifying")
 
-    def test_receipt_grace_is_anchored_to_the_immutable_payment_deadline(self) -> None:
+    def test_submitted_receipt_stays_pending_until_explicit_admin_decision(self) -> None:
         user = self.user()
         product = self.product(price=1_000, sku="receipt-grace-anchor")
         order = self.db.create_order(
@@ -1406,14 +1406,19 @@ class CommerceTests(DatabaseTestCase):
         after_original_grace = BASE_TIME + timedelta(days=7, minutes=31)
         self.assertEqual(
             self.db.expire_pending_payments(now=after_original_grace),
-            [payment["id"]],
+            [],
         )
-        self.assertEqual(self.db.get_payment(payment["id"])["status"], "expired")
-        self.assertEqual(self.db.get_order(order["id"])["status"], "expired")
-        with self.assertRaises(ValidationError):
-            self.db.submit_payment_receipt(
-                payment["id"], "receipt-three", now=after_original_grace
-            )
+        self.assertEqual(self.db.expire_unpaid_orders(now=after_original_grace), [])
+        self.assertEqual(self.db.get_payment(payment["id"])["status"], "verifying")
+        self.assertEqual(self.db.get_order(order["id"])["status"], "awaiting_confirmation")
+        self.db.submit_payment_receipt(
+            payment["id"], "receipt-three", now=after_original_grace
+        )
+        self.db.mark_payment_paid(
+            payment["id"], external_reference="delayed-receipt-review", now=after_original_grace
+        )
+        self.assertEqual(self.db.get_payment(payment["id"])["status"], "paid")
+        self.assertEqual(self.db.get_order(order["id"])["status"], "paid")
 
     def test_first_receipt_is_rejected_after_the_payment_deadline(self) -> None:
         user = self.user()

@@ -9,8 +9,8 @@ flowchart TD
     H["دریافت نام و contact متعلق به همان کاربر"]
     I["ایجاد اتمیک Order، snapshot و خلاصه پایدار created-summary؛ سپس پاک‌کردن state"]
     J["اعمال اختیاری تخفیف"]
-    K["انتخاب و تکمیل پرداخت"]
-    L{"پرداخت کامل یا تخفیف صددرصد شد؟"}
+    K["تأیید صریح پرداخت؛ حتی محصول رایگان یا تخفیف صددرصد"]
+    L{"تأیید و تسویه کامل شد؟"}
     M["سفارش pending_payment باقی می‌ماند"]
     L0["queue/attempt اعلان canonical شماره سفارش، محصول، مبلغ و روش"]
     L1{"اعلان sent یا terminal failed/cancelled است؟"}
@@ -18,7 +18,7 @@ flowchart TD
     N["اعمال پاداش‌های خرید به‌صورت idempotent"]
     O0{"render نهایی تحویل حداکثر ۳۹۰۰ نویسه است؟"}
     O1["رد پیش از تغییر inventory یا سفارش؛ اصلاح payload یا instructions"]
-    O{"assign_inventory موفق است؟"}
+    O{"نوبت FIFO پرداخت و assign_inventory مجاز است؟"}
     P["اتصال اتمیک inventory item به سفارش و کاربر"]
     Q["تکمیل سفارش، ثبت payload و شروع مدت اشتراک"]
     R["صف‌کردن پیام تحویل در outbox پایدار"]
@@ -50,9 +50,9 @@ flowchart TD
     S -->|"بله"| T --> U --> X
     S -->|"خیر"| V --> W --> X
 
-    Later["با افزودن موجودی، worker قدیمی‌ترین reservation را FIFO تکمیل و تحویل می‌دهد."]
+    Later["FIFO همه سفارش‌های ready پرداخت‌شده؛ paid_at دقیق، نه ترتیب ایجاد سفارش یا صف"]
     Later -.-> T
-    LaterProcessing["سفارش ready در processing فقط وقتی fulfil می‌شود که reservation معتبر قدیمی‌تری برای همان محصول باقی نمانده باشد؛ cap چرخه صف را دور نمی‌زند"]
+    LaterProcessing["پرداخت‌شدهٔ قدیمی‌تر حتی پیش از ساخت reservation مقدم است؛ خرید تازه و cap چرخه صف را دور نمی‌زنند"]
     LaterProcessing -.-> V
     Direct["/inventory_assign مستقیم فقط بدون backlog ready همان محصول؛ وگرنه conflict برای حفظ FIFO"]
     Direct -.-> O

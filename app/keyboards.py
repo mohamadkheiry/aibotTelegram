@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
-from .utils import is_safe_https_url
+from .utils import is_safe_https_url, is_safe_telegram_channel_url
 
 
 Button = dict[str, Any]
@@ -237,6 +237,38 @@ def main_menu_keyboard(
     return reply_keyboard(rows, resize_keyboard=True, is_persistent=is_persistent)
 
 
+def inline_main_menu_keyboard(
+    icon_ids: Mapping[str, str] | None = None,
+    main_channel_url: str = "",
+) -> ReplyMarkup:
+    """Build the canonical five-row menu, including a direct Channel link."""
+    icons = dict(icon_ids or {})
+    callbacks = {
+        SHOP: "store",
+        WALLET: "wallet",
+        ACCOUNT: "profile",
+        SUPPORT: "support",
+        REFERRAL: "referral",
+        CHANNEL: "channel",
+    }
+    channel_url = str(main_channel_url or "").strip()
+    rows: list[list[Button]] = []
+    for row in MAIN_MENU_ROWS:
+        buttons: list[Button] = []
+        for label in row:
+            presentation = {
+                "style": _MAIN_STYLES[label],
+                "icon_custom_emoji_id": icons.get(_MAIN_ICON_KEYS[label]) or icons.get(label),
+            }
+            if label == CHANNEL and is_safe_telegram_channel_url(channel_url):
+                button = url_button(label, channel_url, **presentation)
+            else:
+                button = callback_button(label, callbacks[label], **presentation)
+            buttons.append(button)
+        rows.append(buttons)
+    return inline_keyboard(rows)
+
+
 def request_contact_button(
     text: str = "ارسال شماره موبایل",
     *,
@@ -422,6 +454,7 @@ __all__ = [
     "copy_text_button",
     "inline_button",
     "inline_keyboard",
+    "inline_main_menu_keyboard",
     "main_menu_keyboard",
     "main_reply_keyboard",
     "remove_keyboard",

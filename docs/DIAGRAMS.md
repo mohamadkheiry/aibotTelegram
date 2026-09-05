@@ -4,7 +4,7 @@
 
 ## راهنمای خواندن و نگهداری
 
-- منبع حقیقت رفتار، کدهای `app/bot.py`، `app/db.py`، `app/admin.py` و `app/schema.sql` است؛ نمودارها نمای فشردهٔ همان رفتارند.
+- نمودارها نمای فشردهٔ رفتار کدهای `app/bot.py`، `app/db.py`، `app/admin.py` و `app/schema.sql` هستند؛ معیار پذیرش، درخواست مستقیم کاربر و نیازمندی‌های اصلی پذیرفته‌شده است و کد یا نمودار ناسازگار باید اصلاح شود.
 - `ready` یعنی محصول دارای payload قابل تحویل از انبار؛ `manual` یعنی محصولی که پس از پرداخت به اطلاعات کاربر و اقدام مدیر نیاز دارد.
 - `payment` می‌تواند متعلق به سفارش یا شارژ کیف پول باشد. برداشت کیف پول در ledger تغییرناپذیر ثبت می‌شود و ممکن است بخشی از مبلغ سفارش را پوشش دهد.
 - پیام پایدار یعنی ابتدا در `outbound_messages` با `idempotency_key` ثابت ثبت می‌شود و worker مسئول ارسال و retry است.
@@ -472,8 +472,8 @@ flowchart TD
     H["دریافت نام و contact متعلق به همان کاربر"]
     I["ایجاد اتمیک Order، snapshot و خلاصه پایدار created-summary؛ سپس پاک‌کردن state"]
     J["اعمال اختیاری تخفیف"]
-    K["انتخاب و تکمیل پرداخت"]
-    L{"پرداخت کامل یا تخفیف صددرصد شد؟"}
+    K["تأیید صریح پرداخت؛ حتی محصول رایگان یا تخفیف صددرصد"]
+    L{"تأیید و تسویه کامل شد؟"}
     M["سفارش pending_payment باقی می‌ماند"]
     L0["queue/attempt اعلان canonical شماره سفارش، محصول، مبلغ و روش"]
     L1{"اعلان sent یا terminal failed/cancelled است؟"}
@@ -481,7 +481,7 @@ flowchart TD
     N["اعمال پاداش‌های خرید به‌صورت idempotent"]
     O0{"render نهایی تحویل حداکثر ۳۹۰۰ نویسه است؟"}
     O1["رد پیش از تغییر inventory یا سفارش؛ اصلاح payload یا instructions"]
-    O{"assign_inventory موفق است؟"}
+    O{"نوبت FIFO پرداخت و assign_inventory مجاز است؟"}
     P["اتصال اتمیک inventory item به سفارش و کاربر"]
     Q["تکمیل سفارش، ثبت payload و شروع مدت اشتراک"]
     R["صف‌کردن پیام تحویل در outbox پایدار"]
@@ -513,9 +513,9 @@ flowchart TD
     S -->|"بله"| T --> U --> X
     S -->|"خیر"| V --> W --> X
 
-    Later["با افزودن موجودی، worker قدیمی‌ترین reservation را FIFO تکمیل و تحویل می‌دهد."]
+    Later["FIFO همه سفارش‌های ready پرداخت‌شده؛ paid_at دقیق، نه ترتیب ایجاد سفارش یا صف"]
     Later -.-> T
-    LaterProcessing["سفارش ready در processing فقط وقتی fulfil می‌شود که reservation معتبر قدیمی‌تری برای همان محصول باقی نمانده باشد؛ cap چرخه صف را دور نمی‌زند"]
+    LaterProcessing["پرداخت‌شدهٔ قدیمی‌تر حتی پیش از ساخت reservation مقدم است؛ خرید تازه و cap چرخه صف را دور نمی‌زنند"]
     LaterProcessing -.-> V
     Direct["/inventory_assign مستقیم فقط بدون backlog ready همان محصول؛ وگرنه conflict برای حفظ FIFO"]
     Direct -.-> O
@@ -535,7 +535,7 @@ flowchart TD
     B["اعتبارسنجی محصول و تکمیل نام و contact"]
     C["ایجاد اتمیک Order، snapshot و خلاصه created-summary؛ سپس پاک‌کردن state"]
     D["اعمال اختیاری تخفیف"]
-    E["تکمیل پرداخت"]
+    E["تأیید صریح و تکمیل پرداخت؛ حتی رایگان یا تخفیف صددرصد"]
     E0["queue/attempt اعلان canonical شماره سفارش، محصول، مبلغ و روش"]
     E1{"اعلان sent یا terminal failed/cancelled است؟"}
     E2["queued/sending؛ prompt و fulfillment تا retry متوقف"]
@@ -584,9 +584,9 @@ flowchart TD
 flowchart TD
     A(["سفارش pending_payment یا درخواست شارژ کیف پول"])
     B{"نوع عملیات"}
-    C["محاسبه بدهی، تخفیف و hold کیف پول"]
+    C["پس از تأیید صریح کاربر: محاسبه بدهی، تخفیف و hold کیف پول"]
     D{"بدهی کاملاً پوشش داده شد؟"}
-    E["capture کیف پول و پرداخت کامل"]
+    E["capture کیف پول یا تأیید صفرمبلغ؛ ثبت پرداخت کامل"]
     F{"intent فعال Order یا topup کاربر وجود دارد؟"}
     F1{"روش، مبلغ و terms دقیقاً یکسان است؟"}
     F2["بازیابی همان intent"]
@@ -604,7 +604,7 @@ flowchart TD
     M{"رخداد دقیقاً منطبق و در مهلت است؟"}
     M1["ثبت card event تأییدشده و settlement اتمیک"]
     M2["ثبت card review؛ alert و resolve فقط owner، بدون credit خودکار"]
-    N["فیش card: نخستین ارسال قبل expiry؛ replacement تا expiry+7d"]
+    N["فیش card: نخستین ارسال قبل expiry؛ بررسی و replacement تا تصمیم مدیر"]
     O["ذخیره file kind، payment verifying و alert owner/admin با hash نسخه"]
     P{"تأیید مدیر؟"}
     Q["failed و reconciliation والد"]
@@ -800,7 +800,7 @@ stateDiagram-v2
     state "refunded (رزرو؛ بدون transition فعلی)" as Refunded
 
     PendingPayment --> AwaitingConfirmation: انتظار تأیید
-    PendingPayment --> Paid: تسویه
+    PendingPayment --> Paid: تأیید و تسویه
     PendingPayment --> Rejected
     PendingPayment --> Expired
     PendingPayment --> Cancelled
@@ -834,6 +834,7 @@ stateDiagram-v2
         order_status هنگام payment باز آن‌ها را نمی‌پذیرد؛
         لغو اختصاصی فقط card بدون فیش است و crypto
         تا شاهد terminal ارائه‌دهنده محلی بسته نمی‌شود.
+        فیش ارسال‌شده تا تصمیم مدیر خودکار منقضی نمی‌شود.
         رد فیش پیش از expiry سفارش به pending برمی‌گردد.
     end note
 
@@ -914,7 +915,7 @@ sequenceDiagram
         end
         Note over DB,Worker: crash پس از ثبت completed evidence در run بعد بدون network بازیابی می‌شود
     else تأیید فیش دستی
-        User->>TG: فیش card؛ نخستین قبل expiry یا replacement قبل expiry+7d
+        User->>TG: فیش card؛ نخستین قبل expiry یا replacement تا تصمیم مدیر
         TG->>Bot: photo/document با file_id
         Bot->>DB: submit receipt با file kind و status verifying
         Bot->>DB: queue alert پایدار owner/admin با hash نسخه فیش
@@ -922,6 +923,9 @@ sequenceDiagram
         Bot->>DB: settlement یا failed/reconcile
     else کیف پول کافی
         Bot->>DB: wallet hold و capture اتمیک
+    else محصول رایگان یا تخفیف صددرصد
+        User->>TG: تأیید صریح پرداخت در خلاصه سفارش
+        Bot->>DB: confirm_zero_payable_order اتمیک و idempotent
     end
 
     opt payment به paid رسیده است
@@ -930,7 +934,7 @@ sequenceDiagram
     end
 
     opt موفقیت بدون external payment
-        Worker->>DB: recover wallet-confirmed یا discount-confirmed فاقد outbox با cursor/wrap
+        Worker->>DB: recover wallet/discount/free-confirmed فاقد outbox با cursor/wrap
     end
 
     DB-->>Bot: order paid، topup credited یا terminal compensation
@@ -953,7 +957,7 @@ sequenceDiagram
         Worker->>DB: selector مستقل status=paid برای fulfillment؛ marker پاداش شرط نیست
 
         alt محصول آماده و موجود
-            Bot->>DB: validate render حداکثر ۳۹۰۰؛ سپس assign و queue delivery اتمیک
+            Bot->>DB: validate render حداکثر ۳۹۰۰ و FIFO پرداخت؛ سپس assign و queue delivery اتمیک
             DB->>DB: assign item و complete order
             Note over Admin,DB: inventory_assign مستقیم فقط وقتی backlog ready همان محصول خالی است؛ وگرنه FIFO مقدم است
         else محصول آماده و قابل رزرو
@@ -997,9 +1001,10 @@ flowchart TD
     C2["partial، unknown، mismatch یا completed پس از resolution: review پرخطر"]
     D["reconcile alert و notice تصمیم provider/card review، فیش، اطلاعات manual، ticket و security"]
     D1["reconcile alert no-stock و هر reward_event فاقد notice با cursor/wrap"]
-    E0["expire سفارش unpaid و paymentهای card؛ crypto با deadline محلی expire نمی‌شود"]
+    E0["expire unpaid/card بدون فیش؛ فیش تا تصمیم مدیر و crypto تا نتیجه provider باز است"]
+    E1["reconcile هشدار پایدار شارژ کیف پول منقضی: دیگر پرداخت نکنید"]
     M2["reconcile paid payment notice فاقد outbox"]
-    M3["reconcile wallet-only/full-discount success notice فاقد outbox با cursor/wrap"]
+    M3["reconcile wallet/discount/free-confirmed notice فاقد outbox با cursor/wrap"]
     M4{"order_success_notice_ready؟"}
     M5["queued/sending: defer همه شاخه‌های fulfillment"]
     M6["sent یا terminal failed/cancelled: اجازه ادامه"]
@@ -1015,11 +1020,11 @@ flowchart TD
     M0["selector مستقل همه سفارش‌های status=paid؛ مستقل از reward_processed_at"]
     M["تلاش idempotent برای fulfillment ready/manual"]
     N["بازسازی noticeهای awaiting_stock و awaiting_info"]
-    O["تکمیل reservationهای دارای موجودی به ترتیب FIFO"]
+    O["تکمیل موجودی با FIFO همه سفارش‌های پرداخت‌شده؛ حتی قبل از ساخت reservation"]
     O2["fulfil سفارش ready در processing پس از restock"]
     P["بازسازی delivery سفارش ready تکمیل‌شده"]
-    Q["claim batch reminder؛ cancel منقضی و محاسبه روز واقعی"]
-    Q2["outbox مالک retry؛ claim پیام‌ها یک‌به‌یک"]
+    Q["claim reminder؛ زمان پایان دقیق و روز صفر در TIMEZONE؛ لغو منقضی"]
+    Q2["outbox مالک retry؛ claim تک‌پیام و بازبینی انقضا پیش از ارسال reminder"]
     R{"ارسال موفق است؟"}
     S["ثبت sent و telegram_message_id"]
     T{"خطا دائمی است؟"}
@@ -1031,7 +1036,7 @@ flowchart TD
     C --> C1 --> D
     C --> C2 --> D
     C -->|"pending یا network failure"| D
-    D --> D1 --> E0 --> M2 --> M3 --> M4
+    D --> D1 --> E0 --> E1 --> M2 --> M3 --> M4
     M4 -->|"خیر"| M5 --> Q2
     M4 -->|"بله"| M6 --> D0 --> E
     E -->|"بله"| F --> H

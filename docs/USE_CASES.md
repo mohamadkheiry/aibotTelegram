@@ -88,7 +88,7 @@
 3. اگر grant مدیر pending است، فقط تطبیق هم‌زمان username و private chat/user ID آن را verify می‌کند؛ اگر مدیر قبلاً verify شده است، همان chat ID پایدار authorization anchor است و username تازه همان chat صرفاً metadata را به‌روزرسانی می‌کند.
 4. وضعیت block و حالت تعمیرات بررسی می‌شود.
 5. همه کانال‌های جوین اجباری فعال خوانده و عضویت کاربر با Telegram بررسی می‌شود.
-6. اگر همه شروط برقرار است، پاداش start احتمالی reconcile و منوی اصلی نمایش داده می‌شود.
+6. اگر همه شروط برقرار است، پاداش start احتمالی reconcile و متن اصلی منو یک‌بار ارسال می‌شود؛ همین پیام ابتدا reply keyboard قدیمی را حذف می‌کند و سپس inline keyboard پنج‌ردیفی با همان ترتیب، style و labelهای بدون emoji به آن متصل می‌شود. دکمه کانالِ تنظیم‌شده مستقیماً URL کانال را باز می‌کند.
 
 **جریان‌های جایگزین/خطا:**
 
@@ -99,10 +99,11 @@
 - خطای موقت `getChatMember`: عضویت تأییدشده فرض نمی‌شود.
 - callback قدیمی یا malformed: fail closed و پاسخ کنترل‌شده، بدون exception قابل مشاهده کاربر.
 - username متعلق به grant روی chat دیگری دیده شود یا زوج pending کامل منطبق نباشد: دسترسی مدیر فعال نمی‌شود؛ rename username مدیر verifyشده روی همان chat دسترسی را قطع نمی‌کند.
+- خطای Telegram هنگام اتصال inline keyboard: یک پیام کوتاه انتخاب با همان کنترل‌ها ارسال می‌شود؛ متن اصلی منو دوباره فرستاده نمی‌شود. cancellation هنگام shutdown پیام fallback تازه نمی‌سازد. shortcutهای متنی و reply keyboard اعلان‌های قبلی برای سازگاری قابل استفاده می‌مانند.
 
 **قواعد:** BR-ID-01..05، BR-ORD-08، BR-OPS-02.<br>
-**پیاده‌سازی:** `BotApplication._handle_message`, `_handle_callback`, `_access_guard`, `_check_memberships`, `_show_join_required` در `app/bot.py`؛ `upsert_user` در `app/db.py`.<br>
-**تست:** `test_start_menu_purchase_requires_own_contact_and_creates_order`، `test_catalog_faq_and_join_surfaces_are_paginated`، `test_forced_join_long_title_is_clamped_to_telegram_limit`، `test_malformed_callbacks_fail_closed_and_are_answered_once`.
+**پیاده‌سازی:** `BotApplication._handle_message`, `_handle_callback`, `_access_guard`, `_check_memberships`, `_show_join_required`, `show_main_menu` در `app/bot.py`؛ `inline_main_menu_keyboard` در `app/keyboards.py`؛ `upsert_user` در `app/db.py`.<br>
+**تست:** `test_start_menu_purchase_requires_own_contact_and_creates_order`، `test_catalog_faq_and_join_surfaces_are_paginated`، `test_forced_join_long_title_is_clamped_to_telegram_limit`، `test_malformed_callbacks_fail_closed_and_are_answered_once`، `test_inline_main_menu_preserves_layout_styles_icons_and_safe_actions`، `test_every_main_menu_callback_reaches_its_user_route`، `test_main_menu_edit_failure_keeps_single_welcome_and_actionable_fallback`، `test_cancelled_menu_edit_does_not_send_during_shutdown`.
 
 ### UC-02 — ثبت دعوت و پاداش شروع
 
@@ -146,14 +147,14 @@
 1. ریشه‌های فعال کاتالوگ صفحه‌بندی می‌شوند.
 2. کاربر دسته و در صورت وجود زیردسته را انتخاب می‌کند.
 3. فقط محصولات visible و مسیر فعال نشان داده می‌شوند.
-4. summary محصول و دکمه خرید/توضیحات نمایش داده می‌شود.
-5. در «توضیحات بیشتر»، محتوای تکمیلی و URL/قواعد معتبر نمایش داده می‌شود.
+4. summary محصول، متن اصلی `short_description` با rich text معتبر و دکمه خرید/توضیحات نمایش داده می‌شود؛ توضیح اصلی در صفحه محصول است و با متن تکمیلی جایگزین نمی‌شود.
+5. در «توضیحات بیشتر»، تمام محتوای تکمیلی و URL/قواعد معتبر نمایش داده می‌شود. متن بلند هر دو صفحه به قطعه‌های HTML معتبر حداکثر ۳۹۰۰ نویسه تقسیم می‌شود؛ هیچ ادامه‌ای حذف نمی‌شود و دکمه‌های خرید/بازگشت در آخرین قطعه می‌مانند.
 
 **جریان‌های جایگزین/خطا:** دسته/محصول حذف یا غیرفعال‌شده، ID خارج از مالکیت UI یا callback بد، پیام نامعتبر می‌گیرد؛ صفحه خارج از بازه به صفحه معتبر clamp می‌شود؛ محصول visible ولی unavailable ممکن است دیده شود اما خرید آن رد می‌شود.
 
 **قواعد:** BR-ORD-01، BR-ORD-08، تصمیم‌های UX سند بیزنس.<br>
 **پیاده‌سازی:** `show_store`, `show_category`, `show_product`, `show_product_details` در `app/bot.py`; `app/texts.py`, `app/keyboards.py`.<br>
-**تست:** `test_rich_catalog_and_unavailable_visible_product`، `test_catalog_faq_and_join_surfaces_are_paginated`، مجموعه `tests/test_keyboards.py`.
+**تست:** `test_rich_catalog_and_unavailable_visible_product`، `test_catalog_faq_and_join_surfaces_are_paginated`، `test_product_page_displays_primary_description_before_details`، `test_full_product_details_are_sent_without_oversized_messages`، `test_long_primary_description_preserves_all_text_and_final_actions_on_callback`، مجموعه `tests/test_keyboards.py`.
 
 ### UC-04 — ایجاد سفارش و تکمیل پروفایل خرید
 
@@ -176,7 +177,7 @@
 6. عنوان، نوع، قیمت، currency ثابت `TOMAN` و مدت محصول snapshot می‌شوند.
 7. summary شامل مبلغ، کیف پول و گزینه تخفیف/پرداخت با کلید canonical در outbox commit و سپس state خرید پاک/پیام ارسال می‌شود.
 
-**جریان‌های جایگزین/خطا:** نام نامعتبر دوباره درخواست می‌شود؛ contact تایپی/فرد دیگر رد می‌شود؛ stale state یا unavailableشدن محصول فرایند را پایان می‌دهد؛ ready بدون موجودی و بدون reserve سفارش نمی‌سازد؛ failure پیش از commit summary state شماره را حفظ می‌کند؛ failure ارسال یا replay همان update همان Order/notice را بازیابی و سفارش دوم را منع می‌کند؛ قیمت صفر داخلی مستقیم وارد fulfillment می‌شود.
+**جریان‌های جایگزین/خطا:** نام نامعتبر دوباره درخواست می‌شود؛ contact تایپی/فرد دیگر رد می‌شود؛ stale state یا unavailableشدن محصول فرایند را پایان می‌دهد؛ ready بدون موجودی و بدون reserve سفارش نمی‌سازد؛ failure پیش از commit summary state شماره را حفظ می‌کند؛ failure ارسال یا replay همان update همان Order/notice را بازیابی و سفارش دوم را منع می‌کند؛ قیمت صفر در مسیر کاربر با defer_free_confirmation=True تا دکمه پرداخت pending می‌ماند؛ فراخوانی داخلی پیش‌فرض برای سازگاری همان رفتار قبلی را دارد.
 
 **قواعد:** BR-ID-09، BR-ORD-01..08/15.<br>
 **پیاده‌سازی:** `begin_purchase`, `_create_order_and_confirm`, `show_order_summary` در `app/bot.py`; `Database.create_order`.<br>
@@ -191,7 +192,7 @@
 
 **پیش‌شرط‌ها:** Order متعلق به کاربر و دقیقاً `pending_payment` است.
 
-**پس‌شرط موفق:** OrderDiscount فعال ثبت، `discount_amount` و `payable_amount` به‌روز و شمارنده مصرف رزرو می‌شود؛ در تخفیف کامل سفارش paid و fulfillment آغاز می‌شود.
+**پس‌شرط موفق:** OrderDiscount فعال ثبت، `discount_amount` و `payable_amount` به‌روز و شمارنده مصرف رزرو می‌شود؛ حتی با تخفیف کامل، خلاصه با همان دکمه‌ها نمایش داده می‌شود و سفارش تا تأیید «پرداخت» pending می‌ماند.
 
 **جریان اصلی:**
 
@@ -200,12 +201,13 @@
 3. active، window، دامنه محصول/کاربر، minimum، max uses و per-user limit بررسی می‌شوند.
 4. مبلغ fixed/percent محاسبه و تا subtotal محدود می‌شود.
 5. یک OrderDiscount در transaction ثبت و summary تازه نمایش داده می‌شود.
+6. اگر مبلغ نهایی صفر باشد، فقط دکمه «پرداخت» با `confirm_zero_payable_order` مالکیت، مهلت و نبود پوشش کیف پول/پرداخت بیرونی را بررسی و Order را paid می‌کند؛ اعلان موفقیت و سپس fulfillment اجرا می‌شوند و Payment صفرمبلغ ساخته نمی‌شود.
 
 **جریان‌های جایگزین/خطا:** code ناموجود/منقضی/خارج دامنه/مصرف‌شده پیام عمومی نامعتبر می‌گیرد؛ تخفیف دوم هم‌زمان رد می‌شود؛ سفارش expired با تخفیف ۱۰۰٪ احیا نمی‌شود؛ بازگشت state ورودی را پاک می‌کند.
 
 **قواعد:** BR-DSC-01..05، BR-ORD-07..09.<br>
-**پیاده‌سازی:** state `discount_code` در `app/bot.py`; `Database.apply_discount`.<br>
-**تست:** `test_discounts_are_single_and_released_on_expiry`، `test_extended_discount_create_and_safe_delete`، `test_expired_order_cannot_be_revived_by_full_discount`.
+**پیاده‌سازی:** state `discount_code` و callback `checkout` در `app/bot.py`; `Database.apply_discount`, `confirm_zero_payable_order`.<br>
+**تست:** `test_discounts_are_single_and_released_on_expiry`، `test_extended_discount_create_and_safe_delete`، `test_expired_order_cannot_be_revived_by_full_discount`، `test_full_discount_keeps_updated_summary_until_explicit_confirmation`، `test_zero_confirmation_rejects_wrong_owner_expiry_and_wallet_coverage`، `test_free_product_waits_for_summary_confirmation_and_recovers_success_notice`.
 
 ### UC-06 — پرداخت کامل یا جزئی با کیف پول
 
@@ -267,7 +269,7 @@
 **بازیگران:** ACT-U؛ ACT-A/ACT-O<br>
 **محرک:** بعد از حداقل تأخیر، لمس «ارسال فیش» و ارسال photo/document.
 
-**پیش‌شرط‌ها:** payment کارت متعلق به کاربر و `pending|verifying`؛ برای نخستین فیش هنوز `expires_at` نگذشته؛ برای replacement هنوز `expires_at + 7 days` نگذشته؛ receipt delay گذشته است.
+**پیش‌شرط‌ها:** payment کارت متعلق به کاربر و `pending|verifying`؛ برای نخستین فیش هنوز `expires_at` نگذشته؛ برای replacement فیش به‌موقع موجود است و هنوز تصمیم نهایی ثبت نشده؛ receipt delay گذشته است.
 
 **پس‌شرط موفق:** Payment `verifying`، receipt file ID ثبت، مدیران اعلان می‌گیرند؛ approve به paid و fulfillment/topup می‌رسد یا reject آن را failed و مسیر سفارش را reconcile می‌کند.
 
@@ -281,11 +283,11 @@
 6. مدیر با `/payment_detail PAYMENT_NUMBER` فیش را در نوع اصلی `photo/document` بازمی‌فرستد، مبلغ و کاربر را کنترل و `/approve_payment` یا `/reject_payment` اجرا می‌کند.
 7. approve برای Order ابتدا اعلان canonical موفقیت را queue/attempt می‌کند و بعد از آماده‌شدن gate، UC-11/12/13 را آغاز می‌کند؛ topup فقط credit/اعلان خودش را دارد.
 
-**جریان‌های جایگزین/خطا:** ارسال زودتر از delay پیام انتظار می‌دهد؛ crypto یا text بدون فایل رد می‌شود؛ نخستین فیش در/بعد از `expires_at` پذیرفته نمی‌شود؛ replacement فقط تا پیش از `expires_at + 7 days` پذیرفته و deadline با تعویض جلو نمی‌رود؛ entity نهایی فیش تازه نمی‌پذیرد؛ payment دارای فیش یا `verifying` حتی با callback قدیمی لغو نمی‌شود؛ failure شبکه‌ایِ اعلان مدیر فیش را از DB حذف نمی‌کند؛ replay approve/reject اثر دوم ندارد؛ support اجازه تأیید/رد ندارد.
+**جریان‌های جایگزین/خطا:** ارسال زودتر از delay پیام انتظار می‌دهد؛ crypto یا text بدون فایل رد می‌شود؛ نخستین فیش در/بعد از `expires_at` پذیرفته نمی‌شود؛ replacement فیش به‌موقع تا تصمیم نهایی مجاز است؛ گذشت زمان آن را خودکار منقضی نمی‌کند و مهلت نخستین ارسال تغییر نمی‌کند؛ entity نهایی فیش تازه نمی‌پذیرد؛ payment دارای فیش یا `verifying` حتی با callback قدیمی لغو نمی‌شود؛ failure شبکه‌ایِ اعلان مدیر فیش را از DB حذف نمی‌کند؛ replay approve/reject اثر دوم ندارد؛ support اجازه تأیید/رد ندارد.
 
 **قواعد:** BR-PAY-07، BR-PAY-11..14، BR-ID-08.<br>
 **پیاده‌سازی:** callback/state `receipt`/`payment_receipt` در `app/bot.py`; approve/reject در `app/admin.py`; `submit_payment_receipt`, `set_payment_status`, `mark_payment_paid` در `app/db.py`.<br>
-**تست:** `test_first_receipt_is_rejected_after_the_payment_deadline`، `test_receipt_grace_is_anchored_to_the_immutable_payment_deadline`، `test_submitted_receipt_stays_reviewable_after_payment_deadline`، `test_user_cancellation_is_atomic_and_never_cancels_a_submitted_receipt`، `test_old_cancel_button_cannot_cancel_a_submitted_card_receipt`، `test_admin_payment_review_rejects_missing_receipt_and_non_card_intents`، `test_receipt_callback_approval_and_rejection`.
+**تست:** `test_first_receipt_is_rejected_after_the_payment_deadline`، `test_submitted_receipt_stays_pending_until_explicit_admin_decision`، `test_submitted_receipt_stays_reviewable_after_payment_deadline`، `test_user_cancellation_is_atomic_and_never_cancels_a_submitted_receipt`، `test_old_cancel_button_cannot_cancel_a_submitted_card_receipt`، `test_admin_payment_review_rejects_missing_receipt_and_non_card_intents`، `test_receipt_callback_approval_and_rejection`.
 
 ### UC-09 — پرداخت ارزی Plisio
 
@@ -342,6 +344,8 @@
 
 ### UC-11 — تحویل خودکار محصول آماده
 
+تکمیل UC-10: پس از انقضای شارژ بدون فیش، `_reconcile_expired_wallet_topup_notices` از Payment ثبت‌شده پیام پایدار `payment:{id}:topup-expired` شامل شماره، مبلغ، هشدار عدم پرداخت و دکمه کیف پول می‌سازد. query فاقد notice با cursor/wrap و budget محدود، انقضای commit‌شده پیش از restart را هم بازیابی می‌کند. crypto با deadline محلی منقضی نمی‌شود. تست‌ها: `test_expired_wallet_topup_warns_customer_not_to_pay_old_bill`، `test_wallet_topup_expiry_notice_recovers_after_committed_expiry_and_restart`.
+
 **هدف:** تخصیص دقیقاً یک payload موجودی به یک سفارش paid.
 
 **بازیگر اصلی:** ACT-W (آغاز مستقیم پس از پرداخت یا maintenance)<br>
@@ -395,6 +399,8 @@
 
 ### UC-13 — فعال‌سازی محصول دستی
 
+تکمیل UC-11/12: همه entry pointهای تخصیص ready، از checkout تازه تا reservation و processing، نخستین Order پرداخت‌شده واجد شرایط همان محصول را مقدم می‌دانند؛ `_assign_inventory` این قید را داخل transaction حتی پیش از ساخته‌شدن reservation قدیمی کنترل می‌کند. `_allocate_paid_timestamp` ترتیب paid شدن تازه در یک ثانیه را با میکروثانیه افزایشی ثبت می‌کند؛ tie legacy فقط از reservation موجود و سپس Order ID استفاده می‌کند. تست‌ها: `test_new_purchase_cannot_jump_existing_paid_reservation`، `test_fifo_uses_payment_order_even_before_reservation_is_queued`.
+
 **هدف:** دریافت امن اطلاعات مشتری و تکمیل کنترل‌شده سرویس manual.
 
 **بازیگران:** ACT-U، ACT-A/ACT-O؛ ACT-S فقط درخواست اصلاح<br>
@@ -431,7 +437,7 @@
 
 **پس‌شرط موفق:** فقط summary و entityهای متعلق به User، صفحه‌بندی‌شده و با total صحیح نمایش داده می‌شوند.
 
-**جریان اصلی:** پروفایل و آمار کل خوانده می‌شود؛ سفارش‌ها از جدید به قدیم؛ تراکنش‌ها از ledger/payments به‌صورت صفحه‌ای؛ انتخاب سفارش جزئیات snapshot، مبلغ و status را نشان می‌دهد.
+**جریان اصلی:** پروفایل و آمار کل خوانده می‌شود؛ سفارش‌ها از جدید به قدیم؛ تراکنش‌ها از ledger/payments به‌صورت صفحه‌ای با تاریخ، مبلغ و نوع فارسی مستقل از دلیل آزاد؛ انتخاب سفارش جزئیات snapshot، مبلغ و status را نشان می‌دهد.
 
 **جریان‌های جایگزین/خطا:** order ID متعلق به کاربر دیگر not found دیده می‌شود؛ callback صفحه malformed پاسخ داده و query معلق نمی‌ماند؛ توضیح بسیار بلند clamp/chunk می‌شود ولی هیچ entry از صفحه‌بندی حذف نمی‌شود؛ صفحه خارج محدوده اصلاح می‌شود.
 
@@ -450,6 +456,8 @@
 
 **پس‌شرط موفق:** FAQ فعال نمایش داده می‌شود یا Ticket/Message با مالکیت صحیح ساخته و دو طرف مطلع می‌شوند.
 
+**نمایش FAQ:** جواب کامل با قالب‌بندی HTML معتبر خوانده می‌شود؛ جواب بلند به چند پیام امن تقسیم می‌شود و دکمه بازگشت به دسته در آخرین پیام قرار می‌گیرد. محدودیت اندازه پیام نباید انتهای جواب را حذف کند.
+
 **جریان اصلی تیکت:**
 
 1. کاربر موضوع ۳ تا ۱۲۰ نویسه می‌فرستد.
@@ -463,7 +471,7 @@
 
 **قواعد:** BR-SUP-01..03، BR-ORD-08.<br>
 **پیاده‌سازی:** support/ticket methods در `app/bot.py`; ticket/FAQ repository در `app/db.py`; commands در `app/admin.py`.<br>
-**تست:** `test_faq_ticket_and_outbound_message_queues`، همه `tests/test_user_history_pagination.py`، `test_ticket_reply_callback_checks_existence_owner_and_open_status`، `test_ticket_idempotency_rejects_cross_user_and_cross_ticket_keys`، `test_ticket_attachments_are_retrievable_after_restart_by_support`.
+**تست:** `test_faq_ticket_and_outbound_message_queues`، همه `tests/test_user_history_pagination.py`، `test_ticket_reply_callback_checks_existence_owner_and_open_status`، `test_ticket_idempotency_rejects_cross_user_and_cross_ticket_keys`، `test_ticket_attachments_are_retrievable_after_restart_by_support`، `test_faq_callback_preserves_the_complete_formatted_answer_and_back_action`.
 
 ### UC-16 — لینک دعوت، آمار و پاداش خرید
 
@@ -479,7 +487,7 @@
 **جریان اصلی:**
 
 1. سامانه bot username و Telegram ID کاربر را به deep link تبدیل می‌کند.
-2. summary دعوت و مجموع eventهای پاداش را نمایش می‌دهد.
+2. summary دعوت، مجموع eventهای پاداش و توضیح تمام قانون‌های فعال داخل بازه فعلی را نمایش می‌دهد: نوع رویداد، مبلغ، محصولات مشمول، همه شروط ترکیبی و مرز زمانی صریح UTC. شروط تعداد خرید/دعوت متعلق به دوست دعوت‌شده‌اند. قانون غیرفعال، منقضی یا هنوز شروع‌نشده وعده داده نمی‌شود؛ نبود قانون جاری صریح اعلام می‌شود. خواندن قانون‌ها offset دارد و ادامه فهرست یا متن بلند حذف نمی‌شود؛ دکمه ارسال لینک در آخرین پیام می‌ماند.
 3. پس از خرید تجاری موفق invitee، ruleهای product_purchase، first_purchase و combined در زمان purchase ارزیابی می‌شوند.
 4. تمام شروط combined با AND بررسی می‌شوند.
 5. پاداش دعوت‌کننده credit و Referral qualified می‌شود.
@@ -490,7 +498,7 @@
 
 **قواعد:** BR-REF-02..07.<br>
 **پیاده‌سازی:** `show_referral`, `_reconcile_purchase_rewards`, `_reconcile_reward_notices`, `list_reward_events_missing_notice`; reward methods در `app/db.py`.<br>
-**تست:** `test_referral_reward_is_exactly_once`، `test_first_purchase_reward_counts_paid_orders_waiting_for_stock`، `test_reward_reconciliation_survives_partial_grant_after_completion`، `test_reward_notice_recovery_rotates_past_start_reward_crashes`، `test_purchase_reward_window_uses_event_time_during_late_recovery`، `test_reward_rule_created_after_purchase_is_not_retroactive`، `test_admin_assignment_and_internal_free_order_are_not_commercial_purchases`.
+**تست:** `test_referral_reward_is_exactly_once`، `test_first_purchase_reward_counts_paid_orders_waiting_for_stock`، `test_reward_reconciliation_survives_partial_grant_after_completion`، `test_reward_notice_recovery_rotates_past_start_reward_crashes`، `test_purchase_reward_window_uses_event_time_during_late_recovery`، `test_reward_rule_created_after_purchase_is_not_retroactive`، `test_admin_assignment_and_internal_free_order_are_not_commercial_purchases`، `test_referral_explains_active_reward_amounts_scope_conditions_and_window`، `test_referral_without_current_rule_does_not_promise_a_reward`، `test_referral_explanation_reaches_rules_beyond_default_repository_limit`.
 
 ### UC-17 — مشاهده کانال رسمی
 
@@ -501,12 +509,13 @@
 
 **پیش‌شرط‌ها:** UC-01.
 
-**پس‌شرط موفق:** لینک canonical با قالب `https://t.me/...` نمایش داده می‌شود.
+**پس‌شرط موفق:** دکمه inline «کانال» در خود منوی اصلی مستقیماً URL امن و تنظیم‌شده `https://t.me/...` را باز می‌کند؛ ارسال یک لینک واسطه پس از لمس دکمه لازم نیست.
 
-**جایگزین:** اگر کانال تنظیم نشده یا URL نامعتبر است، پیام عدم دسترس‌بودن نمایش داده می‌شود و لینک ناسالم ساخته نمی‌شود.
+**جایگزین:** اگر کانال تنظیم نشده یا URL نامعتبر است، دکمه از callback کنترل‌شده `channel` استفاده می‌کند که پیام عدم دسترس‌بودن نشان می‌دهد و لینک ناسالم نمی‌سازد. مسیر متنی قدیمی «کانال» همچنان با `show_channel` لینک معتبر را نمایش می‌دهد.
 
 **قواعد:** BR-ID-01، امنیت لینک.<br>
-**پیاده‌سازی:** `show_channel` در `app/bot.py`; `/set_channel` در `app/admin.py`.
+**پیاده‌سازی:** `inline_main_menu_keyboard` در `app/keyboards.py`؛ `show_main_menu`, `show_channel`, `_dispatch_user_callback` در `app/bot.py`؛ `/set_channel` در `app/admin.py`.<br>
+**تست:** `test_main_channel_button_opens_configured_channel_directly`، `test_inline_main_menu_preserves_layout_styles_icons_and_safe_actions`، `test_every_main_menu_callback_reaches_its_user_route`.
 
 ## ۵. یوزکیس‌های مدیریت و عملیات
 
@@ -572,15 +581,15 @@
 1. دسته ریشه یا زیردسته با نام، icon، description و sort ساخته می‌شود.
 2. چرخه والد و uniqueness نام زیر والد کنترل می‌شود.
 3. محصول ready/manual با قیمت integer فقط به `TOMAN` و مدت ساخته می‌شود.
-4. توضیحات، نوع حساب، فعال‌سازی، تمدید، گارانتی، feature، قوانین، متن اطلاعات/تحویل، reminder و stock limit تنظیم می‌شوند؛ `reminder_days` فقط فهرست عددهای صحیح ۱ یا بیشتر است.
+4. توضیحات، نوع حساب، فعال‌سازی، تمدید، گارانتی، feature، قوانین، متن اطلاعات/تحویل، reminder و stock limit تنظیم می‌شوند؛ `reminder_days` فهرست عددهای صحیح نامنفی است؛ صفر یعنی آغاز روز محلی پایان اشتراک.
 5. visible/available/reserve مستقل toggle می‌شوند.
 6. حذف محصول soft-delete و حفظ سابقه است.
 
-**جریان‌های جایگزین/خطا:** category دارای child/product حذف نمی‌شود؛ والد خود/چرخه رد؛ قیمت منفی، currency غیر `TOMAN`، duration نامعتبر و reminder صفر/منفی رد؛ صفر reminder باقی‌مانده در محصول legacy هنگام schedule نادیده گرفته می‌شود؛ `rules_url` فقط URL مطلق HTTPS بدون credential و بدون host literal محلی/خصوصی/reserved یا عددی مبهم است؛ `duration` عددی duration_days را sync و label غیرعددی expiry را پاک می‌کند؛ تغییر ready به manual تا وجود هر inventory item رد؛ hard-delete محصول دارای سابقه انجام نمی‌شود.
+**جریان‌های جایگزین/خطا:** category دارای child/product حذف نمی‌شود؛ والد خود/چرخه رد؛ قیمت منفی، currency غیر `TOMAN`، duration نامعتبر و reminder منفی/اعشاری/boolean رد؛ صفر تازه یا legacy یادآوری روز پایان در timezone تنظیم‌شده را زمان‌بندی می‌کند؛ `rules_url` فقط URL مطلق HTTPS بدون credential و بدون host literal محلی/خصوصی/reserved یا عددی مبهم است؛ `duration` عددی duration_days را sync و label غیرعددی expiry را پاک می‌کند؛ تغییر ready به manual تا وجود هر inventory item رد؛ hard-delete محصول دارای سابقه انجام نمی‌شود.
 
 **قواعد:** BR-ORD-01..04، BR-FUL-06..08.<br>
 **پیاده‌سازی:** catalog handlers در `app/admin.py`; category/product methods در `app/db.py`.<br>
-**تست:** `test_category_update_cycle_guard_and_safe_delete`، `test_product_extended_fields_soft_delete_and_type_guard`، `test_product_reminder_days_require_at_least_one_day`، `test_rich_catalog_and_unavailable_visible_product`.
+**تست:** `test_category_update_cycle_guard_and_safe_delete`، `test_product_extended_fields_soft_delete_and_type_guard`، `test_product_reminder_days_accept_same_day_and_reject_negative_days`، `test_rich_catalog_and_unavailable_visible_product`.
 
 ### UC-23 — مدیریت امن انبار
 
@@ -637,7 +646,7 @@
 
 **پس‌شرط موفق:** query/تغییر block یا message انجام؛ همه فهرست‌ها total و پیمایش کامل دارند؛ adjustment signed همراه reason و actor در ledger ثبت.
 
-**جریان اصلی:** مدیر `/users` را با فیلتر all/active/blocked/new/inactive/joined/product و صفحه اختیاری، ۲۰ ردیف در صفحه و ترتیب `id DESC` می‌بیند؛ `/user` با chat ID/username/order خلاصه، تعدادهای کامل و MIN/MAX دقیق اولین/آخرین خرید تجاری بدون cap را نشان می‌دهد. `/user_orders USER [STATUS|all] [PAGE|ORDER_NUMBER]` سفارش‌های همان user را فیلتر/جست‌وجو می‌کند؛ `/user_transactions USER [PAGE]`، `/user_referrals USER [PAGE]` و `/user_rewards USER [PAGE]` تمام ledger، invitee status/date و جزئیات event/مبلغ/invitee/order را صفحه‌بندی می‌کنند. سپس مدیر در دامنه نقش block/unblock، پیام مستقیم یا adjustment مثبت/منفی با دلیل انجام می‌دهد.
+**جریان اصلی:** مدیر `/users` را با فیلتر all/active/blocked/new/inactive/joined/product و صفحه اختیاری، ۲۰ ردیف در صفحه و ترتیب `id DESC` می‌بیند؛ `/user` با chat ID/username/order خلاصه، تعدادهای کامل و MIN/MAX دقیق اولین/آخرین خرید تجاری بدون cap را نشان می‌دهد. `/user_orders USER [STATUS|all] [PAGE|ORDER_NUMBER]` سفارش‌های همان user را فیلتر/جست‌وجو و تمام اطلاعات متنی محصول دستی را بدون حذف ادامه نمایش می‌دهد؛ `/user_transactions USER [PAGE]`، `/user_referrals USER [PAGE]` و `/user_rewards USER [PAGE]` تمام ledger، invitee status/date و جزئیات event/مبلغ/invitee/order را صفحه‌بندی می‌کنند. سپس مدیر در دامنه نقش block/unblock، پیام مستقیم یا adjustment مثبت/منفی با دلیل انجام می‌دهد.
 
 **جریان‌های جایگزین/خطا:** فیلتر تاریخ/day یا صفحه خارج بازه رد؛ یک عدد تنها پس از `new|inactive` برای سازگاری DAYS است و PAGE دومین عدد؛ active/inactive overlap ندارند؛ output بلند chunk می‌شود ولی هیچ ردیف همان صفحه حذف نمی‌شود؛ ORDER_NUMBER متعلق به user دیگر not found است؛ support فقط مشاهده چهار تاریخچه و message دارد؛ adjustment بدون reason یا کلید collision رد؛ اصلاح اشتباه با entry معکوس است نه delete/update ledger.
 
@@ -799,18 +808,18 @@
 2. poll paymentهای Plisio باز/نیازمند بررسی late transition و ثبت durable evidence؛
 3. queue/reconcile هشدارهای provider/card review، اعلان نتیجه تصمیم دستی reviewها، فیش‌های `verifying`، اطلاعات سفارش manual، no-stock سفارش ready، تمام reward-eventهای فاقد notice، پیام‌های کاربر در تیکت و رخداد امنیتی کارت؛
 4. انقضای سفارش‌های unpaid فاقد crypto فعال و ثبت اتمیک اعلان، یا بازیابی Order terminal فاقد outbox پس از crash؛
-5. انقضای paymentهای card در `pending/verifying` خارج grace، reconciliation والد و ثبت/بازیابی اعلان terminal؛ crypto با deadline محلی sweep نمی‌شود؛
-6. بازیابی اعلان paymentهای بیرونی paid و اعلان موفقیت wallet-only/تخفیف کامل بدون outbox متناظر، پیش از هر fulfillment؛
+5. انقضای paymentهای card بدون فیش و خارج مهلت اولیه، reconciliation والد و ثبت/بازیابی اعلان terminal؛ crypto با deadline محلی sweep نمی‌شود؛
+6. بازیابی اعلان paymentهای بیرونی paid و اعلان موفقیت wallet-only/تخفیف کامل/خرید رایگان تأییدشده کاربر بدون outbox متناظر، پیش از هر fulfillment؛
 7. بازیابی reward سفارش‌های موفق با marker خالی و سپس selector مستقل fulfillment همه سفارش‌های status=`paid` حتی با marker پاداش پر؛ هر شاخه fulfillment dependency اعلان موفقیت را دوباره کنترل می‌کند؛
 8. بازیابی prompt سفارش‌های `awaiting_stock` و `awaiting_info`؛
 9. تخصیص موجودی به reservationهای FIFO؛
 10. fulfil سفارش‌های ready در `processing` پس از restock، فقط برای product بدون reservation معتبر قدیمی‌تر؛
 11. بازیابی delivery سفارش completed؛
-12. claim reminderهای موعدرسیده، cancel بدون ارسال برای اشتراک پایان‌یافته و محاسبه remaining-days واقعی برای مورد دیررسِ هنوز معتبر؛
+12. claim reminderهای موعدرسیده، cancel بدون ارسال برای اشتراک پایان‌یافته و نمایش زمان مطلق پایان برای مورد دیررسِ هنوز معتبر؛
 13. claim/send/retry outbox؛
 14. summary broadcastهای تمام‌شده و mark نتیجه تلاش اعلان؛ failure دائمی summary نباید batchهای بعدی را starve کند.
 
-**جریان‌های جایگزین/خطا:** exception log و دور بعد؛ provider outage payment را failed نمی‌کند؛ completed evidence durable پس از restart بدون network settle می‌شود؛ partial/unknown/mismatch فقط review می‌سازد؛ claim از رقابت تکراری جلوگیری می‌کند؛ blockedشدن recipient یک reminder نباید اعضای بعدی batch را متوقف کند؛ reminder صفر legacy اصلاً schedule نمی‌شود، اشتراک با `subscription_ends_at <= now` بدون پیام `cancelled` و reminder دیررس معتبر با ceiling/حداقل ۱ روز واقعی ساخته می‌شود؛ completion marker پاداش نمی‌تواند سفارش `paid` را از selector fulfillment حذف کند؛ reward-event/no-stock/payment/order noticeهای commit‌شده با query missing و cursor/wrap بازیابی می‌شوند؛ success notice `queued/sending` همه شاخه‌های fulfillment را defer و `sent` یا terminal `failed/cancelled` gate را باز می‌کند؛ query ردیف‌های فاقد notice/delivery مانع پنهان‌شدن ردیف قدیمی پشت newest-N می‌شود؛ cap رزرو اجازه انتخاب processing-ready همان product پیش از reservation قدیمی‌تر را نمی‌دهد؛ delivery committed ولی پیام شکست‌خورده دوباره queue می‌شود نه دوباره‌فروشی item؛ انقضای commit‌شده فاقد notice در restart از outbox key پایدار بازیابی می‌شود؛ failure دائمی summary broadcast به‌عنوان تلاش نهایی ثبت و batch بعدی قابل پیشرفت می‌ماند؛ entity terminal احیا نمی‌شود؛ shutdown در مرز آیتم بعدی loop را متوقف می‌کند و cursor فقط تا آخرین آیتم پردازش‌شده جلو می‌رود.
+**جریان‌های جایگزین/خطا:** exception log و دور بعد؛ provider outage payment را failed نمی‌کند؛ completed evidence durable پس از restart بدون network settle می‌شود؛ partial/unknown/mismatch فقط review می‌سازد؛ claim از رقابت تکراری جلوگیری می‌کند؛ blockedشدن recipient یک reminder نباید اعضای بعدی batch را متوقف کند؛ reminder صفر آغاز روز محلی پایان است؛ اشتراک با subscription_ends_at <= now در ارسال نخست و retry بدون پیام cancelled می‌شود؛ متن روزهای مثبت زمان مطلق پایان را نشان می‌دهد و صفر «امروز» همراه ساعت پایان دارد؛ completion marker پاداش نمی‌تواند سفارش `paid` را از selector fulfillment حذف کند؛ reward-event/no-stock/payment/order noticeهای commit‌شده با query missing و cursor/wrap بازیابی می‌شوند؛ success notice `queued/sending` همه شاخه‌های fulfillment را defer و `sent` یا terminal `failed/cancelled` gate را باز می‌کند؛ query ردیف‌های فاقد notice/delivery مانع پنهان‌شدن ردیف قدیمی پشت newest-N می‌شود؛ cap رزرو اجازه انتخاب processing-ready همان product پیش از reservation قدیمی‌تر را نمی‌دهد؛ delivery committed ولی پیام شکست‌خورده دوباره queue می‌شود نه دوباره‌فروشی item؛ انقضای commit‌شده فاقد notice در restart از outbox key پایدار بازیابی می‌شود؛ failure دائمی summary broadcast به‌عنوان تلاش نهایی ثبت و batch بعدی قابل پیشرفت می‌ماند؛ entity terminal احیا نمی‌شود؛ shutdown در مرز آیتم بعدی loop را متوقف می‌کند و cursor فقط تا آخرین آیتم پردازش‌شده جلو می‌رود.
 
 **قواعد:** BR-OPS-03/04، BR-REF-07، BR-FUL-01/03/08، BR-MSG-02.<br>
 **پیاده‌سازی:** `BotApplication.run_maintenance`، `_reconcile_paid_fulfillment`, `_reconcile_reward_notices`, `_reconcile_ready_stock_alerts` و helperها؛ claim/retry methods در `app/db.py`; `PeriodicWorker`.<br>
@@ -827,7 +836,7 @@
 
 **پس‌شرط موفق:** پیام sent با telegram message ID/time یا failed/retryable با attempt/error کنترل‌شده؛ reminder sent/failed می‌شود یا، پس از ساخت outbox، در اختیار retry همان outbox می‌ماند.
 
-**جریان اصلی:** `reminder_days` تازه فقط ۱ یا بیشتر است و صفر legacy نادیده گرفته می‌شود. worker reminderها را با batch محدود claim و مستقل پردازش می‌کند؛ برای هر reminder پیام durable با `reminder:{id}` می‌سازد. اگر outbox `queued/sending` باشد، outbox مالک retry و reminder تا stale reconciliation در `processing` باقی می‌ماند؛ فقط نبود outbox آن را فوراً آزاد می‌کند. outboxها یک‌به‌یک claim/send می‌شوند تا shutdown پیش از claim بعدی متوقف شود؛ broadcast summary پس از پایان همه فرزندان ساخته می‌شود و نتیجه terminal تلاش آن، batch را از صف summaryهای آینده آزاد می‌کند.
+**جریان اصلی:** `reminder_days` نامنفی است؛ صفر آغاز روز پایان در timezone تنظیم‌شده و در صورت schedule همان روز پیش از پایان، فوراً موعد دارد. انقضای دقیق نیمه‌شب یا اشتراک پایان‌یافته reminder روز صفر نمی‌سازد. worker reminderها را با batch محدود claim و مستقل پردازش می‌کند؛ پیام durable با `reminder:{id}`، زمان مطلق پایان و timezone ساخته می‌شود. روز صفر «امروز» همراه ساعت پایان است. outbox queued/sending مالک retry است و reminder تا stale reconciliation در processing می‌ماند؛ فقط نبود outbox آن را فوراً آزاد می‌کند. `_deliver_outbound_messages` پیش از retry دوباره پایان واقعی و مالکیت را کنترل می‌کند و reminder منقضی را همراه outbox بدون ارسال cancelled می‌کند. outboxها یک‌به‌یک claim/send می‌شوند تا shutdown پیش از claim بعدی متوقف شود؛ broadcast summary پس از پایان همه فرزندان ساخته می‌شود و نتیجه terminal تلاش آن، batch را از صف summaryهای آینده آزاد می‌کند.
 
 **جریان‌های جایگزین/خطا:** خطای transient backoff/requeue؛ خطای terminal/blocked برای یک recipient failed می‌شود و reminder بعدی همان batch ادامه می‌یابد؛ تکرار idempotency key فقط همان recipient/body/markup را می‌پذیرد؛ پیام sent هیچ‌وقت به queued برنمی‌گردد؛ ارسال شبکه‌ای exactly-once مطلق نیست، اما اثر دیتابیس و retry تا حد ممکن idempotent است.
 
@@ -836,6 +845,21 @@
 **تست:** `test_faq_ticket_and_outbound_message_queues`، `test_retry_cannot_resurrect_a_sent_outbound_message`، `test_outbound_idempotency_rejects_cross_recipient_collision`، `test_reminders_backup_reports_and_foreign_keys`، `test_permanent_reminder_failure_does_not_starve_the_next_reminder`.
 
 ## ۷. ماتریس دسترسی یوزکیس‌های مدیریتی
+
+فهرست‌های مدیریتی تکمیلی همگی ۲۰ ردیف در صفحه، total دقیق و فرمان قبلی/بعدی دارند:
+
+| فرمان | دامنه/صفحه |
+|---|---|
+| `/admins [PAGE]` | تمام مدیران و وضعیت هویت/دسترسی |
+| `/categories [PAGE]` | تمام دسته‌ها |
+| `/products [CATEGORY_ID\|all] [PAGE]` | همه محصولات یا یک دسته |
+| `/inventory_list PRODUCT_ID [PAGE]` | اقلام انبار همان محصول |
+| `/discounts [PAGE]` | تمام تخفیف‌ها |
+| `/faq_categories [PAGE]` | دسته‌های FAQ |
+| `/faqs [CATEGORY_ID\|all] [PAGE]` | همه سوال‌ها یا یک دسته |
+| `/rewards [PAGE]` | تمام قواعد پاداش |
+
+نمایش `/order` و جست‌وجوی دقیق `/user_orders` تمام متن اطلاعات مشتری برای محصول دستی را حفظ می‌کند؛ `/ticket` نیز ادامه هیچ پیام مکالمه‌ای را حذف نمی‌کند. نوع فارسی تراکنش در `/user`، `/user_transactions` و نمای کاربر مستقل از دلیل آزاد دیده می‌شود. تست‌ها: `test_all_management_lists_expose_records_beyond_previous_caps`، `test_manual_order_details_preserve_complete_customer_text`، `test_ticket_detail_preserves_the_end_of_long_escaped_messages`، `test_admin_transaction_views_show_type_and_reason_separately`.
 
 | قابلیت | support | admin | owner |
 |---|:---:|:---:|:---:|
@@ -871,7 +895,7 @@
 | Order `expired/cancelled/rejected/refunded` | مشاهده؛ شروع خرید تازه | بدون احیای مستقیم |
 | Payment card `pending` بدون فیش | پرداخت، پس از delay فیش، لغو | callback/expiry |
 | Payment crypto `pending` | پرداخت/مشاهده invoice؛ بدون لغو محلی | polling تا شاهد terminal provider؛ نه expiry محلی |
-| Payment card `verifying` | مشاهده/فیش تکمیلی در مهلت | approve/reject/grace expiry |
+| Payment card `verifying` دارای فیش | مشاهده/فیش تکمیلی تا تصمیم نهایی | تأیید/رد صریح؛ بدون انقضای خودکار |
 | Payment crypto `verifying` | مشاهده؛ بدون لغو/فیش | ادامه poll، auto-resolution با شاهد بعدی یا review مالک |
 | Payment `paid` | مشاهده | terminal؛ refund workflow در نسخه فعلی وجود ندارد |
 | Payment terminal دیگر | مشاهده | بدون احیا |
@@ -885,16 +909,16 @@
 1. **کاربر جدید با جوین:** `/start` با لینک دعوت، عدم عضویت، پیوستن، check، منو و یک پاداش start.
 2. **ready با کیف پول کامل:** شارژ آزمایشی، خرید، یک debit/capture، یک item assigned، یک delivery، replay callback بدون تغییر.
 3. **ready با کیف پول جزئی و کارت:** hold بخشی، intent مبلغ remainder، callback معتبر، completed و مانده درست.
-4. **فیش و grace:** payment کارت، انتظار حداقل delay، upload فیش، عبور deadline اولیه، approve در grace و تحویل.
+4. **انتظار بررسی فیش:** payment کارت، انتظار حداقل delay، upload فیش پیش از deadline، عبور بیش از ۷ روز، باقی‌ماندن verifying، replacement معتبر و تأیید/رد صریح مدیر؛ intent بدون فیش همچنان منقضی شود.
 5. **انقضا:** order/intent کارت بدون فیش و بدون crypto فعال، اجرای maintenance، expired، آزادسازی hold و عدم پذیرش callback دیرهنگام.
 6. **تعویض روش/تأخیر بانک:** card فعال مانع crypto؛ لغو card سفارش را terminal؛ ساخت Order تازه با crypto؛ invoice صادرشده بدون cancel؛ transfer دیررس مبلغ کارت در quarantine به payment تازه متصل نشود.
 7. **رزرو:** دو سفارش paid بدون موجودی، افزودن یک item، تحویل فقط به قدیمی‌ترین، افزودن دوم و تحویل بعدی.
 8. **manual:** پرداخت، customer info با فایل، request correction، اطلاعات تازه، complete، subscription end از زمان completion.
-9. **تخفیف کامل:** کد ۱۰۰٪ روی order باز، پرداخت صفر، fulfillment؛ سپس replay code بدون سفارش دوم.
+9. **تخفیف کامل:** کد ۱۰۰٪ روی order باز، نمایش دوباره خلاصه با همان دکمه‌ها و بدون تحویل؛ دکمه پرداخت، تأیید صفرمبلغ، اعلان موفقیت و fulfillment؛ replay بدون اثر دوم. محصول رایگان نیز تا همین تأیید منتظر بماند.
 10. **پاداش خرید و crash:** rule first/product/combined، توقف مصنوعی پس از یک grant، restart، تکمیل بقیه بدون credit/notice تکراری.
 11. **مجوزها:** support مشاهده و پاسخ تیکت؛ تلاش wallet adjustment، approve و complete همگی رد.
 12. **مالکیت:** callback سفارش، تیکت و attachment کاربر B با حساب A همگی fail closed.
-13. **reminder دیررس:** reminder_days صفر در ورودی رد و صفر legacy نادیده گرفته شود؛ اشتراک پایان‌یافته هیچ پیام نگیرد؛ مورد هنوز معتبر تعداد روز واقعی باقی‌مانده را نشان دهد و blocked recipient بعدی را starve نکند.
+13. **reminder روز پایان:** صفر در ورودی پذیرفته و آغاز روز پایان در timezone تنظیم‌شده schedule شود؛ شروع schedule در همان روز پیش از پایان فوراً موعد دارد؛ انقضای نیمه‌شب و اشتراک پایان‌یافته پیام تازه نمی‌گیرند. پیام روزهای مثبت تاریخ مطلق دارد و retry بعد از پایان لغو می‌شود؛ blocked recipient بعدی را starve نکند.
 14. **broadcast:** audience کوچک، preview، double confirm، یک batch و یک پیام برای هر target، summary یک‌بار؛ سپس بیش از cap batch قدیمی با summaryهای 403 بسازید و اثبات کنید batch بعدی starve نمی‌شود.
 15. **provider review/recovery:** partial به verifying و بدون credit؛ completed بعدی یک settlement؛ crash پس از ثبت completed evidence و پیش از settlement با restart و بدون network بازیابی؛ terminal-zero بدون احیای Order.
 16. **late provider after resolution:** dismiss/refund review، failedشدن payment، سپس completed تازه؛ review جدید، عدم احیای Order و فقط credit جبرانی evidence-based با تصمیم owner.

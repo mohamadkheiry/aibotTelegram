@@ -3,7 +3,7 @@ flowchart TD
     B["اعتبارسنجی محصول و تکمیل نام و contact"]
     C["ایجاد اتمیک Order، snapshot و خلاصه created-summary؛ سپس پاک‌کردن state"]
     D["اعمال اختیاری تخفیف"]
-    E["تکمیل پرداخت"]
+    E["تأیید صریح و تکمیل پرداخت؛ حتی رایگان یا تخفیف صددرصد"]
     E0["queue/attempt اعلان canonical شماره سفارش، محصول، مبلغ و روش"]
     E1{"اعلان sent یا terminal failed/cancelled است؟"}
     E2["queued/sending؛ prompt و fulfillment تا retry متوقف"]
