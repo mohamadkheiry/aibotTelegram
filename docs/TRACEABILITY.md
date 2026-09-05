@@ -88,6 +88,10 @@
 
 ## ردیابی diagramها
 
+### اصلاح خوانایی Telegram Web پس از ممیزی اولیه
+
+گزارش اولیه کاربر: متن و پس‌زمینهٔ بعضی دکمه‌ها هم‌رنگ بود؛ کاربر قبل از اعمال تغییر تازه گفت به نظرش مشکل حل شده است. بنابراین mode پیش‌فرض `colored` و ظاهر فعلی حفظ شد. fallback اختیاری `BUTTON_COLOR_MODE=theme` در `TelegramClient.call` فقط style را از کپی reply markup حذف می‌کند. این مسیر منوی اصلی/فرعی، ارسال/edit، JSON/multipart و داده قدیمی outbox را پوشش می‌دهد. تست‌های [test_button_readability.py](../tests/test_button_readability.py) بقای ترتیب، متن، icon/action، عدم mutation، تنظیم env و wiring entrypoint را بررسی می‌کنند. مشاهدهٔ واقعی صفحه وب کاربر بدون اسکرین‌شات انجام نشده؛ عبور تست payload ادعای screenshot QA نیست.
+
 | حوزه | diagram |
 |---|---|
 | مرز و اجزا | `01-system-context.mmd`، `02-component-architecture.mmd` |

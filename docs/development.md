@@ -16,6 +16,8 @@
 
 ## نقشه مخزن
 
+سیاست خوانایی دکمه‌ها در `TelegramClient.call` است، نه در هر handler: `BUTTON_COLOR_MODE=colored` پیش‌فرض و معادل قبل است؛ `theme` fallback اختیاری است. builderها style معنایی مرجع را نگه می‌دارند؛ فقط نسخه ارسالی در mode=theme، style را از دست می‌دهد. در تغییرات آینده، markup ذخیره‌شده را mutate نکنید و مسیر edit، multipart و retry از outbox را دور نزنید. شاهد قرارداد [test_button_readability.py](../tests/test_button_readability.py) است.
+
 ```text
 .
 ├── app/

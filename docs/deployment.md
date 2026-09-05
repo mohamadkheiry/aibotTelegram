@@ -41,6 +41,7 @@ DATABASE_PATH=/var/lib/alone-account-bot/alone_account.sqlite3
 TIMEZONE=Asia/Tehran
 CURRENCY_LABEL=تومان
 LOG_LEVEL=INFO
+BUTTON_COLOR_MODE=colored
 
 POLL_TIMEOUT_SECONDS=30
 REQUEST_TIMEOUT_SECONDS=45
@@ -63,6 +64,8 @@ PLISIO_AMOUNT_MULTIPLIER=10
 فیلدهای خالی integration را غیرفعال نگه می‌دارند. `PAYMENT_CALLBACK_SECRET` وجود HTTP listener کارت را فعال می‌کند و در حالت غیرخالی باید ۴۳ تا ۱۲۸ کاراکتر URL-safe از `[A-Za-z0-9_-]` باشد؛ برای تولید مقدار ۴۳ کاراکتری از `python -c "import secrets; print(secrets.token_urlsafe(32))"` استفاده و خروجی را مستقیم در secret store قرار دهید. `PLISIO_API_KEY` فقط client ارزی را در startup در دسترس می‌گذارد؛ نمایش crypto علاوه بر آن به `/payment crypto on` نیاز دارد. در دیتابیس تازه wallet فعال، crypto خاموش و card با وجود flag اولیه تا ثبت هم‌زمان شماره و صاحب حساب مخفی است؛ `/payment card on` بدون این دو و `/payment crypto on` بدون API key fail closed می‌شوند. واحد مالی این release فقط `TOMAN` است و `CURRENCY_LABEL=تومان` باید ثابت بماند. `PUBLIC_PAYMENT_CALLBACK_URL`، اگر پر شود، فقط URL مطلق HTTPS بدون credential، `localhost`، IP literal محلی/خصوصی/reserved یا host عددی مبهم می‌پذیرد؛ این validation DNS lookup نیست. `TELEGRAM_API_BASE` برای هر مقصد غیر-loopback باید HTTPS باشد؛ HTTP فقط برای `localhost`/زیردامنه آن یا IP loopback مجاز است و credential/query/fragment پذیرفته نمی‌شود.
 
 ## چک‌لیست preflight
+
+`BUTTON_COLOR_MODE` فقط `theme` یا `colored` می‌پذیرد. پیش‌فرض `colored` رنگ‌های فعلی را حفظ می‌کند. fallback اختیاری `theme` برای ناسازگاری خوانایی کلاینت، رنگ اجباری دکمه را نمی‌فرستد؛ mode روی منوی اصلی، صفحه‌های فرعی، contact، edit و پیام‌های outbox اثر دارد. پس از تغییر env یک restart لازم است. برای مشاهده دکمه‌های تازه `/menu` یا `/start` ارسال کنید؛ پیام‌های تاریخی کاربر خودکار ویرایش نمی‌شوند. هر تغییر ظاهر باید در تم روشن/تاریک کلاینت‌های واقعی نیز بررسی شود.
 
 قبل از هر استقرار یا update این موارد را ثبت کنید:
 

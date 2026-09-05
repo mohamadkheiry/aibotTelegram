@@ -105,6 +105,8 @@
 **پیاده‌سازی:** `BotApplication._handle_message`, `_handle_callback`, `_access_guard`, `_check_memberships`, `_show_join_required`, `show_main_menu` در `app/bot.py`؛ `inline_main_menu_keyboard` در `app/keyboards.py`؛ `upsert_user` در `app/db.py`.<br>
 **تست:** `test_start_menu_purchase_requires_own_contact_and_creates_order`، `test_catalog_faq_and_join_surfaces_are_paginated`، `test_forced_join_long_title_is_clamped_to_telegram_limit`، `test_malformed_callbacks_fail_closed_and_are_answered_once`، `test_inline_main_menu_preserves_layout_styles_icons_and_safe_actions`، `test_every_main_menu_callback_reaches_its_user_route`، `test_main_menu_edit_failure_keeps_single_welcome_and_actionable_fallback`، `test_cancelled_menu_edit_does_not_send_during_shutdown`.
 
+**خوانایی کلاینت:** builder ترتیب و style معنایی را می‌سازد؛ `BUTTON_COLOR_MODE=colored` پیش‌فرض و معادل رفتار قبلی است. در fallback اختیاری `theme` رنگ اجباری هنگام ارسال حذف می‌شود. این سیاست همه صفحه‌ها و editها را پوشش می‌دهد و رنگ متن جداگانه جعل نمی‌شود؛ [تست ارسال در مرز HTTP](../tests/test_button_readability.py).
+
 ### UC-02 — ثبت دعوت و پاداش شروع
 
 **هدف:** اتصال قطعی دعوت‌شونده جدید به یک دعوت‌کننده و اعطای احتمالی پاداش شروع.

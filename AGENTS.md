@@ -32,6 +32,7 @@ python -m unittest discover -s tests -v
 - پیام حیاتی باید outbox/reconciliation پایدار داشته باشد.
 - تغییر schema شامل schema تازه، migration نسخه قبلی، integrity/FK check و regression test است.
 - label دکمه‌ها Unicode emoji ندارد؛ icon فقط از custom emoji ID اختیاری می‌آید.
+- رنگ دکمه فعلی با `BUTTON_COLOR_MODE=colored` حفظ می‌شود. `theme` fallback اختیاری برای ناخوانایی کلاینت است؛ semantic style در builder حفظ و فقط از کپی payload در مرز Telegram حذف می‌شود. داده outbox را برای ظاهر mutate نکنید.
 - متن معمولی escape و HTML فقط با `html:` و validator فعلی مجاز است.
 - واحد دامنه فقط `TOMAN` است؛ برچسب نمایشی یا مبلغ رمزارزی provider را با currency فروشگاه یکی نگیرید.
 - `orders.order_origin=customer` و subtotal مثبت شرط خرید تجاری است؛ `admin_assignment`/Order داخلی صفرمبلغ را وارد درآمد، خریدار، first purchase یا پاداش خرید نکنید.

@@ -52,6 +52,8 @@
 
 `show_main_menu` برای منوی اصلی از `inline_main_menu_keyboard` استفاده می‌کند تا دکمه کانال URL مستقیم داشته باشد. متن اصلی یک‌بار با حذف reply keyboard قبلی ارسال و inline markup به همان message ID متصل می‌شود. شکست Telegram در اتصال markup، فقط پیام کوتاه انتخاب با همان کنترل‌ها می‌سازد؛ cancellation در shutdown دوباره ارسال نمی‌کند. منوی reply و routeهای متنی قدیمی برای اعلان‌ها و سازگاری باقی‌اند؛ keyboard درخواست contact همچنان reply است. تمام callbackهای منوی inline از همان guardها و routeهای مشتری عبور می‌کنند.
 
+سیاست رنگ در مرز HTTP و `TelegramClient.call` اعمال می‌شود: `BUTTON_COLOR_MODE=colored` پیش‌فرض و معادل رفتار قبلی است. fallback اختیاری `theme` فقط کلید `style` دکمه‌های reply/inline را از یک کپی payload حذف می‌کند. JSON، multipart، ارسال و edit و markupهای قدیمی outbox همگی همین مسیر را دارند. ورودی، متن، callback/URL، آیکون و رکورد پایدار دست‌نخورده‌اند؛ در نتیجه fingerprint/idempotency موجود تغییر نمی‌کند. Bot API رنگ مستقل نوشتهٔ دکمه ندارد.
+
 ## چرخه آغاز و توقف
 
 مسیر preflight یعنی `python -m app.main --check`، config را می‌خواند، schema را تا نسخه ۱۱ initialize/migrate می‌کند، owner bootstrap را روی همان DB ایجاد یا با root marker/هویت پایدار تطبیق می‌دهد و سپس `getMe` را اجرا می‌کند. username پس از verify metadata است؛ تعارض legacy/configured chat ID یا انتقال به مقصد verifyنشده پیش از تماس Telegram fail closed می‌شود و restart owner غیرفعال‌شده را بازفعال نمی‌کند. بنابراین `--check` یک probe صرفاً read-only نیست.

@@ -141,6 +141,37 @@ def _clean_payload(payload: Mapping[str, Any] | None) -> JsonObject:
     return {key: value for key, value in (payload or {}).items() if value is not None}
 
 
+def _theme_button_markup(markup: Any) -> Any:
+    """Let the client choose matching button/text colors without mutating data.
+
+    Normalize at the transport boundary so older outbox records and multipart
+    messages receive the same policy. Keep labels, icons and actions intact;
+    the Bot API does not expose a separate button text-color field.
+    """
+    if isinstance(markup, str):
+        try:
+            parsed = json.loads(markup)
+        except (TypeError, ValueError):
+            return markup
+        return json.dumps(_theme_button_markup(parsed), ensure_ascii=False)
+    if not isinstance(markup, Mapping):
+        return markup
+    result = dict(markup)
+    for kind in ("keyboard", "inline_keyboard"):
+        rows = result.get(kind)
+        if not isinstance(rows, (list, tuple)):
+            continue
+        result[kind] = [
+            [
+                {key: value for key, value in button.items() if key != "style"}
+                if isinstance(button, Mapping) else button
+                for button in row
+            ] if isinstance(row, (list, tuple)) else row
+            for row in rows
+        ]
+    return result
+
+
 def _form_payload(payload: Mapping[str, Any]) -> dict[str, str]:
     """Encode nested Bot API values for a multipart request."""
 
@@ -185,6 +216,7 @@ class TelegramClient:
         max_retries: int = 3,
         retry_backoff: float = 0.75,
         max_retry_delay: float = 30.0,
+        button_color_mode: str = "colored",
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         token = token.strip()
@@ -196,6 +228,8 @@ class TelegramClient:
             raise ValueError("max_retries must be zero or greater")
         if retry_backoff < 0 or max_retry_delay < 0:
             raise ValueError("retry delays must not be negative")
+        if button_color_mode not in {"theme", "colored"}:
+            raise ValueError("button_color_mode must be theme or colored")
 
         self._token = token
         self.api_base = api_base.rstrip("/")
@@ -204,6 +238,7 @@ class TelegramClient:
         self.max_retries = int(max_retries)
         self.retry_backoff = float(retry_backoff)
         self.max_retry_delay = float(max_retry_delay)
+        self.button_color_mode = button_color_mode
         self._sleep = sleep
         self._owns_session = session is None
         self.session = session or requests.Session()
@@ -328,6 +363,8 @@ class TelegramClient:
             stop_event = self._default_stop_event
         url = self._url(method)
         clean = _clean_payload(payload)
+        if self.button_color_mode == "theme" and "reply_markup" in clean:
+            clean["reply_markup"] = _theme_button_markup(clean["reply_markup"])
         timeout = request_timeout or (self.connect_timeout, self.read_timeout)
         method_key = method.lower()
         can_retry_transient = (

@@ -51,6 +51,7 @@ def main() -> int:
         settings.bot_token,
         api_base=settings.telegram_api_base,
         read_timeout=settings.request_timeout_seconds,
+        button_color_mode=settings.button_color_mode,
     )
     if args.check:
         database.initialize()

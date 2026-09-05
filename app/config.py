@@ -73,6 +73,7 @@ class Settings:
     plisio_amount_multiplier: int = 10
     log_level: str = "INFO"
     button_icon_ids: Mapping[str, str] = field(default_factory=dict)
+    button_color_mode: str = "colored"
 
     @property
     def payment_callback_enabled(self) -> bool:
@@ -133,6 +134,8 @@ def _validate_api_base(value: str) -> bool:
 def validate_settings(settings: Settings) -> None:
     """Reject configurations that would fail, spin, or weaken runtime guarantees."""
 
+    if settings.button_color_mode not in {"theme", "colored"}:
+        raise RuntimeError("BUTTON_COLOR_MODE must be theme or colored")
     if any(character.isspace() or ord(character) < 32 for character in settings.bot_token):
         raise RuntimeError("BOT_TOKEN cannot contain whitespace or control characters")
     if not _ADMIN_USERNAME.fullmatch(settings.bootstrap_admin_username):
@@ -283,6 +286,7 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         ),
         log_level=get("LOG_LEVEL", "INFO").upper(),
         button_icon_ids=icon_ids,
+        button_color_mode=get("BUTTON_COLOR_MODE", "colored").strip().lower(),
     )
     validate_settings(settings)
     data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
