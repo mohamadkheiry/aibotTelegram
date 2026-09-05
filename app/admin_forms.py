@@ -109,7 +109,7 @@ def add(key: str, label: str, group: str, *fields: Field,
 
 add("admin_help", "راهنمای دکمه‌ها", "settings")
 add("bot_on", "فعال‌کردن ربات", "settings", mutation=True)
-add("bot_off", "حالت تعمیرات", "settings", mutation=True)
+add("bot_off", "غیرفعال‌کردن ربات", "settings", mutation=True)
 add("set_card", "تنظیم کارت بانکی", "settings", Field("number", "شماره کارت", "card"),
     Field("holder", "نام صاحب کارت"), mutation=True, pipe=True)
 add("set_channel", "تنظیم کانال اصلی", "settings", Field("url", "لینک کانال", "url"), mutation=True)

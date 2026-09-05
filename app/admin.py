@@ -1042,6 +1042,7 @@ class AdminController:
             chat_id,
             "<b>تنظیمات ربات</b>"
             f"\nربات: {enabled('bot_enabled', True)}"
+            f"\nحالت تعمیرات: {'غیرفعال' if bool(self.db.get_setting('bot_enabled', True)) else 'فعال'}"
             f"\nکیف پول: {enabled('payment_wallet_enabled', True)}"
             f"\nکارت: {enabled('payment_card_enabled', True)}"
             f"\nارز دیجیتال: {enabled('payment_crypto_enabled')}"
@@ -1271,13 +1272,13 @@ class AdminController:
         if rest:
             raise AdminInputError("فرمان /bot_on آرگومان نمی‌گیرد.")
         self.db.set_setting("bot_enabled", True)
-        self._send(self._chat_id(message, user), "ربات فعال شد.")
+        self._send(self._chat_id(message, user), "ربات فعال شد و حالت تعمیرات غیرفعال شد.")
 
     def _bot_off(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         if rest:
             raise AdminInputError("فرمان /bot_off آرگومان نمی‌گیرد.")
         self.db.set_setting("bot_enabled", False)
-        self._send(self._chat_id(message, user), "ربات در حالت تعمیرات قرار گرفت.")
+        self._send(self._chat_id(message, user), "ربات غیرفعال شد و در حالت تعمیرات قرار گرفت.")
 
     def _set_card(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 2)

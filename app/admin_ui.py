@@ -154,6 +154,20 @@ class AdminButtonUI:
         rows.extend([[self._button("پنل مدیریت", "home")], [callback_button("منوی اصلی", "menu")]])
         return rows
 
+    def bot_status(self) -> tuple[str, list[list[dict]]]:
+        """Two views of one access flag; callbacks set an explicit target.
+
+        Never invert the live flag on click: a cached button or replay must
+        retain the operation the administrator actually chose and confirmed.
+        """
+        enabled = bool(self.db.get_setting("bot_enabled", True))
+        status = "ربات: فعال\nحالت تعمیرات: غیرفعال" if enabled else "ربات: غیرفعال\nحالت تعمیرات: فعال"
+        labels = ("غیرفعال‌کردن ربات", "فعال‌کردن حالت تعمیرات") if enabled else (
+            "فعال‌کردن ربات", "غیرفعال‌کردن حالت تعمیرات")
+        target = "a:bot_off" if enabled else "a:bot_on"
+        rows = [[self._button(label, target, style="danger" if enabled else "success")] for label in labels]
+        return status, rows
+
     def home(self, user: dict, admin: dict, group: str | None = None) -> None:
         admin = self.authorise(user, admin)
         if group is not None and group not in GROUPS:
@@ -167,8 +181,13 @@ class AdminButtonUI:
             actions = [a for a in actions if a.group == group]
             if not actions and not (group == "broadcast" and self.allowed(ACTIONS["message"], admin["role"])):
                 raise ButtonInputError("دسترسی به این بخش ندارید.")
-            rows = [[self._button("جوین اجباری", "j:list:1") if a.key == "joins" else self._button(a.label, "a:" + a.key)]
-                    for a in actions if a.key not in {"join_add", "join_toggle", "join_delete"}]
+            rows = []
+            for action in actions:
+                if action.key == "bot_on":
+                    rows.extend(self.bot_status()[1])
+                elif action.key not in {"bot_off", "join_add", "join_toggle", "join_delete"}:
+                    rows.append([self._button("جوین اجباری", "j:list:1") if action.key == "joins" else
+                                 self._button(action.label, "a:" + action.key)])
             for child, parent in GROUP_PARENTS.items():
                 if parent == group and any(self.allowed(a, admin["role"]) and a.group == child for a in ACTIONS.values()):
                     rows.append([self._button(GROUPS[child], "g:" + child)])
@@ -544,7 +563,10 @@ class AdminButtonUI:
     def render(self, state: dict, user: dict, admin: dict) -> None:
         action = ACTIONS[state["action"]]
         if state["status"] == "done":
-            self._publish(state, user, "این درخواست قبلاً انجام شده است؛ از گزینه‌های زیر ادامه دهید.",
+            text = "این درخواست قبلاً انجام شده است؛ از گزینه‌های زیر ادامه دهید."
+            if action.key in {"bot_on", "bot_off"}:
+                text += "\n" + self.bot_status()[0]
+            self._publish(state, user, text,
                           self.result_rows(state, admin))
             return
         if state["status"] == "executing":
@@ -557,6 +579,11 @@ class AdminButtonUI:
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
+            if action.key in {"bot_on", "bot_off"}:
+                lines.extend(["وضعیت فعلی:\n" + self.bot_status()[0],
+                              "پس از تأیید: " + ("ربات فعال و حالت تعمیرات غیرفعال می‌شود." if action.key == "bot_on" else
+                                                 "ربات غیرفعال و حالت تعمیرات فعال می‌شود."),
+                              "دسترسی مدیران برای فعال‌سازی دوباره محفوظ می‌ماند."])
             for field in form_fields(action, state["values"]):
                 label = state["labels"].get(field.key, "")
                 # Preview limits never alter the original arguments.
@@ -704,7 +731,10 @@ class AdminButtonUI:
         if action.key.startswith("broadcast_"):
             self._retire_prompt(user, state.get("prompt_message_id"))
         else:
-            self._publish(state, user, "گزینه بعدی را انتخاب کنید.", self.result_rows(state, admin))
+            text = "گزینه بعدی را انتخاب کنید."
+            if action.key in {"bot_on", "bot_off"}:
+                text = self.bot_status()[0] + "\n" + text
+            self._publish(state, user, text, self.result_rows(state, admin))
 
     @staticmethod
     def return_route(state: dict) -> str:
@@ -713,6 +743,8 @@ class AdminButtonUI:
     def result_rows(self, state: dict, admin: dict) -> list[list[dict]]:
         action = ACTIONS[state["action"]]
         rows = []
+        if action.key in {"bot_on", "bot_off"} and self.allowed(action, admin["role"]):
+            rows.extend(self.bot_status()[1])
         if state.get("return_to"):
             if state["return_to"].get("scope") == "joins":
                 return [[self._button("بازگشت", "j:back")]]
