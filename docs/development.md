@@ -286,7 +286,7 @@ outbox یک claim پنج‌دقیقه‌ای قابل بازیابی دارد و
 1. use case، actor، precondition، stateها، failureها و اثر مالی را در مستند کسب‌وکار مشخص کنید.
 2. عملیات دامنه را به‌صورت متد public در `db.py` با validation، transaction و idempotency پیاده کنید.
 3. متن نمایشی را در `texts.py` یا helper امن قرار دهید.
-4. keyboard را با builderهای `keyboards.py` بسازید. متن دکمه نباید Unicode emoji داشته باشد، `callback_data` حداکثر ۶۴ byte است و action هر inline button دقیقاً یکی است.
+4. keyboard را با builderهای `keyboards.py` بسازید. متن دکمه نباید Unicode emoji داشته باشد؛ تنها استثنای صریح کاربر پیشوند ثابت ✅/❌ در `force_join_channel_button` است. عنوان ورودی آن نیز باید plain باشد. `callback_data` حداکثر ۶۴ byte است و action هر inline button دقیقاً یکی است. قرارداد و تست‌های مسیر کانال در [ADMIN_JOINS.md](ADMIN_JOINS.md).
 5. callback را در dispatcher مناسب `bot.py` با parser fail-closed اضافه کنید؛ ID، مالکیت entity، وضعیت جاری و دسترسی کاربر را دوباره از DB اعتبارسنجی کنید.
 6. برای ورودی چندمرحله‌ای از `user_states` استفاده کنید. state که stale یا ناسازگار است باید پاک شود، نه اینکه entity بسته را mutate کند.
 7. اعلان حساس را قبل از ارسال در outbox ثبت کنید.

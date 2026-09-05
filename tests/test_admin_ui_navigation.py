@@ -152,10 +152,11 @@ class AdminNavigationTests(unittest.TestCase):
         self.assertEqual(self.state()["status"], "done")
 
     def test_noncatalog_actions_are_reachable_through_nested_emitted_buttons(self):
-        # Catalog/inventory now use entity-centred views, covered end to end by
-        # test_admin_catalog_hierarchy. All 83 legacy form handlers retain the
+        # Catalog/inventory and force-join now use entity-centred views, covered
+        # by test_admin_catalog_hierarchy and test_admin_joins. All 83 handlers retain the
         # independent routing test in test_admin_buttons.
         visited = set()
+        joins = {"joins", "join_add", "join_toggle", "join_delete"}
         for group, title in GROUPS.items():
             if group in {"catalog", "inventory"}:
                 continue
@@ -164,13 +165,13 @@ class AdminNavigationTests(unittest.TestCase):
                 self.click(label=GROUPS[GROUP_PARENTS[group]])
             self.click(label=title)
             actions = copy.deepcopy(self.prompt())
-            for action in (a for a in ACTIONS.values() if a.group == group):
+            for action in (a for a in ACTIONS.values() if a.group == group and a.key not in joins):
                 with self.subTest(action=action.key):
                     self.click(label=action.label, prompt=actions)
                     self.assertEqual(self.state()["action"], action.key)
                     self.assertIn(self.state()["status"], {"editing", "confirm", "done"})
                     visited.add(action.key)
-        self.assertEqual(visited, {a.key for a in ACTIONS.values() if a.group not in {"catalog", "inventory"}})
+        self.assertEqual(visited, {a.key for a in ACTIONS.values() if a.group not in {"catalog", "inventory"} and a.key not in joins})
 
     def test_start_and_text_cancel_retire_form_buttons_and_preserve_customer_menu(self):
         for text in ("/start", "لغو و بازگشت"):

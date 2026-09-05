@@ -32,6 +32,7 @@ class DocumentationIntegrityTests(unittest.TestCase):
             "BUTTON_UI.md",
             "BUTTON_UI_AUDIT.md",
             "ADMIN_HIERARCHY.md",
+            "ADMIN_JOINS.md",
         )
         for name in required:
             path = DOCS_ROOT / name
@@ -79,7 +80,7 @@ class DocumentationIntegrityTests(unittest.TestCase):
     def test_mermaid_sources_match_embedded_diagrams_and_rendered_svgs(self) -> None:
         sources = sorted((DOCS_ROOT / "diagrams").glob("*.mmd"))
         rendered = DOCS_ROOT / "diagrams" / "rendered"
-        self.assertEqual(len(sources), 17)
+        self.assertEqual(len(sources), 18)
         embedded = re.findall(
             r"```mermaid\s*\n(.*?)```",
             (DOCS_ROOT / "DIAGRAMS.md").read_text(encoding="utf-8"),

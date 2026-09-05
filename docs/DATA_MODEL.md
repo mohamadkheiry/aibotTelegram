@@ -6,6 +6,8 @@
 
 ## خلاصه
 
+جوین اجباری از state مرور `admin:joins` با kind=list/channel، id، page، actor/chat و prompt_message_id استفاده می‌کند؛ فرم آن `return_to.scope=joins` دارد. schema همچنان 11 است و هیچ migration یا بازنویسی کانال در rollout انجام نمی‌شود. [جزئیات](ADMIN_JOINS.md).
+
 JSON فرم یک `prompt_message_id` اختیاری نیز دارد؛ این فقط شناسهٔ آخرین keyboard قابل retire در private chat خودش است، نه شناسهٔ عملیات مالی. هر بازنماییِ انتخابگر revision تازه دارد و گزینه‌های متناظر پیش از ارسال ذخیره می‌شوند. داده نسخهٔ قبل بدون این فیلد نیاز به migration ندارد. شرح ممیزی در [BUTTON_UI_AUDIT.md](BUTTON_UI_AUDIT.md).
 
 پایگاه داده SQLite تنها source of truth سامانه است. همه timestampها به شکل ISO-8601 UTC ذخیره می‌شوند، مبلغ‌ها integer و فقط با currency برابر `TOMAN` هستند و اعشار شناور در منطق مالی استفاده نمی‌شود. schema پایه در `app/schema.sql` و migrationهای idempotent در `Database._migrate_schema` قرار دارند.

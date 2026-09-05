@@ -1,8 +1,10 @@
 # معماری فنی ربات الون اکانت
 
-رابط مدیریت چهار جزء دارد: `admin_forms.py` کاتالوگ عملیات و ۹ بخش اصلی، `admin_catalog.py` مرور درخت دسته/محصول/انبار، `admin_ui.py` FSM پایدار دکمه‌ای و `admin.py` handler مشترک با مسیر سازگار فرمان. مرور در `admin:catalog` فقط شناسه و زمینه را ذخیره می‌کند؛ فرم در `admin:ui` token/revision و هویت input را نگه می‌دارد، role را زنده revalidate می‌کند و اجرای تأییدشده را به journal/دامنه موجود می‌سپارد. تراکنش مالی موازی یا poller جدید ندارد. جزئیات در [BUTTON_UI.md](BUTTON_UI.md)، [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) و نمودارهای ۰۲، ۰۶، ۱۶ و ۱۷ آمده است.
+رابط مدیریت پنج جزء دارد: `admin_forms.py` کاتالوگ عملیات و ۹ بخش اصلی، `admin_catalog.py` مرور درخت دسته/محصول/انبار، `admin_joins.py` مرور کانال‌های اجباری، `admin_ui.py` FSM پایدار دکمه‌ای و `admin.py` handler مشترک با مسیر سازگار فرمان. مرور در `admin:catalog` فقط شناسه و زمینه را ذخیره می‌کند؛ فرم در `admin:ui` token/revision و هویت input را نگه می‌دارد، role را زنده revalidate می‌کند و اجرای تأییدشده را به journal/دامنه موجود می‌سپارد. تراکنش مالی موازی یا poller جدید ندارد. جزئیات در [BUTTON_UI.md](BUTTON_UI.md)، [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) و نمودارهای ۰۲، ۰۶، ۱۶ و ۱۷ آمده است.
 
 ## هدف معماری
+
+جزء پنجم UI، `admin_joins.py`، مرور فقط‌خواندنی کانال‌های اجباری و بازکردن فرم مشترک را انجام می‌دهد؛ state آن `admin:joins` و مقصد بازگشت فرم با scope=joins جدا از کاتالوگ است. کنترل‌های دامنه و نقش تغییری ندارند. [قرارداد](ADMIN_JOINS.md).
 
 چرخهٔ نمایش فرم شامل revision تازه، persistence نگاشت گزینه‌ها، ارسال پیام جایگزین، ثبت `prompt_message_id` و پاک‌کردن best-effort markup قبلی است. شکست پاک‌کردن keyboard هرگز مجوز اجرای دوباره نمی‌سازد. callback قدیمی بدون فراخوانی handler، فرم فعلی یا گزینهٔ refresh خواندنی را نمایش می‌دهد؛ کنترل role قبل از recovery هم الزامی است.
 
@@ -194,7 +196,7 @@ delegated admin فقط بعد از اثبات زوج username و private chat/us
 4. ledger append-only و entry جبرانی به‌جای بازنویسی موجودی.
 5. outbox پایدار برای اعلان‌های حیاتی.
 6. HTML فقط با opt-in صریح `html:` و validator allowlist.
-7. custom emoji با ID اختیاری؛ متن label دکمه‌ها بدون Unicode emoji.
+7. custom emoji با ID اختیاری؛ متن label دکمه‌ها بدون Unicode emoji، جز پیشوند ثابت ✅/❌ وضعیت کانال در مدیریت جوین اجباری به درخواست صریح کاربر.
 8. هویت مدیر با chat ID verifyشده و root marker پایدار؛ username به‌تنهایی مجوز نیست.
 9. journal `started/completed` همراه با NACK polling برای resume امن update مدیریتی: خطای موقت DB offset را جلو نمی‌برد، اما خطای terminal ACK می‌شود؛ نه preclaim at-most-once و نه تضمین شبکه‌ای exactly-once.
 10. خلاصه ساخت Order و dependency اعلان موفقیت پرداخت در outbox پیش از fulfillment.

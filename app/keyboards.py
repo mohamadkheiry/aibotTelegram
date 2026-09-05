@@ -1,8 +1,7 @@
 """Telegram reply and inline keyboard builders.
 
-Button labels are deliberately plain text.  Visual decoration belongs in the
-Bot API ``icon_custom_emoji_id`` field so clients never receive an emoji as
-part of a button's label.
+Button labels are plain text except the explicitly requested status prefix on
+admin force-join channel rows. Other decoration uses ``icon_custom_emoji_id``.
 """
 
 from __future__ import annotations
@@ -374,6 +373,15 @@ def callback_button(
     )
 
 
+def force_join_channel_button(title: str, channel_id: int, page: int, *, active: bool) -> Button:
+    """Narrow user-approved exception; never accept emoji in the channel title."""
+    if type(channel_id) is not int or type(page) is not int or not 0 < channel_id < 2**63 or page < 1:
+        raise ValueError("channel id and page must be positive integers")
+    button = callback_button(title, f"adm:ui:j:channel:{channel_id}:{page}")
+    button["text"] = ("✅ " if active else "❌ ") + button["text"]
+    return button
+
+
 def url_button(
     text: str,
     url: str,
@@ -459,6 +467,7 @@ __all__ = [
     "callback_button",
     "contact_keyboard",
     "contains_emoji",
+    "force_join_channel_button",
     "copy_text_button",
     "inline_button",
     "inline_keyboard",

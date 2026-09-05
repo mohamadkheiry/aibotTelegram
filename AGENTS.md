@@ -31,7 +31,7 @@ python -m unittest discover -s tests -v
 - ownership و role در callback/state و درست قبل از mutation دوباره بررسی شود.
 - پیام حیاتی باید outbox/reconciliation پایدار داشته باشد.
 - تغییر schema شامل schema تازه، migration نسخه قبلی، integrity/FK check و regression test است.
-- label دکمه‌ها Unicode emoji ندارد؛ icon فقط از custom emoji ID اختیاری می‌آید.
+- label دکمه‌ها Unicode emoji ندارد؛ تنها استثنای صریح کاربر، پیشوند ✅/❌ وضعیت در دکمهٔ هر کانالِ فهرست مدیریت جوین اجباری است. این استثنا فقط در `force_join_channel_button` اعمال می‌شود؛ عنوان ورودی همچنان پاک‌سازی می‌شود و validator عمومی را ضعیف نکنید. icon سایر دکمه‌ها فقط از custom emoji ID اختیاری می‌آید.
 - رنگ دکمه فعلی با `BUTTON_COLOR_MODE=colored` حفظ می‌شود. `theme` fallback اختیاری برای ناخوانایی کلاینت است؛ semantic style در builder حفظ و فقط از کپی payload در مرز Telegram حذف می‌شود. داده outbox را برای ظاهر mutate نکنید.
 - متن معمولی escape و HTML فقط با `html:` و validator فعلی مجاز است.
 - واحد دامنه فقط `TOMAN` است؛ برچسب نمایشی یا مبلغ رمزارزی provider را با currency فروشگاه یکی نگیرید.

@@ -60,6 +60,7 @@ flowchart TB
     Admin["app.admin.AdminController<br/>handler مشترک و مسیر سازگار فرمان"]
     Forms["app.admin_forms + app.admin_ui<br/>۹ بخش، فرم، انتخاب، role و تأیید<br/>state پایدار token/revision/input"]
     Catalog["app.admin_catalog<br/>دسته، محصول، انبار و فرمت<br/>مرور خواندنی و فرم همان موجودیت"]
+    Joins["app.admin_joins<br/>فهرست و صفحه کانال اجباری<br/>فرم مشترک و وضعیت کانال"]
     UI["app.keyboards + app.texts + app.utils<br/>رندر امن متن و دکمه"]
     Repo["app.db.Database<br/>Repository و تراکنش‌های دامنه"]
     TG["app.telegram.TelegramClient<br/>Bot API، long polling و ACK/NACK offset<br/>سیاست رنگ دکمه theme/colored"]
@@ -77,6 +78,8 @@ flowchart TB
     Forms --> Repo
     Forms <--> Catalog
     Catalog --> Repo
+    Forms <--> Joins
+    Joins --> Repo
     Forms --> UI
     Bot --> UI
     Admin --> UI
@@ -1138,6 +1141,28 @@ flowchart TB
     Guard -- بله --> Commit["handler و تراکنش موجود<br/>اثر idempotent و بدون تکرار"]
     Commit --> Back["بازگشت به همان زمینه<br/>حفظ صفحه و جست‌وجو<br/>پس از حذف: والد معتبر"]
     Form -- لغو --> Back
+```
+
+## ۱۸. فعالیت مدیریت کانال‌های جوین اجباری
+
+منبع: [18-admin-force-join.mmd](diagrams/18-admin-force-join.mmd). قرارداد و تست‌ها: [ADMIN_JOINS.md](ADMIN_JOINS.md).
+
+![مدیریت جوین اجباری](diagrams/rendered/18-admin-force-join.svg)
+
+```mermaid
+flowchart TB
+    Settings["مدیریت کلی ربات"] --> List["جوین اجباری<br/>هر کانال یک دکمه با وضعیت فعال یا غیرفعال<br/>افزودن کانال اجباری و بازگشت"]
+    List -- انتخاب کانال --> Channel["کانال انتخاب‌شده<br/>فعال/غیرفعال کردن<br/>حذف<br/>بازگشت"]
+    Channel -- بازگشت --> List
+    List -- افزودن --> Add["یوزرنیم یا شناسه، عنوان، لینک عضویت"]
+    Channel -- تغییر وضعیت یا حذف --> Confirm["فرم همان کانال<br/>خلاصه و تأیید نهایی"]
+    Add --> Confirm
+    Confirm --> Guard{"نقش زنده و نسخه فرم معتبر؟<br/>برای افزودن/فعال‌سازی: ربات مدیر کانال است؟"}
+    Guard -- خیر --> Deny["رد بدون تغییر<br/>اصلاح یا لغو فرم"]
+    Guard -- بله --> Effect["handler و تراکنش موجود<br/>اثر یکتا و replay امن"]
+    Effect --> Return["بازگشت به کانال با وضعیت جدید<br/>پس از افزودن/حذف: فهرست به‌روز"]
+    Note["فهرست بیش از ۲۰ کانال صفحه‌بندی می‌شود<br/>نشانه‌های ✅/❌ فقط پیشوند دکمهٔ کانال‌اند"]
+    Note -.-> List
 ```
 
 ## ماتریس تغییر کد و نمودار

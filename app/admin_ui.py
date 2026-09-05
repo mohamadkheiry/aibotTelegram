@@ -74,8 +74,10 @@ class AdminButtonUI:
         self.controller = controller
         self.db = controller.db
         from .admin_catalog import AdminCatalog
+        from .admin_joins import AdminJoins
 
         self.catalog = AdminCatalog(self)
+        self.joins = AdminJoins(self)
 
     @staticmethod
     def allowed(action: Action, role: str) -> bool:
@@ -165,7 +167,8 @@ class AdminButtonUI:
             actions = [a for a in actions if a.group == group]
             if not actions and not (group == "broadcast" and self.allowed(ACTIONS["message"], admin["role"])):
                 raise ButtonInputError("دسترسی به این بخش ندارید.")
-            rows = [[self._button(a.label, "a:" + a.key)] for a in actions]
+            rows = [[self._button("جوین اجباری", "j:list:1") if a.key == "joins" else self._button(a.label, "a:" + a.key)]
+                    for a in actions if a.key not in {"join_add", "join_toggle", "join_delete"}]
             for child, parent in GROUP_PARENTS.items():
                 if parent == group and any(self.allowed(a, admin["role"]) and a.group == child for a in ACTIONS.values()):
                     rows.append([self._button(GROUPS[child], "g:" + child)])
@@ -184,7 +187,7 @@ class AdminButtonUI:
         role = {"owner": "مالک", "admin": "مدیر", "support": "پشتیبان"}[admin["role"]]
         self._send(user, f"<b>{title}</b>\nنقش شما: {role}\nگزینه را انتخاب کنید؛ نیازی به تایپ فرمان نیست.",
                    rows + self.navigation(GROUP_PARENTS.get(group)) if group else rows + [[callback_button("منوی اصلی", "menu")]])
-        if previous and previous["state"] in {"admin:ui", "admin:catalog"}:
+        if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins"}:
             self._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     @staticmethod
@@ -232,7 +235,7 @@ class AdminButtonUI:
                  "step": 0, "page": 1, "search": "", "selected": []}
         if prior.get("prompt_message_id"):
             state["prompt_message_id"] = prior["prompt_message_id"]
-        elif old and old["state"] == "admin:catalog":
+        elif old and old["state"] in {"admin:catalog", "admin:joins"}:
             state["prompt_message_id"] = old["data"].get("prompt_message_id")
         if return_to:
             state["return_to"] = return_to
@@ -280,6 +283,8 @@ class AdminButtonUI:
         suffix = data.removeprefix("adm:ui:")
         if suffix.startswith("c:"):
             return self.catalog.callback(suffix[2:], event, user, admin)
+        if suffix.startswith("j:"):
+            return self.joins.callback(suffix[2:], event, user, admin)
         if suffix == "home":
             self.home(user, admin)
             return True
@@ -303,6 +308,10 @@ class AdminButtonUI:
             state = self._state(user, admin)
         except ClosedFormError as exc:
             active = self.db.get_user_state(int(user["id"]))
+            if active and active["state"] == "admin:joins":
+                self.joins.authorise(user, admin, event)
+                self.joins.restore(self.joins.context(user), user, admin)
+                return True
             if active and active["state"] == "admin:catalog":
                 self.catalog.authorise(user, admin, event)
                 self.catalog.open_context(self.catalog.context(user), user, admin)
@@ -602,7 +611,7 @@ class AdminButtonUI:
                 text += "\n" + escape(field.hint)
         if state["step"] > state.get("minimum_step", 0):
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
-        rows.append([self._button("لغو و بازگشت", "c:back" if state.get("return_to") else "g:" + action.group, style="danger")])
+        rows.append([self._button("لغو و بازگشت", self.return_route(state) if state.get("return_to") else "g:" + action.group, style="danger")])
         self._save(user, state)
         self._publish(state, user, text, rows)
 
@@ -697,11 +706,17 @@ class AdminButtonUI:
         else:
             self._publish(state, user, "گزینه بعدی را انتخاب کنید.", self.result_rows(state, admin))
 
+    @staticmethod
+    def return_route(state: dict) -> str:
+        return "j:back" if state.get("return_to", {}).get("scope") == "joins" else "c:back"
+
     def result_rows(self, state: dict, admin: dict) -> list[list[dict]]:
         action = ACTIONS[state["action"]]
         rows = []
         if state.get("return_to"):
-            rows.append([self._button("بازگشت به بخش انتخاب‌شده", "c:back")])
+            if state["return_to"].get("scope") == "joins":
+                return [[self._button("بازگشت", "j:back")]]
+            rows.append([self._button("بازگشت به بخش انتخاب‌شده", self.return_route(state))])
         for key in RESULT_ACTIONS.get(action.key, ()):
             linked = ACTIONS[key]
             if self.allowed(linked, admin["role"]):
