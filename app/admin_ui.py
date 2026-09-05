@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .admin_forms import ACTIONS, GROUPS, Action, Field, arguments, form_fields
+from .admin_forms import ACTIONS, GROUP_PARENTS, GROUPS, MAIN_GROUPS, Action, Field, arguments, form_fields
 from .db import ConflictError, DatabaseError
 from .keyboards import callback_button, contains_emoji, inline_keyboard
 from .telegram import TelegramError
@@ -65,7 +65,7 @@ RESULT_ACTIONS = {
 def label_text(value: Any, maximum: int = 60) -> str:
     """Untrusted catalog names must not smuggle emoji into button labels."""
     text = " ".join(str(value).split())
-    text = "".join(char for char in text if not contains_emoji(char))
+    text = " ".join("".join(char for char in text if not contains_emoji(char)).split())
     return text[:maximum] or "انتخاب"
 
 
@@ -73,6 +73,9 @@ class AdminButtonUI:
     def __init__(self, controller: Any) -> None:
         self.controller = controller
         self.db = controller.db
+        from .admin_catalog import AdminCatalog
+
+        self.catalog = AdminCatalog(self)
 
     @staticmethod
     def allowed(action: Action, role: str) -> bool:
@@ -143,6 +146,9 @@ class AdminButtonUI:
         rows = []
         if group:
             rows.append([self._button("بازگشت به " + GROUPS[group], "g:" + group)])
+            if group in GROUP_PARENTS:
+                parent = GROUP_PARENTS[group]
+                rows.append([self._button("بازگشت به " + GROUPS[parent], "g:" + parent)])
         rows.extend([[self._button("پنل مدیریت", "home")], [callback_button("منوی اصلی", "menu")]])
         return rows
 
@@ -150,25 +156,35 @@ class AdminButtonUI:
         admin = self.authorise(user, admin)
         if group is not None and group not in GROUPS:
             raise ButtonInputError("بخش مدیریت شناخته نشد.")
+        if group == "catalog":
+            self.catalog.authorise(user, admin)
+            self.catalog.category(0, user, admin)
+            return
         actions = [a for a in ACTIONS.values() if self.allowed(a, admin["role"])]
         if group:
             actions = [a for a in actions if a.group == group]
-            if not actions:
+            if not actions and not (group == "broadcast" and self.allowed(ACTIONS["message"], admin["role"])):
                 raise ButtonInputError("دسترسی به این بخش ندارید.")
             rows = [[self._button(a.label, "a:" + a.key)] for a in actions]
+            for child, parent in GROUP_PARENTS.items():
+                if parent == group and any(self.allowed(a, admin["role"]) and a.group == child for a in ACTIONS.values()):
+                    rows.append([self._button(GROUPS[child], "g:" + child)])
+            if group == "broadcast" and self.allowed(ACTIONS["message"], admin["role"]):
+                rows.insert(0, [self._button("ارسال پیام تکی", "a:message")])
             title = GROUPS[group]
             if group == "settings" and admin["role"] in {"owner", "admin"}:
                 self.controller._send_settings_panel(int(user["chat_id"]), button_mode=True)
         else:
-            groups = [g for g in GROUPS if any(a.group == g for a in actions)]
+            groups = [g for g in MAIN_GROUPS if any(a.group == g for a in actions)
+                      or g == "broadcast" and self.allowed(ACTIONS["message"], admin["role"])]
             rows = [[self._button(GROUPS[g], "g:" + g)] for g in groups]
             title = "پنل مدیریت"
         previous = self.db.get_user_state(int(user["id"]))
         self.db.clear_user_state(int(user["id"]))
         role = {"owner": "مالک", "admin": "مدیر", "support": "پشتیبان"}[admin["role"]]
         self._send(user, f"<b>{title}</b>\nنقش شما: {role}\nگزینه را انتخاب کنید؛ نیازی به تایپ فرمان نیست.",
-                   rows + self.navigation() if group else rows + [[callback_button("منوی اصلی", "menu")]])
-        if previous and previous["state"] == "admin:ui":
+                   rows + self.navigation(GROUP_PARENTS.get(group)) if group else rows + [[callback_button("منوی اصلی", "menu")]])
+        if previous and previous["state"] in {"admin:ui", "admin:catalog"}:
             self._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     @staticmethod
@@ -195,7 +211,8 @@ class AdminButtonUI:
             raise ButtonInputError("دسترسی اجرای این عملیات را ندارید.")
         return data
 
-    def begin(self, key: str, event: dict, user: dict, admin: dict, *, selected: str | None = None) -> None:
+    def begin(self, key: str, event: dict, user: dict, admin: dict, *, selected: str | None = None,
+              preset: dict[str, str] | None = None, return_to: dict | None = None) -> None:
         action = ACTIONS.get(key)
         if action is None or not self.allowed(action, admin["role"]):
             raise ButtonInputError("دسترسی اجرای این عملیات را ندارید.")
@@ -215,6 +232,10 @@ class AdminButtonUI:
                  "step": 0, "page": 1, "search": "", "selected": []}
         if prior.get("prompt_message_id"):
             state["prompt_message_id"] = prior["prompt_message_id"]
+        elif old and old["state"] == "admin:catalog":
+            state["prompt_message_id"] = old["data"].get("prompt_message_id")
+        if return_to:
+            state["return_to"] = return_to
         if selected is not None:
             fields = form_fields(action, {})
             if not fields or not fields[0].kind.startswith("entity:"):
@@ -225,6 +246,24 @@ class AdminButtonUI:
             state["values"][fields[0].key] = item[0]
             state["labels"][fields[0].key] = item[1]
             state["step"] = 1
+        remaining = dict(preset or {})
+        while remaining:
+            field = self.current_field(state)
+            if field.key not in remaining:
+                raise ButtonInputError("مقادیر اولیه فرم باید به ترتیب مرحله‌ها باشند.")
+            value = remaining.pop(field.key)
+            if field.kind == "choice":
+                candidates = dict(self.options(field, state, admin))
+                if value not in candidates:
+                    raise ButtonInputError("گزینهٔ اولیه فرم معتبر نیست.")
+                label = candidates[value]
+            else:
+                raise ButtonInputError("پیش‌انتخاب این نوع فیلد مجاز نیست.")
+            self.set_value(state, field, value, label)
+        if return_to:
+            # A product-scoped form cannot change its target while navigating
+            # back. Only its editable values may be corrected before confirm.
+            state["minimum_step"] = state["step"]
         self._save(user, state)
         self.advance(state, event, user, admin)
 
@@ -239,6 +278,8 @@ class AdminButtonUI:
             # Authorization, form revision and domain idempotency still apply.
             self.controller.log.warning("Could not acknowledge admin button; continuing validated operation")
         suffix = data.removeprefix("adm:ui:")
+        if suffix.startswith("c:"):
+            return self.catalog.callback(suffix[2:], event, user, admin)
         if suffix == "home":
             self.home(user, admin)
             return True
@@ -261,6 +302,11 @@ class AdminButtonUI:
         try:
             state = self._state(user, admin)
         except ClosedFormError as exc:
+            active = self.db.get_user_state(int(user["id"]))
+            if active and active["state"] == "admin:catalog":
+                self.catalog.authorise(user, admin, event)
+                self.catalog.open_context(self.catalog.context(user), user, admin)
+                return True
             self._send(user, str(exc), self.navigation())
             self._retire_prompt(user, (event.get("message") or {}).get("message_id"))
             return True
@@ -305,7 +351,10 @@ class AdminButtonUI:
             self.execute(state, event, user, admin)
             return True
         if operation == "back":
-            state["step"] = max(0, state["step"] - 1)
+            minimum = state.get("minimum_step", 0)
+            if state["step"] <= minimum:
+                raise ButtonInputError("برای انتخاب مورد دیگر، به بخش قبل برگردید.")
+            state["step"] = max(minimum, state["step"] - 1)
             fields = form_fields(ACTIONS[state["action"]], state["values"])
             keep = {f.key for f in fields[:state["step"]]}
             state["values"] = {k: v for k, v in state["values"].items() if k in keep}
@@ -544,12 +593,16 @@ class AdminButtonUI:
                 if field.key == "icon":
                     default_label = "بدون آیکون"
                 rows.append([self._form_button(state, default_label, "default")])
-            text = f"<b>{action.label}</b>\nمرحله {state['step'] + 1}: {escape(field.label)}{info}"
+            text = f"<b>{action.label}</b>\nمرحله {state['step'] - state.get('minimum_step', 0) + 1}: {escape(field.label)}{info}"
+            if state.get("return_to") and state["labels"].get("target"):
+                selected_label = state["labels"]["target"]
+                preview = selected_label[:120] + ("…" if len(selected_label) > 120 else "")
+                text += "\nانتخاب‌شده: " + escape(preview) + " | شناسه: " + escape(state["values"]["target"])
             if field.hint:
                 text += "\n" + escape(field.hint)
-        if state["step"] > 0:
+        if state["step"] > state.get("minimum_step", 0):
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
-        rows.append([self._button("لغو و بازگشت", "g:" + action.group, style="danger")])
+        rows.append([self._button("لغو و بازگشت", "c:back" if state.get("return_to") else "g:" + action.group, style="danger")])
         self._save(user, state)
         self._publish(state, user, text, rows)
 
@@ -647,6 +700,8 @@ class AdminButtonUI:
     def result_rows(self, state: dict, admin: dict) -> list[list[dict]]:
         action = ACTIONS[state["action"]]
         rows = []
+        if state.get("return_to"):
+            rows.append([self._button("بازگشت به بخش انتخاب‌شده", "c:back")])
         for key in RESULT_ACTIONS.get(action.key, ()):
             linked = ACTIONS[key]
             if self.allowed(linked, admin["role"]):
@@ -663,10 +718,16 @@ class AdminButtonUI:
             if nav:
                 rows.append(nav)
             rows.append([self._form_button(state, "نمایش دوباره نتیجه", "list", str(page))])
-        return rows + self.navigation(action.group)
+        return rows + self.navigation("catalog" if state.get("return_to") else action.group)
 
     @staticmethod
     def friendly_error(text: str) -> str:
+        format_errors = {
+            "reservations are valid only for ready products": "رزرو فقط برای فرمت موجود در انبار است؛ پیش از تغییر به فرمت دستی، رزرو را غیرفعال کنید.",
+            "remove ready-product inventory before changing type to manual": "محصول هنوز آیتم انبار دارد. برای حفظ سوابق تحویل، آن‌ها خودکار حذف نمی‌شوند؛ برای فرمت دستی محصول جدا بسازید یا فقط موجودی تحویل‌نشده را مدیریت کنید.",
+            "resolve all live ready-product orders before changing type": "این محصول سفارش آمادهٔ باز دارد؛ ابتدا سفارش‌ها را تعیین تکلیف کنید، سپس فرمت را تغییر دهید.",
+        }
+        text = format_errors.get(text, text)
         # Compatibility errors sometimes point to old commands. In the button
         # flow refer to their human-readable operation instead.
         for action in sorted(ACTIONS.values(), key=lambda item: -len(item.command)):

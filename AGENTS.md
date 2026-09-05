@@ -51,6 +51,7 @@ python -m unittest discover -s tests -v
 - orchestration کاربر: `app/bot.py`
 - قوانین دامنه و persistence: `app/db.py`
 - مدیریت و roleها: `app/admin.py`
+- ناوبری ۹بخشی و درخت محصولات: `app/admin_forms.py:MAIN_GROUPS` و `app/admin_catalog.py`؛ قرارداد [ADMIN_HIERARCHY.md](docs/ADMIN_HIERARCHY.md). مرور دسته/محصول/انبار فقط خواندنی است؛ mutation همچنان در فرم تأییدشده و دامنه موجود انجام می‌شود. target و مشخصه پیش‌انتخاب‌شده در فرم زمینه‌دار با `minimum_step` قفل‌اند.
 - API Telegram/retry: `app/telegram.py`
 - callback کارت: `app/payment_server.py`
 - UI: `app/keyboards.py`, `app/texts.py`

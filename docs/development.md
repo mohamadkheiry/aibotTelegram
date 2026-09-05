@@ -4,6 +4,8 @@
 
 ## اصول راهنما
 
+برای ناوبری مدیریت ابتدا [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) را بخوانید. `MAIN_GROUPS` ترتیب ۹ بخش پذیرفته‌شده است؛ باقی کلیدهای GROUPS زیرگروه یا سازگاری‌اند و نباید دوباره به root اضافه شوند. `admin_catalog.py` فقط query خواندنی و بازکردن فرم مشترک دارد. `minimum_step` را برای اصلاح target فرم زمینه‌دار دور نزنید؛ در callback مرور فقط ID پایدار معتبر، نه index متغیر فهرست، قرار دهید. تست هدفمند: `python -m unittest tests.test_admin_catalog_hierarchy tests.test_admin_ui_navigation tests.test_admin_buttons -v`. شواهد از keyboard خروجی گرفته می‌شوند و به poller واقعی وصل نمی‌شوند.
+
 برای تغییر فرم دکمه‌ای، [BUTTON_UI_AUDIT.md](BUTTON_UI_AUDIT.md) و `tests/test_admin_ui_navigation.py` را بخوانید. تست کاربری باید callback/message ID را از keyboard ارسال‌شده استخراج کند، نه از state بازسازی کند. هر بازنماییِ نگاشت انتخاب‌ها revision تازه دارد؛ cleanup پیام قدیمی best effort و مستقل از امنیت/اجرای دامنه است. شناسهٔ پیام UI هرگز جای `ui-TOKEN` عملیات مالی را نمی‌گیرد.
 
 - ربات با Python 3.12+، کتابخانه `requests` و SQLite اجرا می‌شود؛ framework خارجی ربات یا ORM ندارد.

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from app.admin import _PRODUCT_FIELDS
-from app.admin_forms import ACTIONS, GROUPS, PRODUCT_FIELDS
+from app.admin_forms import ACTIONS, GROUPS, GROUP_PARENTS, PRODUCT_FIELDS
 from app.bot import BotApplication
 from app.db import DatabaseError
 from app.telegram import TelegramError
@@ -151,10 +151,17 @@ class AdminNavigationTests(unittest.TestCase):
         self.click(label="همه تاریخ‌ها")
         self.assertEqual(self.state()["status"], "done")
 
-    def test_every_group_and_action_is_reachable_through_emitted_buttons(self):
+    def test_noncatalog_actions_are_reachable_through_nested_emitted_buttons(self):
+        # Catalog/inventory now use entity-centred views, covered end to end by
+        # test_admin_catalog_hierarchy. All 83 legacy form handlers retain the
+        # independent routing test in test_admin_buttons.
         visited = set()
         for group, title in GROUPS.items():
+            if group in {"catalog", "inventory"}:
+                continue
             self.send_callback(self.OWNER, "adm:ui:home")
+            if group in GROUP_PARENTS:
+                self.click(label=GROUPS[GROUP_PARENTS[group]])
             self.click(label=title)
             actions = copy.deepcopy(self.prompt())
             for action in (a for a in ACTIONS.values() if a.group == group):
@@ -163,7 +170,7 @@ class AdminNavigationTests(unittest.TestCase):
                     self.assertEqual(self.state()["action"], action.key)
                     self.assertIn(self.state()["status"], {"editing", "confirm", "done"})
                     visited.add(action.key)
-        self.assertEqual(visited, set(ACTIONS))
+        self.assertEqual(visited, {a.key for a in ACTIONS.values() if a.group not in {"catalog", "inventory"}})
 
     def test_start_and_text_cancel_retire_form_buttons_and_preserve_customer_menu(self):
         for text in ("/start", "لغو و بازگشت"):

@@ -38,6 +38,11 @@ GROUPS = {
     "broadcast": "پیام گروهی", "reports": "گزارش‌ها", "settings": "تنظیمات ربات",
     "admins": "مدیران و پشتیبان‌ها",
 }
+# Product specification, PDF 1 pp. 1-3: exactly nine business sections.
+# The other stable keys remain usable by historical callbacks, but are nested.
+MAIN_GROUPS = ("settings", "catalog", "orders", "tickets", "users", "broadcast", "faq", "discounts", "reports")
+GROUP_PARENTS = {"payments": "orders", "inventory": "catalog", "rewards": "settings", "admins": "settings"}
+GROUPS.update(settings="مدیریت کلی ربات", catalog="محصولات", broadcast="ارسال پیام", reports="گزارش")
 ORDER_OPTIONS = (
     ("همه وضعیت‌ها", "all"), ("در انتظار پرداخت", "pending_payment"),
     ("در انتظار تأیید", "awaiting_confirmation"), ("پرداخت‌شده", "paid"),

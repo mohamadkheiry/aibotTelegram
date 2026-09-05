@@ -2,6 +2,8 @@
 
 ## تغییر پذیرفته‌شده: رابط دکمه‌محور
 
+REQ-UI-002 / UC-UI-02: ساختار ۹بخشی PDF اول صفحات ۱ تا ۳، درخت دسته/زیردسته/محصول، همه ۲۳ مشخصه در همان محصول، انبار و دو فرمت صفحه ۴. اجرا: `MAIN_GROUPS`/`GROUP_PARENTS`، `admin_catalog.py` و preselection/return_to/minimum_step در `admin_ui.py`. شاهد: ۲۱ تست `test_admin_catalog_hierarchy.py`، تست اجرای ۲۳ شاخهٔ مشخصه در `test_admin_ui_navigation.py` و پوشش ۸۳ handler در `test_admin_buttons.py`. شش مورد سامان‌دهی، مرزهای محافظت داده و نمودار ۱۷ در [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) ثبت شده‌اند.
+
 REQ-UI-001 / UC-UI-01: تمام ۸۳ عملیات DOCUMENTED_COMMANDS با بخش‌ها و فرم‌های `admin_forms.py` و FSM `admin_ui.py` قابل اجرا هستند؛ ۵۴ عمل فرم تأیید و سه پیام گروهی preview شمارش‌شده دارند. [BUTTON_UI.md](BUTTON_UI.md) ماتریس یک‌به‌یک actionهاست. منوی مشتری ثابت مانده، ورود مدیر شرطی است و ورودی‌های مشتری دکمه لغو دارند. فقط start در setMyCommands معرفی می‌شود؛ compatibility فرمان و اعلان تاریخی حفظ شده است.
 
 شاهد: `tests/test_admin_buttons.py` شامل پوشش همه handlerها از فرم، role/revoke/forgery، permission prefix، stale/double confirm، wallet/toggle crash، replay آخرین ورودی، pipe lossless، انبار بدون echo، فیش/تیکت، تخفیف/combined، broadcast preview، FAQ category و فیلترهای catalog، pagination و خروج مشتری. تست‌های قبلی دامنه همچنان مرجع invariant هستند. نمودار ۱۶ FSM/تأیید، ۰۶ نقش و ۰۲ اجزای تازه را نشان می‌دهند.

@@ -18,7 +18,7 @@ flowchart TB
     Support --> SupportScope
     Owner --> OwnerOnly
 
-    Panel["پنل دکمه‌ای متناسب با نقش<br/>انتخاب بخش و عملیات<br/>فرم، جست‌وجو و صفحه‌بندی<br/>بازگشت، لغو و تأیید mutation"]
+    Panel["۹ بخش اصلی مطابق سند و متناسب با نقش<br/>محصولات: دسته، زیردسته، محصول<br/>اطلاعات، انبار و فرمت همان محصول<br/>فرم، جست‌وجو، بازگشت و تأیید mutation"]
     Guard["private chat و chat ID verifyشده<br/>role زنده، token و revision فرم<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
     Panel --> Guard
     Guard -.-> Owner

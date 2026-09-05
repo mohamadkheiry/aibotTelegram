@@ -1,8 +1,8 @@
 flowchart TB
     A["شروع یا پنل مدیریت"] --> G{"مدیر فعال و هویت خصوصی اثبات شده؟"}
     G -- خیر --> Deny["عدم نمایش یا رد دسترسی"]
-    G -- بله --> B["انتخاب بخش و عملیات مجاز"]
-    B --> C["ساخت فرم پایدار<br/>actor + chat + token + revision"]
+    G -- بله --> B["۹ بخش و عملیات مجاز<br/>محصولات: دسته و سپس محصول"]
+    B --> C["ساخت فرم پایدار<br/>actor + chat + token + revision<br/>در مسیر محصول: target ثابت و return_to"]
     C --> D["انتشار فرم با revision تازه<br/>ثبت گزینه‌ها و بازنشسته‌کردن markup قبلی"]
     D --> Access{"هویت و نقش همچنان معتبر؟"}
     Access -- خیر --> Deny
@@ -25,6 +25,6 @@ flowchart TB
     Retry --> Execute
     Domain -- خطای ورودی --> Preview
     Domain -- موفق --> Done["ثبت done و حذف secret از state<br/>پاسخ و navigation دکمه‌ای"]
-    Done --> Next["رد تأیید مجدد و پاک‌کردن markup مصرف‌شده<br/>refresh خواندنی یا عملیات بعدی از پنل"]
+    Done --> Next["رد تأیید مجدد و پاک‌کردن markup مصرف‌شده<br/>بازگشت به همان محصول، انبار یا دسته<br/>refresh خواندنی یا عملیات بعدی از پنل"]
     Broadcast["پیام گروهی استثنای read handler است:<br/>پیش‌نمایش شمارش‌شده، سپس تأیید پایدار قبلی"]
     Broadcast -.-> M

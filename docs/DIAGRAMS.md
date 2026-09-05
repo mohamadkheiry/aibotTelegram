@@ -58,7 +58,8 @@ flowchart TB
     Config["app.config<br/>خواندن env و اعتبارسنجی تنظیمات"]
     Bot["app.bot.BotApplication<br/>مسیرهای کاربر و orchestration"]
     Admin["app.admin.AdminController<br/>handler مشترک و مسیر سازگار فرمان"]
-    Forms["app.admin_forms + app.admin_ui<br/>فرم دکمه‌ای، انتخاب، role و تأیید<br/>state پایدار token/revision/input"]
+    Forms["app.admin_forms + app.admin_ui<br/>۹ بخش، فرم، انتخاب، role و تأیید<br/>state پایدار token/revision/input"]
+    Catalog["app.admin_catalog<br/>دسته، محصول، انبار و فرمت<br/>مرور خواندنی و فرم همان موجودیت"]
     UI["app.keyboards + app.texts + app.utils<br/>رندر امن متن و دکمه"]
     Repo["app.db.Database<br/>Repository و تراکنش‌های دامنه"]
     TG["app.telegram.TelegramClient<br/>Bot API، long polling و ACK/NACK offset<br/>سیاست رنگ دکمه theme/colored"]
@@ -74,6 +75,8 @@ flowchart TB
     Bot --> Admin
     Admin --> Forms
     Forms --> Repo
+    Forms <--> Catalog
+    Catalog --> Repo
     Forms --> UI
     Bot --> UI
     Admin --> UI
@@ -409,7 +412,7 @@ flowchart TB
     Support --> SupportScope
     Owner --> OwnerOnly
 
-    Panel["پنل دکمه‌ای متناسب با نقش<br/>انتخاب بخش و عملیات<br/>فرم، جست‌وجو و صفحه‌بندی<br/>بازگشت، لغو و تأیید mutation"]
+    Panel["۹ بخش اصلی مطابق سند و متناسب با نقش<br/>محصولات: دسته، زیردسته، محصول<br/>اطلاعات، انبار و فرمت همان محصول<br/>فرم، جست‌وجو، بازگشت و تأیید mutation"]
     Guard["private chat و chat ID verifyشده<br/>role زنده، token و revision فرم<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
     Panel --> Guard
     Guard -.-> Owner
@@ -1077,8 +1080,8 @@ flowchart TD
 flowchart TB
     A["شروع یا پنل مدیریت"] --> G{"مدیر فعال و هویت خصوصی اثبات شده؟"}
     G -- خیر --> Deny["عدم نمایش یا رد دسترسی"]
-    G -- بله --> B["انتخاب بخش و عملیات مجاز"]
-    B --> C["ساخت فرم پایدار<br/>actor + chat + token + revision"]
+    G -- بله --> B["۹ بخش و عملیات مجاز<br/>محصولات: دسته و سپس محصول"]
+    B --> C["ساخت فرم پایدار<br/>actor + chat + token + revision<br/>در مسیر محصول: target ثابت و return_to"]
     C --> D["انتشار فرم با revision تازه<br/>ثبت گزینه‌ها و بازنشسته‌کردن markup قبلی"]
     D --> Access{"هویت و نقش همچنان معتبر؟"}
     Access -- خیر --> Deny
@@ -1101,9 +1104,40 @@ flowchart TB
     Retry --> Execute
     Domain -- خطای ورودی --> Preview
     Domain -- موفق --> Done["ثبت done و حذف secret از state<br/>پاسخ و navigation دکمه‌ای"]
-    Done --> Next["رد تأیید مجدد و پاک‌کردن markup مصرف‌شده<br/>refresh خواندنی یا عملیات بعدی از پنل"]
+    Done --> Next["رد تأیید مجدد و پاک‌کردن markup مصرف‌شده<br/>بازگشت به همان محصول، انبار یا دسته<br/>refresh خواندنی یا عملیات بعدی از پنل"]
     Broadcast["پیام گروهی استثنای read handler است:<br/>پیش‌نمایش شمارش‌شده، سپس تأیید پایدار قبلی"]
     Broadcast -.-> M
+```
+
+## ۱۷. درخت مدیریت محصول و عملیات زمینه‌دار
+
+منبع: [17-admin-catalog-hierarchy.mmd](diagrams/17-admin-catalog-hierarchy.mmd). قرارداد و تست‌ها: [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md).
+
+![درخت مدیریت محصول](diagrams/rendered/17-admin-catalog-hierarchy.svg)
+
+```mermaid
+flowchart TB
+    Root["پنل مدیریت: ۹ بخش مطابق سند"] --> Products["محصولات: دسته‌های اصلی"]
+    Products --> Category["دسته یا زیردسته<br/>فرزندان و محصولات فقط همین بخش<br/>جست‌وجو و صفحات ۲۰تایی"]
+    Category --> Category
+    Category --> CategoryEdit["افزودن محصول یا زیردسته<br/>ویرایش، نمایش و حذف دسته"]
+    Category --> Product["محصول انتخاب‌شده<br/>نام، قیمت، مدت، وضعیت و موجودی"]
+    Product --> Fields["اطلاعات و ویرایش<br/>مقدار کامل هر یک از ۲۳ مشخصه"]
+    Product --> Stock["انبار همین محصول<br/>آیتم، وضعیت و صفحه‌بندی"]
+    Product --> Format{"فرمت محصول"}
+    Format --> Ready["موجود در انبار<br/>رزرو و راهنمای تحویل"]
+    Format --> Manual["نیازمند اطلاعات<br/>متن درخواست، تکمیل و سقف موجودی"]
+    Stock --> Item["افزودن اکانت یا انتخاب آیتم<br/>ویرایش، فعال‌سازی، حذف و تخصیص مجاز"]
+    Fields --> Form["فرم مشترک با target و مشخصه ثابت<br/>فقط مقدار جدید و تأیید"]
+    CategoryEdit --> Form
+    Ready --> Form
+    Manual --> Form
+    Item --> Form
+    Form --> Guard{"نقش زنده، نسخه فرم<br/>و قواعد دامنه معتبر؟"}
+    Guard -- خیر --> Error["بدون تغییر داده<br/>اصلاح مقدار و تأیید دوباره"]
+    Guard -- بله --> Commit["handler و تراکنش موجود<br/>اثر idempotent و بدون تکرار"]
+    Commit --> Back["بازگشت به همان زمینه<br/>حفظ صفحه و جست‌وجو<br/>پس از حذف: والد معتبر"]
+    Form -- لغو --> Back
 ```
 
 ## ماتریس تغییر کد و نمودار

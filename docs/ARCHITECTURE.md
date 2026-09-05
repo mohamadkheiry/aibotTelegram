@@ -1,6 +1,6 @@
 # معماری فنی ربات الون اکانت
 
-رابط مدیریت اکنون به سه بخش تفکیک شده: `admin_forms.py` کاتالوگ declarative، `admin_ui.py` FSM پایدار دکمه‌ای و `admin.py` handler مشترک با مسیر سازگار فرمان. UI در state `admin:ui` token/revision و هویت input را نگه می‌دارد، role را زنده revalidate می‌کند و اجرای تأییدشده را به journal/دامنه موجود می‌سپارد؛ تراکنش مالی موازی یا poller جدید ندارد. جزئیات و محدودیت بافر پاسخ در [BUTTON_UI.md](BUTTON_UI.md) و نمودارهای ۰۲، ۰۶ و ۱۶ آمده است.
+رابط مدیریت چهار جزء دارد: `admin_forms.py` کاتالوگ عملیات و ۹ بخش اصلی، `admin_catalog.py` مرور درخت دسته/محصول/انبار، `admin_ui.py` FSM پایدار دکمه‌ای و `admin.py` handler مشترک با مسیر سازگار فرمان. مرور در `admin:catalog` فقط شناسه و زمینه را ذخیره می‌کند؛ فرم در `admin:ui` token/revision و هویت input را نگه می‌دارد، role را زنده revalidate می‌کند و اجرای تأییدشده را به journal/دامنه موجود می‌سپارد. تراکنش مالی موازی یا poller جدید ندارد. جزئیات در [BUTTON_UI.md](BUTTON_UI.md)، [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) و نمودارهای ۰۲، ۰۶، ۱۶ و ۱۷ آمده است.
 
 ## هدف معماری
 

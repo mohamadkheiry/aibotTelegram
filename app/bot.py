@@ -724,7 +724,7 @@ class BotApplication:
         self._retire_admin_prompt(user, previous)
 
     def _retire_admin_prompt(self, user: dict[str, Any], previous: dict[str, Any] | None) -> None:
-        if previous and previous["state"] == "admin:ui" and self.admin_controller:
+        if previous and previous["state"] in {"admin:ui", "admin:catalog"} and self.admin_controller:
             self.admin_controller.button_ui._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     def _dispatch_user_callback(
