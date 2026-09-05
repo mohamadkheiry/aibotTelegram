@@ -75,9 +75,11 @@ class AdminButtonUI:
         self.db = controller.db
         from .admin_catalog import AdminCatalog
         from .admin_joins import AdminJoins
+        from .admin_layouts import AdminLayouts
 
         self.catalog = AdminCatalog(self)
         self.joins = AdminJoins(self)
+        self.layouts = AdminLayouts(self)
 
     @staticmethod
     def allowed(action: Action, role: str) -> bool:
@@ -216,6 +218,7 @@ class AdminButtonUI:
                 rows.insert(0, [self._button("ارسال پیام تکی", "a:message")])
             title = GROUPS[group]
             if group == "settings" and admin["role"] in {"owner", "admin"}:
+                rows.insert(0, [self._button("چیدمان دکمه‌های کاربران", "l:home", style="primary")])
                 self.controller._send_settings_panel(int(user["chat_id"]), button_mode=True)
         else:
             groups = [g for g in MAIN_GROUPS if any(a.group == g for a in actions)
@@ -227,7 +230,7 @@ class AdminButtonUI:
         role = {"owner": "مالک", "admin": "مدیر", "support": "پشتیبان"}[admin["role"]]
         self._send(user, f"<b>{title}</b>\nنقش شما: {role}\nگزینه را انتخاب کنید؛ نیازی به تایپ فرمان نیست.",
                    rows + self.navigation(GROUP_PARENTS.get(group)) if group else rows + [[callback_button("منوی اصلی", "menu")]])
-        if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins"}:
+        if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins", "admin:layouts"}:
             self._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     @staticmethod
@@ -275,7 +278,7 @@ class AdminButtonUI:
                  "step": 0, "page": 1, "search": "", "selected": []}
         if prior.get("prompt_message_id"):
             state["prompt_message_id"] = prior["prompt_message_id"]
-        elif old and old["state"] in {"admin:catalog", "admin:joins"}:
+        elif old and old["state"] in {"admin:catalog", "admin:joins", "admin:layouts"}:
             state["prompt_message_id"] = old["data"].get("prompt_message_id")
         if return_to:
             state["return_to"] = return_to
@@ -321,6 +324,8 @@ class AdminButtonUI:
             # Authorization, form revision and domain idempotency still apply.
             self.controller.log.warning("Could not acknowledge admin button; continuing validated operation")
         suffix = data.removeprefix("adm:ui:")
+        if suffix.startswith("l:"):
+            return self.layouts.callback(suffix[2:], event, user, admin)
         if suffix.startswith("c:"):
             return self.catalog.callback(suffix[2:], event, user, admin)
         if suffix.startswith("j:"):
@@ -348,6 +353,10 @@ class AdminButtonUI:
             state = self._state(user, admin)
         except ClosedFormError as exc:
             active = self.db.get_user_state(int(user["id"]))
+            if active and active["state"] == "admin:layouts":
+                self.layouts.authorise(user, admin, event)
+                self.layouts.render(self.layouts.state(user, admin), user)
+                return True
             if active and active["state"] == "admin:joins":
                 self.joins.authorise(user, admin, event)
                 self.joins.restore(self.joins.context(user), user, admin)

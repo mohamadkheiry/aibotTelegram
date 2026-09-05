@@ -55,6 +55,7 @@ python -m unittest discover -s tests -v
 - API Telegram/retry: `app/telegram.py`
 - callback کارت: `app/payment_server.py`
 - UI: `app/keyboards.py`, `app/texts.py`
+- چیدمان مشتری: پیش از تغییر هر keyboard کاربر، `docs/CUSTOMER_LAYOUTS.md` را بخوانید. registry واحد ۳۹ نوع صفحه در `app/customer_layouts.py`، ویرایشگر در `app/admin_layouts.py` و ذخیرهٔ CAS/undo/journal در `Database.save_customer_layout` است. چیدمان سند اکنون پیش‌فرض قابل بازنشانی است؛ payload/مجوز/شرط نمایش تغییر نمی‌کند. metadata داخلی پیش از Telegram حذف و outbox canonical برای ظاهر بازنویسی نمی‌شود. صفحهٔ جدید بدون section و تست پوشش مجاز نیست.
 - مدیریت دکمه‌محور: `app/admin_forms.py` (کاتالوگ فرم‌ها)، `app/admin_ui.py` (state پایدار، role، انتخاب و تأیید). هر عملیات تازه باید در فرم و تست پوشش همه فرمان‌ها ثبت شود. [قرارداد UI](docs/BUTTON_UI.md) را پیش از تغییر این مسیر بخوانید.
 - config: `app/config.py`, `.env.example`
 - migration: `app/schema.sql` و `Database._migrate_schema`

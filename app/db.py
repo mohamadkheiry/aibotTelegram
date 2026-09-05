@@ -26,6 +26,7 @@ from typing import Any, Callable, Iterator, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from .utils import is_safe_https_url, is_safe_telegram_invite_url
+from .customer_layouts import same_canonical_markup
 
 
 class DatabaseError(RuntimeError):
@@ -1394,6 +1395,86 @@ class Database:
         with self._read() as connection:
             row = connection.execute("SELECT value_json FROM settings WHERE key = ?", (key,)).fetchone()
         return default if row is None else _json_load(row["value_json"])
+
+    def save_customer_layout(
+        self, section: str, config: dict, *, expected_version: int, expected_base_version: int,
+        admin_id: int, chat_id: int, update_id: int, operation: str = "save",
+    ) -> dict:
+        """CAS + bounded undo + the existing admin journal, in one transaction.
+
+        No schema change: layouts are versioned settings. Replay after commit
+        returns the recorded result even when a different admin has since saved.
+        """
+        from .customer_layouts import defaults, definition, validate
+
+        try:
+            spec = definition(section)
+            config = validate(section, config)
+        except (ValueError, TypeError) as exc:
+            raise ValidationError(str(exc)) from exc
+        if operation not in {"save", "undo", "reset"}:
+            raise ValidationError("عملیات چیدمان معتبر نیست.")
+        if any(type(value) is not int or value < 0 for value in (expected_version, expected_base_version)):
+            raise ValidationError("نسخه چیدمان معتبر نیست.")
+        request = {"section": section, "config": config, "version": expected_version,
+                   "base_version": expected_base_version, "operation": operation, "admin_id": admin_id, "chat_id": chat_id}
+        stamp = _timestamp(None)
+        with self._transaction() as connection:
+            admin = connection.execute(
+                "SELECT id FROM admins WHERE id=? AND chat_id=? AND is_active=1 AND "
+                "identity_verified_at IS NOT NULL AND role IN ('owner','admin')", (admin_id, chat_id),
+            ).fetchone()
+            if admin is None:
+                raise ValidationError("دسترسی تغییر چیدمان ندارید.")
+            journal = self._required(connection, "SELECT * FROM processed_admin_updates WHERE update_id=?", (update_id,), "admin update")
+            if journal["effect_json"]:
+                effect = _json_load(journal["effect_json"])
+                if effect.get("key") != "customer-layout" or effect.get("value", {}).get("request") != request:
+                    raise ConflictError("این درخواست به تغییر دیگری متصل است.")
+                return effect["value"]["result"]
+            if journal["status"] != "started":
+                raise ConflictError("درخواست پایان یافته است.")
+            if ":" in section:
+                ident = int(section.split(":")[1])
+                table = {"category": "categories", "product": "products", "faq_category": "faq_categories", "faq": "faqs"}[spec.scoped]
+                active = " AND is_active=1" if spec.scoped == "product" else ""
+                if connection.execute(f"SELECT id FROM {table} WHERE id=?{active}", (ident,)).fetchone() is None:
+                    raise NotFoundError("بخش انتخاب‌شده دیگر موجود نیست.")
+
+            def read(key: str) -> dict:
+                found = connection.execute("SELECT value_json FROM settings WHERE key=?", ("customer_layout:" + key,)).fetchone()
+                return _json_load(found["value_json"]) if found else {}
+
+            document = read(section)
+            parent = read(section.split(":")[0]) if ":" in section else {}
+            if document.get("version", 0) != expected_version or parent.get("version", 0) != expected_base_version:
+                raise ConflictError("چیدمان این بخش توسط مدیر دیگری تغییر کرده است؛ نسخه تازه را باز کنید.")
+            history = document.get("history", [])
+            current = document.get("current")
+            if operation == "undo":
+                if not history:
+                    raise ConflictError("چیدمان قبلی برای بازگردانی وجود ندارد.")
+                current, history = history[-1], history[:-1]
+            else:
+                # Snapshot what users actually saw, including an inherited
+                # layout. Undo must not change meaning if the parent changes.
+                previous = current or parent.get("current") or defaults(section)
+                try:
+                    previous = validate(section, previous)
+                except (ValueError, TypeError):
+                    previous = defaults(section)
+                history = [*history, previous][-10:]
+                current = defaults(section) if operation == "reset" else config
+            result = {"version": expected_version + 1, "current": current, "history": history,
+                      "updated_by": admin_id, "updated_at": stamp}
+            connection.execute(
+                "INSERT INTO settings(key,value_json,updated_at) VALUES(?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+                ("customer_layout:" + section, _json_dump(result), stamp),
+            )
+            connection.execute("UPDATE processed_admin_updates SET effect_json=?,updated_at=? WHERE update_id=?",
+                               (_json_dump({"key": "customer-layout", "value": {"request": request, "result": result}}), stamp, update_id))
+            return result
 
     def save_update_offset(self, offset: int, *, now: datetime | str | None = None) -> int:
         """Persist a monotonic getUpdates offset; retries cannot move it back."""
@@ -6365,7 +6446,7 @@ class Database:
                 existing["recipient_user_id"] != int(user_id)
                 or existing["audience_json"] is not None
                 or existing["body"] != clean_body
-                or existing["reply_markup_json"] != expected_markup
+                or not same_canonical_markup(existing["reply_markup_json"], expected_markup)
             ):
                 raise ConflictError(
                     "outbound idempotency key belongs to another message"
@@ -7765,7 +7846,7 @@ class Database:
                     existing["recipient_user_id"] != expected_recipient
                     or existing["audience_json"] != expected_audience
                     or existing["body"] != clean_body
-                    or existing["reply_markup_json"] != expected_markup
+                    or not same_canonical_markup(existing["reply_markup_json"], expected_markup)
                     or (
                         scheduled_at is not None
                         and existing["scheduled_at"] != due

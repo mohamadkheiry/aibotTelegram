@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from .utils import is_safe_https_url, is_safe_telegram_channel_url
+from .customer_layouts import tagged
 
 
 Button = dict[str, Any]
@@ -236,7 +237,7 @@ def main_menu_keyboard(
     ]
     if include_admin:
         rows.append([reply_button("پنل مدیریت")])
-    return reply_keyboard(rows, resize_keyboard=True, is_persistent=is_persistent)
+    return tagged("main", reply_keyboard(rows, resize_keyboard=True, is_persistent=is_persistent))
 
 
 def inline_main_menu_keyboard(
@@ -272,7 +273,7 @@ def inline_main_menu_keyboard(
         rows.append(buttons)
     if include_admin:
         rows.append([callback_button("پنل مدیریت", "adm:ui:home")])
-    return inline_keyboard(rows)
+    return tagged("main", inline_keyboard(rows))
 
 
 def request_contact_button(
@@ -297,12 +298,12 @@ def contact_keyboard(
 ) -> ReplyMarkup:
     """One-time private-chat keyboard that requests the user's contact."""
 
-    return reply_keyboard(
+    return tagged("input_contact", reply_keyboard(
         [[request_contact_button(text, style=style, icon_custom_emoji_id=icon_custom_emoji_id)],
          [reply_button("لغو و بازگشت")]],
         resize_keyboard=True,
         one_time_keyboard=True,
-    )
+    ))
 
 
 def inline_button(
@@ -418,11 +419,11 @@ def back_button(
     text: str = "بازگشت",
     icon_custom_emoji_id: str | None = None,
 ) -> Button:
-    return callback_button(
+    return {**callback_button(
         text,
         callback_data,
         icon_custom_emoji_id=icon_custom_emoji_id,
-    )
+    ), "_layout_slot": "back"}
 
 
 def inline_keyboard(

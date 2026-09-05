@@ -26,12 +26,26 @@ class ButtonReadabilityTests(unittest.TestCase):
         client = TelegramClient("readability-test-token", session=session, **kwargs)
         return client, session
 
-    def assert_theme_markup(self, original, sent):
+    def expected_wire_markup(self, original):
+        # Internal layout hints are not Bot API fields. Keep every real field
+        # in this independent expectation so payload/style regressions fail.
         expected = copy.deepcopy(original)
+        expected.pop("_customer_layout", None)
         for kind in ("keyboard", "inline_keyboard"):
             for row in expected.get(kind, []):
                 for button in row:
-                    button.pop("style", None)
+                    if isinstance(button, dict):
+                        button.pop("_layout_slot", None)
+                        button.pop("_layout_item", None)
+        return expected
+
+    def assert_theme_markup(self, original, sent):
+        expected = self.expected_wire_markup(original)
+        for kind in ("keyboard", "inline_keyboard"):
+            for row in expected.get(kind, []):
+                for button in row:
+                    if isinstance(button, dict):
+                        button.pop("style", None)
         self.assertEqual(sent, expected)
 
     def test_theme_send_and_edit_strip_only_button_styles_without_mutating_inputs(self):
@@ -83,7 +97,10 @@ class ButtonReadabilityTests(unittest.TestCase):
             with self.subTest(options=options):
                 client, session = self.client(**options)
                 client.send_message(1, "منو", reply_markup=markup)
-                self.assertEqual(session.post.call_args.kwargs["json"]["reply_markup"], markup)
+                self.assertEqual(
+                    session.post.call_args.kwargs["json"]["reply_markup"],
+                    self.expected_wire_markup(markup),
+                )
 
     def test_color_policy_does_not_change_unrelated_payload_fields(self):
         client, session = self.client(button_color_mode="theme")

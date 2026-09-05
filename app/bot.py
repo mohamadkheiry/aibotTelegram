@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from . import texts
 from .config import Settings
+from .customer_layouts import LayoutEngine, LayoutTelegram, keyboard as customer_keyboard, tagged
 from .db import (
     ConflictError,
     Database,
@@ -126,7 +127,8 @@ class BotApplication:
     ) -> None:
         self.settings = settings
         self.db = database
-        self.telegram = telegram
+        self.layouts = LayoutEngine(database)
+        self.telegram = LayoutTelegram(telegram.transport if isinstance(telegram, LayoutTelegram) else telegram, self.layouts)
         self.stop_event = threading.Event()
         if hasattr(self.telegram, "set_stop_event"):
             self.telegram.set_stop_event(self.stop_event)
@@ -588,6 +590,7 @@ class BotApplication:
 
     def _show_join_required(self, user: dict[str, Any], *, page: int = 0) -> None:
         channels = self.db.list_force_join_channels(active_only=True)
+        channels = self.layouts.order_items("join", channels, lambda item: f"join:{item['id']}")
         page_size = 12
         page, page_count = self._bounded_page(page, len(channels), page_size)
         visible_channels = channels[page * page_size : (page + 1) * page_size]
@@ -600,7 +603,7 @@ class BotApplication:
                 else self._channel_url(channel["telegram_chat_id"])
             )
             if url:
-                rows.append([url_button(f"عضویت در کانال {index}", url, style="primary")])
+                rows.append([{**url_button(f"عضویت در کانال {index}", url, style="primary"), "_layout_item": f"join:{channel['id']}"}])
         navigation = self._pagination_buttons(page, page_count, "join:page")
         if navigation:
             rows.append(navigation)
@@ -611,7 +614,7 @@ class BotApplication:
         self.telegram.send_message(
             user["chat_id"],
             clamp_text(content),
-            reply_markup=inline_keyboard(rows),
+            reply_markup=customer_keyboard("join", rows),
         )
 
     @staticmethod
@@ -685,11 +688,11 @@ class BotApplication:
         )
 
     @staticmethod
-    def _input_cancel_markup() -> dict[str, Any]:
+    def _input_cancel_markup(section: str) -> dict[str, Any]:
         # Replace a persistent reply menu while collecting text: otherwise a
         # menu-button label can accidentally be saved as the customer's input.
-        return reply_keyboard([[reply_button("لغو و بازگشت")]],
-                              resize_keyboard=True, one_time_keyboard=True)
+        return tagged(section, reply_keyboard([[reply_button("لغو و بازگشت")]],
+                                              resize_keyboard=True, one_time_keyboard=True))
 
     def show_main_menu(self, user: dict[str, Any]) -> None:
         previous = self.db.get_user_state(user["id"])
@@ -724,7 +727,7 @@ class BotApplication:
         self._retire_admin_prompt(user, previous)
 
     def _retire_admin_prompt(self, user: dict[str, Any], previous: dict[str, Any] | None) -> None:
-        if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins"} and self.admin_controller:
+        if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins", "admin:layouts"} and self.admin_controller:
             self.admin_controller.button_ui._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     def _dispatch_user_callback(
@@ -801,7 +804,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "💰 مبلغ دلخواه شارژ را به تومان وارد کن.\nمثال: <code>250000</code>",
-                reply_markup=self._input_cancel_markup(),
+                reply_markup=self._input_cancel_markup("input_topup"),
             )
             return True
         if data == "support":
@@ -829,7 +832,7 @@ class BotApplication:
             self.telegram.answer_callback_query(query_id)
             self.db.set_user_state(user["id"], "ticket_subject", {})
             self.telegram.send_message(
-                user["chat_id"], "موضوع تیکت را کوتاه بنویس:", reply_markup=self._input_cancel_markup()
+                user["chat_id"], "موضوع تیکت را کوتاه بنویس:", reply_markup=self._input_cancel_markup("input_ticket_subject")
             )
             return True
         if data == "tickets:list" or data.startswith("tickets:list:"):
@@ -905,7 +908,7 @@ class BotApplication:
                 raise NotFoundError("تیکت باز پیدا نشد.")
             self.db.set_user_state(user["id"], "ticket_reply", {"ticket_id": ticket_id})
             self.telegram.send_message(user["chat_id"], "پیامت را برای پشتیبانی بفرست:",
-                                       reply_markup=self._input_cancel_markup())
+                                       reply_markup=self._input_cancel_markup("input_ticket_reply"))
             self.telegram.answer_callback_query(query_id)
             return True
         if data == "referral":
@@ -1006,9 +1009,9 @@ class BotApplication:
     def _pagination_buttons(page: int, page_count: int, prefix: str) -> list[dict[str, Any]]:
         buttons: list[dict[str, Any]] = []
         if page > 0:
-            buttons.append(callback_button("صفحه قبل", f"{prefix}:{page - 1}"))
+            buttons.append({**callback_button("صفحه قبل", f"{prefix}:{page - 1}"), "_layout_slot": "prev"})
         if page + 1 < page_count:
-            buttons.append(callback_button("صفحه بعد", f"{prefix}:{page + 1}"))
+            buttons.append({**callback_button("صفحه بعد", f"{prefix}:{page + 1}"), "_layout_slot": "next"})
         return buttons
 
     # -- catalog -----------------------------------------------------------
@@ -1021,6 +1024,7 @@ class BotApplication:
         page: int = 0,
     ) -> None:
         categories = self.db.list_categories(parent_id=None, active_only=True)
+        categories = self.layouts.order_items("store", categories, lambda item: f"cat:{item['id']}")
         page_size = 20
         page, page_count = self._bounded_page(page, len(categories), page_size)
         visible = categories[page * page_size : (page + 1) * page_size]
@@ -1037,7 +1041,7 @@ class BotApplication:
             text += f"\n\nصفحه {page + 1:,} از {page_count:,}"
         else:
             text += "\n\nهنوز دسته‌بندی فعالی ثبت نشده است."
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("store", rows)
         if query:
             self._edit_or_send(query, text, markup)
         else:
@@ -1073,6 +1077,7 @@ class BotApplication:
             for item in products
             if bool(item.get("is_active", 1))
         ]
+        entries = self.layouts.order_items(f"category:{category_id}", entries, lambda item: f"{item[0]}:{item[1]['id']}")
         page_size = 20
         page, page_count = self._bounded_page(page, len(entries), page_size)
         visible_entries = entries[page * page_size : (page + 1) * page_size]
@@ -1102,7 +1107,7 @@ class BotApplication:
             text += f"\n\nصفحه {page + 1:,} از {page_count:,}"
         else:
             text += "\n\nدر حال حاضر موردی در این دسته ثبت نشده است."
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard(f"category:{category_id}", rows)
         if query:
             self._edit_or_send(query, text, markup)
         else:
@@ -1150,7 +1155,7 @@ class BotApplication:
         if is_safe_https_url(product.get("rules_url")):
             rows.append([url_button("مشاهده قوانین", product["rules_url"])])
         rows.append([back_button(f"cat:{product['category_id']}")])
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard(f"product:{product_id}", rows)
         content = texts.product_summary(product, self.settings.currency_label)
         if not product.get("is_available", 1):
             content += "\n\n⛔️ این محصول فعلاً موجود نیست."
@@ -1177,7 +1182,7 @@ class BotApplication:
         if is_safe_https_url(product.get("rules_url")):
             rows.append([url_button("مشاهده قوانین", product["rules_url"])])
         rows.append([back_button(f"prod:{product_id}")])
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard(f"product_details:{product_id}", rows)
         content = texts.product_details(product)
         parts = split_telegram_html(content)
         for index, part in enumerate(parts):
@@ -1199,7 +1204,7 @@ class BotApplication:
             f"موجودی کیف پول: {money(balance, self.settings.currency_label)}\n"
             f"تاریخ عضویت: {escape(str(user.get('joined_at') or '')[:10])}"
         )
-        markup = inline_keyboard(
+        markup = customer_keyboard("profile",
             [
                 [callback_button("آمار من", "profile:stats")],
                 [callback_button("سفارش‌های من", "profile:orders")],
@@ -1226,7 +1231,7 @@ class BotApplication:
             f"تعداد دعوت‌شده‌ها: {referral.get('invited_count', 0)}\n"
             f"پاداش زیرمجموعه‌ها: {money(referral.get('reward_total', 0), self.settings.currency_label)}"
         )
-        markup = inline_keyboard([[back_button("profile")]])
+        markup = customer_keyboard("stats", [[back_button("profile")]])
         if query:
             self._edit_or_send(query, text, markup)
         else:
@@ -1265,7 +1270,7 @@ class BotApplication:
         )
         if not orders:
             text += "\nهنوز سفارشی ثبت نکرده‌ای."
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("orders", rows)
         if query:
             self._edit_or_send(query, text, markup)
         else:
@@ -1311,7 +1316,7 @@ class BotApplication:
         if navigation:
             rows.append(navigation)
         rows.append([back_button("profile")])
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("transactions", rows)
         content = "\n\n".join(lines)
         if query:
             self._edit_or_send(query, content, markup)
@@ -1424,7 +1429,7 @@ class BotApplication:
                 ]
             )
         rows.append([back_button("menu")])
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("wallet", rows)
         if query:
             self._edit_or_send(query, content, markup)
         else:
@@ -1465,7 +1470,7 @@ class BotApplication:
                 break
         link = f"https://t.me/{self.bot_username}?start=ref_{user['telegram_user_id']}"
         share = "https://t.me/share/url?url=" + quote(link, safe="")
-        markup = inline_keyboard(
+        markup = customer_keyboard("referral",
             [
                 [url_button("ارسال لینک به دوستان", share, style="primary")],
                 [back_button("menu")],
@@ -1502,13 +1507,13 @@ class BotApplication:
         self.telegram.send_message(
             user["chat_id"],
             "🤝 برای ورود به کانال رسمی الون اکانت روی دکمه زیر بزن.",
-            reply_markup=inline_keyboard([[url_button("ورود به کانال", url)]]),
+            reply_markup=customer_keyboard("channel", [[url_button("ورود به کانال", url)]]),
         )
 
     # -- support -----------------------------------------------------------
 
     def show_support(self, user: dict[str, Any], *, query: dict[str, Any] | None = None) -> None:
-        markup = inline_keyboard(
+        markup = customer_keyboard("support",
             [
                 [callback_button("سوالات متداول", "support:faqs")],
                 [callback_button("ثبت تیکت", "ticket:new", style="primary")],
@@ -1530,6 +1535,7 @@ class BotApplication:
         page: int = 0,
     ) -> None:
         categories = self.db.list_faq_categories(active_only=True)
+        categories = self.layouts.order_items("faq_categories", categories, lambda item: f"faqcat:{item['id']}")
         page_size = 20
         page, page_count = self._bounded_page(page, len(categories), page_size)
         visible = categories[page * page_size : (page + 1) * page_size]
@@ -1546,7 +1552,7 @@ class BotApplication:
             text += f"\n\nصفحه {page + 1:,} از {page_count:,}"
         else:
             text += "\n\nهنوز سوالی ثبت نشده است."
-        self._edit_or_send(query, text, inline_keyboard(rows))
+        self._edit_or_send(query, text, customer_keyboard("faq_categories", rows))
 
     def show_faqs(
         self,
@@ -1560,6 +1566,7 @@ class BotApplication:
         if not category or not category.get("is_active"):
             raise NotFoundError("دسته سوالات پیدا نشد.")
         faqs = self.db.list_faqs(category_id=category_id, active_only=True)
+        faqs = self.layouts.order_items(f"faqs:{category_id}", faqs, lambda item: f"faq:{item['id']}")
         page_size = 20
         page, page_count = self._bounded_page(page, len(faqs), page_size)
         visible = faqs[page * page_size : (page + 1) * page_size]
@@ -1576,7 +1583,7 @@ class BotApplication:
             text += f"\n\nصفحه {page + 1:,} از {page_count:,}"
         else:
             text += "\n\nدر این دسته هنوز سوالی ثبت نشده است."
-        self._edit_or_send(query, text, inline_keyboard(rows))
+        self._edit_or_send(query, text, customer_keyboard(f"faqs:{category_id}", rows))
 
     def show_faq(self, user: dict[str, Any], faq_id: int, *, query: dict[str, Any]) -> None:
         faq = self.db.get_faq(faq_id)
@@ -1591,7 +1598,7 @@ class BotApplication:
             f"❓ <b>{escape(faq['question'])}</b>\n\n"
             f"{render_rich_text(faq['answer'])}"
         )
-        markup = inline_keyboard([[back_button(f"faqcat:{faq['category_id']}")]])
+        markup = customer_keyboard(f"faq:{faq_id}", [[back_button(f"faqcat:{faq['category_id']}")]])
         parts = split_telegram_html(text)
         for index, part in enumerate(parts):
             part_markup = markup if index == len(parts) - 1 else None
@@ -1632,7 +1639,7 @@ class BotApplication:
         )
         if not tickets:
             text += "\n\nهنوز تیکتی ثبت نکرده‌ای."
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("tickets", rows)
         if query:
             self._edit_or_send(query, text, markup)
         else:
@@ -1728,7 +1735,7 @@ class BotApplication:
         if ticket["status"] != "closed":
             rows.append([callback_button("ارسال پاسخ", f"ticketreply:{ticket_id}", style="primary")])
         rows.append([back_button("tickets:list")])
-        self._edit_or_send(query, "\n\n".join(lines), inline_keyboard(rows))
+        self._edit_or_send(query, "\n\n".join(lines), customer_keyboard("ticket", rows))
 
     # The commerce, state, fulfilment, maintenance and admin bridge methods
     # continue below. They are kept in this class so every state transition can
@@ -1781,7 +1788,7 @@ class BotApplication:
         if not user.get("customer_name"):
             self.db.set_user_state(user["id"], "purchase_name", state_data)
             self.telegram.send_message(
-                user["chat_id"], texts.ASK_NAME, reply_markup=self._input_cancel_markup()
+                user["chat_id"], texts.ASK_NAME, reply_markup=self._input_cancel_markup("input_name")
             )
             return
         if not user.get("phone"):
@@ -1809,7 +1816,7 @@ class BotApplication:
         def created_notice(
             created_order: Mapping[str, Any],
         ) -> tuple[str, str, Mapping[str, Any]]:
-            markup = inline_keyboard(
+            markup = customer_keyboard("order_summary",
                 [
                     [
                         callback_button(
@@ -1881,7 +1888,7 @@ class BotApplication:
             raise NotFoundError("سفارش پیدا نشد.")
         view = self._order_view(order)
         balance = self.db.wallet_balance(user["id"])
-        markup = inline_keyboard(
+        markup = customer_keyboard("order_summary",
             [
                 [callback_button("پرداخت", f"checkout:{order['id']}", style="success")],
                 [callback_button("ثبت کد تخفیف", f"discount:{order['id']}", style="primary")],
@@ -1921,7 +1928,7 @@ class BotApplication:
         content = texts.payment_methods(
             self._order_view(order), balance, self.settings.currency_label
         )
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("payment_methods", rows)
         if query:
             self._edit_or_send(query, content, markup)
         else:
@@ -1967,7 +1974,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 texts.DISCOUNT_PROMPT,
-                reply_markup=self._input_cancel_markup(),
+                reply_markup=self._input_cancel_markup("input_discount"),
             )
             return True
         if data.startswith("checkout:"):
@@ -2090,7 +2097,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "📎 تصویر یا فایل فیش واریز را همینجا ارسال کن.",
-                reply_markup=self._input_cancel_markup(),
+                reply_markup=self._input_cancel_markup("input_receipt"),
             )
             return True
         if data.startswith("cancelpay:"):
@@ -2130,7 +2137,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "📤 اطلاعات موردنیاز را به‌صورت متن، تصویر یا فایل ارسال کن.",
-                reply_markup=self._input_cancel_markup(),
+                reply_markup=self._input_cancel_markup("input_order_info"),
             )
             return True
         if data.startswith("topupcard:"):
@@ -2226,7 +2233,7 @@ class BotApplication:
         *,
         query: dict[str, Any] | None,
     ) -> None:
-        markup = inline_keyboard(
+        markup = customer_keyboard("card_payment",
             [
                 [
                     copy_text_button(
@@ -2469,7 +2476,7 @@ class BotApplication:
                 "لینک صورتحساب دریافتی معتبر نیست. پرداخت انجام نده و از مدیریت "
                 "بخواه تنظیمات درگاه را بررسی کند."
             )
-            markup = inline_keyboard([[back_button("menu")]])
+            markup = customer_keyboard("crypto_error", [[back_button("menu")]])
             if query:
                 self._edit_or_send(query, content, markup)
             else:
@@ -2482,7 +2489,7 @@ class BotApplication:
             f"مبلغ مبنا: {money(payment['base_amount'], self.settings.currency_label)}\n"
             "صورتحساب تا ۳۰ دقیقه معتبر است. پس از تأیید شبکه، نتیجه خودکار ثبت می‌شود."
         )
-        markup = inline_keyboard(
+        markup = customer_keyboard("crypto_payment",
             [
                 [url_button("رفتن به صفحه پرداخت", invoice_url, style="success")],
                 [
@@ -2601,7 +2608,7 @@ class BotApplication:
         if order["status"] in {"awaiting_info", "processing"}:
             rows.append([callback_button("ارسال اطلاعات", f"orderinfo:{order_id}", style="primary")])
         rows.append([back_button("profile:orders")])
-        markup = inline_keyboard(rows)
+        markup = customer_keyboard("order", rows)
         content = "\n".join(lines)
         parts = split_telegram_html(content)
         if query:
@@ -2711,7 +2718,7 @@ class BotApplication:
                 self.telegram.send_message(
                     user["chat_id"],
                     texts.INVALID_DISCOUNT,
-                    reply_markup=inline_keyboard([[back_button(f"ordersummary:{order_id}")]]),
+                    reply_markup=customer_keyboard("discount_error", [[back_button(f"ordersummary:{order_id}")]]),
                 )
                 return True
             self.db.clear_user_state(user["id"])
@@ -2747,7 +2754,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 f"روش پرداخت برای شارژ {money(amount, self.settings.currency_label)} را انتخاب کن:",
-                reply_markup=inline_keyboard(rows),
+                reply_markup=customer_keyboard("topup_methods", rows),
             )
             return True
 
@@ -2831,7 +2838,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 texts.information_saved(order["order_number"]),
-                reply_markup=inline_keyboard(
+                reply_markup=customer_keyboard("order_notice",
                     [[callback_button("مشاهده سفارش", f"order:{order_id}")]]
                 ),
             )
@@ -2863,7 +2870,7 @@ class BotApplication:
                 return True
             self.db.set_user_state(user["id"], "ticket_body", {"subject": text})
             self.telegram.send_message(user["chat_id"], "حالا شرح کامل درخواستت را بفرست.",
-                                       reply_markup=self._input_cancel_markup())
+                                       reply_markup=self._input_cancel_markup("input_ticket_body"))
             return True
 
         if name == "ticket_body":
@@ -3286,7 +3293,7 @@ class BotApplication:
                         user,
                         texts.reserved_delivery(self._order_view(order)),
                         idempotency_key=f"order:{order_id}:reserved-notice",
-                        reply_markup=inline_keyboard(
+                        reply_markup=customer_keyboard("order_notice",
                             [[callback_button("مشاهده سفارش", f"order:{order_id}")]]
                         ),
                     )
@@ -3316,7 +3323,7 @@ class BotApplication:
             user,
             texts.needs_information(self._order_view(order), prompt),
             idempotency_key=f"order:{order_id}:info-request",
-            reply_markup=inline_keyboard(
+            reply_markup=customer_keyboard("info_notice",
                 [[callback_button("ارسال اطلاعات", f"orderinfo:{order_id}", style="primary")]]
             ),
         )
@@ -3645,7 +3652,7 @@ class BotApplication:
                     user,
                     texts.wallet_topup_expired(payment, self.settings.currency_label),
                     idempotency_key=f"payment:{int(payment['id'])}:topup-expired",
-                    reply_markup=inline_keyboard([[callback_button("کیف پول", "wallet")]]),
+                    reply_markup=customer_keyboard("wallet_notice", [[callback_button("کیف پول", "wallet")]]),
                 )
             cursor = int(payment["id"])
         self.db.set_setting(
@@ -3723,7 +3730,7 @@ class BotApplication:
                 user,
                 texts.reserved_delivery(self._order_view(order)),
                 idempotency_key=f"order:{order['id']}:reserved-notice",
-                reply_markup=inline_keyboard(
+                reply_markup=customer_keyboard("order_notice",
                     [[callback_button("مشاهده سفارش", f"order:{order['id']}")]]
                 ),
             )
@@ -3749,7 +3756,7 @@ class BotApplication:
                 user,
                 texts.needs_information(self._order_view(order), prompt),
                 idempotency_key=f"order:{order['id']}:info-request",
-                reply_markup=inline_keyboard(
+                reply_markup=customer_keyboard("info_notice",
                     [
                         [
                             callback_button(
@@ -4547,7 +4554,7 @@ class BotApplication:
             "سفارش برای تأمین دستی در حال پردازش است و مدیریت نتیجه را اعلام می‌کند."
             f"\nشماره سفارش: <code>{escape(order['order_number'])}</code>",
             idempotency_key=f"order:{order_id}:manual-stock-notice",
-            reply_markup=inline_keyboard(
+            reply_markup=customer_keyboard("order_notice",
                 [[callback_button("مشاهده سفارش", f"order:{order_id}")]]
             ),
         )

@@ -1187,6 +1187,8 @@ class AdminController:
             return self.button_ui.catalog.message(message, user, admin)
         if state["state"] == "admin:joins":
             return self.button_ui.joins.message(message, user, admin)
+        if state["state"] == "admin:layouts":
+            return self.button_ui.layouts.message(message, user, admin)
         chat_id = self._chat_id(message, user)
         if state["state"] == "admin:inventory":
             if self._active_role(admin) not in {"owner", "admin"}:

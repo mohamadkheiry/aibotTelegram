@@ -1,5 +1,9 @@
 # ماتریس ردیابی نیازمندی، پیاده‌سازی و تست
 
+## REQ-UI-LAYOUT — چیدمان قابل تنظیم تمام صفحه‌های کاربر
+
+BR-UI-01 / UC-UI-04: ۳۹ نوع صفحهٔ ثبت‌شده در `customer_layouts.SECTIONS`، تنظیم موردی دسته/محصول/FAQ، تغییر ردیف/ستون و ترتیب عمومی قبل از pagination، preview بدون action واقعی، publish تأییدشده، undo/reset و conflict/replay امن. پیاده‌سازی: `admin_layouts.py`، `LayoutEngine/LayoutTelegram`، `Database.save_customer_layout` و تمام builderهای sectionدار. شاهد: `tests/test_customer_layouts.py` و `tests/test_admin_layouts.py`؛ ماتریس کامل، استثنای صفحات تک‌دکمه‌ای و فهرست خصوصی در [CUSTOMER_LAYOUTS.md](CUSTOMER_LAYOUTS.md). نمودار ۱۹ و آموزش مدیریت همگام‌اند. ممنوعیت تغییر چیدمان ثابت قبلی، با درخواست مستقیم جدید فقط برای تنظیمات نمایش مشتری جایگزین شده است؛ شرط دسترسی و بیزنس ثابت‌اند.
+
 ## تغییر پذیرفته‌شده: رابط دکمه‌محور
 
 REQ-UI-003 / UC-UI-03: فهرست کانال‌های جوین اجباری با ✅/❌ و افزودن/بازگشت، سپس صفحهٔ کانال با تغییر وضعیت/حذف/بازگشت. اجرا در `admin_joins.py`، فرم مشترک و `force_join_channel_button` با استثنای محدود علامت وضعیت. شاهد: ۱۳ تست `test_admin_joins.py`، validatorهای عمومی و suite کامل؛ [شرح](ADMIN_JOINS.md) و نمودار ۱۸.

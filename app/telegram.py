@@ -363,6 +363,9 @@ class TelegramClient:
             stop_event = self._default_stop_event
         url = self._url(method)
         clean = _clean_payload(payload)
+        if "reply_markup" in clean:
+            from .customer_layouts import clean_markup
+            clean["reply_markup"] = clean_markup(clean["reply_markup"])
         if self.button_color_mode == "theme" and "reply_markup" in clean:
             clean["reply_markup"] = _theme_button_markup(clean["reply_markup"])
         timeout = request_timeout or (self.connect_timeout, self.read_timeout)
