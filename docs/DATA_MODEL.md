@@ -4,6 +4,8 @@
 
 ## خلاصه
 
+JSON فرم یک `prompt_message_id` اختیاری نیز دارد؛ این فقط شناسهٔ آخرین keyboard قابل retire در private chat خودش است، نه شناسهٔ عملیات مالی. هر بازنماییِ انتخابگر revision تازه دارد و گزینه‌های متناظر پیش از ارسال ذخیره می‌شوند. داده نسخهٔ قبل بدون این فیلد نیاز به migration ندارد. شرح ممیزی در [BUTTON_UI_AUDIT.md](BUTTON_UI_AUDIT.md).
+
 پایگاه داده SQLite تنها source of truth سامانه است. همه timestampها به شکل ISO-8601 UTC ذخیره می‌شوند، مبلغ‌ها integer و فقط با currency برابر `TOMAN` هستند و اعشار شناور در منطق مالی استفاده نمی‌شود. schema پایه در `app/schema.sql` و migrationهای idempotent در `Database._migrate_schema` قرار دارند.
 
 نمودار ارتباطی خلاصه در [DIAGRAMS.md](DIAGRAMS.md) است. برای تغییر schema، بخش migration در [development.md](development.md) باید رعایت شود.

@@ -1079,9 +1079,14 @@ flowchart TB
     G -- خیر --> Deny["عدم نمایش یا رد دسترسی"]
     G -- بله --> B["انتخاب بخش و عملیات مجاز"]
     B --> C["ساخت فرم پایدار<br/>actor + chat + token + revision"]
-    C --> D["انتخاب از دکمه یا ثبت داده آزاد<br/>جست‌وجو و صفحه ۲۰تایی"]
-    D --> V{"هویت و revision معتبر؟"}
-    V -- خیر --> Stale["رد دکمه قدیمی یا نقش لغوشده"]
+    C --> D["انتشار فرم با revision تازه<br/>ثبت گزینه‌ها و بازنشسته‌کردن markup قبلی"]
+    D --> Access{"هویت و نقش همچنان معتبر؟"}
+    Access -- خیر --> Deny
+    Access -- بله --> V{"نسخه دکمه معتبر؟"}
+    V -- خیر --> Stale["رد اقدام قدیمی بدون اجرای handler<br/>بازنمایی فرم فعلی یا دکمه refresh نتیجه"]
+    Stale --> Current{"فرم هنوز قابل ادامه است؟"}
+    Current -- بله --> D
+    Current -- خیر --> Next
     V -- بله --> Save["ثبت مقدار و last_input<br/>replay مرحله را دوباره جلو نمی‌برد"]
     Save --> More{"فیلد باقی است؟"}
     More -- بله --> D
@@ -1096,7 +1101,7 @@ flowchart TB
     Retry --> Execute
     Domain -- خطای ورودی --> Preview
     Domain -- موفق --> Done["ثبت done و حذف secret از state<br/>پاسخ و navigation دکمه‌ای"]
-    Done --> Next["رد تأیید مجدد<br/>عملیات بعدی از پنل"]
+    Done --> Next["رد تأیید مجدد و پاک‌کردن markup مصرف‌شده<br/>refresh خواندنی یا عملیات بعدی از پنل"]
     Broadcast["پیام گروهی استثنای read handler است:<br/>پیش‌نمایش شمارش‌شده، سپس تأیید پایدار قبلی"]
     Broadcast -.-> M
 ```

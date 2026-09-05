@@ -44,7 +44,13 @@ class AdminButtonTests(unittest.TestCase):
         return f"adm:ui:f:{state['token']}:{state['revision']}:{operation}:{value}"
 
     def click(self, operation, value="0", actor=None):
-        self.send_callback(actor or self.OWNER, self.form_data(operation, value, actor))
+        actor = actor or self.OWNER
+        prompt = next(m for m in reversed(self.telegram.messages)
+                      if m["chat_id"] == actor["id"] and (m.get("reply_markup") or {}).get("inline_keyboard"))
+        choices = [b for row in prompt["reply_markup"]["inline_keyboard"] for b in row
+                   if b.get("callback_data", "").endswith(f":{operation}:{value}")]
+        self.assertEqual(len(choices), 1, (operation, value, prompt))
+        self.send_callback(actor, choices[0]["callback_data"])
 
     def pick(self, value, actor=None):
         state = self.state(actor)

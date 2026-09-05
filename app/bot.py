@@ -359,7 +359,6 @@ class BotApplication:
             return
 
         if text.startswith("/cancel") or text == "لغو و بازگشت":
-            self.db.clear_user_state(user["id"])
             self.show_main_menu(user)
             return
 
@@ -693,6 +692,7 @@ class BotApplication:
                               resize_keyboard=True, one_time_keyboard=True)
 
     def show_main_menu(self, user: dict[str, Any]) -> None:
+        previous = self.db.get_user_state(user["id"])
         self.db.clear_user_state(user["id"])
         name = user.get("customer_name") or user.get("first_name") or "دوست عزیز"
         markup = inline_main_menu_keyboard(
@@ -711,6 +711,7 @@ class BotApplication:
                 self.telegram.edit_message_reply_markup(
                     user["chat_id"], message_id, reply_markup=markup
                 )
+                self._retire_admin_prompt(user, previous)
                 return
             except TelegramRequestCancelled:
                 raise
@@ -720,6 +721,11 @@ class BotApplication:
         self.telegram.send_message(
             user["chat_id"], "یکی از گزینه‌های زیر را انتخاب کن:", reply_markup=markup
         )
+        self._retire_admin_prompt(user, previous)
+
+    def _retire_admin_prompt(self, user: dict[str, Any], previous: dict[str, Any] | None) -> None:
+        if previous and previous["state"] == "admin:ui" and self.admin_controller:
+            self.admin_controller.button_ui._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     def _dispatch_user_callback(
         self,

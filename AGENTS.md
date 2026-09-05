@@ -64,6 +64,8 @@ UI نباید journal مالی دوم بسازد. nonce/revision و `last_input`
 
 ## Definition of Done
 
+در تست UI، callback و message ID را از keyboard واقعاً ارسال‌شده بگیرید؛ بازسازی callback از revision دیتابیس فقط برای تست عمدی جعل مجاز است. هر بازنمایی انتخابگر باید revision تازه داشته باشد. retirement پیام فقط edit markup و best effort است؛ ID آن (`prompt_message_id`) را با هویت `ui-TOKEN` عملیات مالی یکی نکنید. سناریوهای stale/recovery، reorder گزینه‌ها، restart و cleanup ناموفق در `tests/test_admin_ui_navigation.py` و `docs/BUTTON_UI_AUDIT.md` ثبت شده‌اند.
+
 - acceptance criteria و حالت خطا روشن است؛
 - happy path، authorization، replay، collision، stale input و crash boundary تست شده‌اند؛
 - همه تست‌ها و lint سبزند؛

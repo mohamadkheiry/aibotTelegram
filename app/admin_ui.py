@@ -25,6 +25,10 @@ class ButtonInputError(ValueError):
     """Invalid or expired UI input; never a retryable domain mutation."""
 
 
+class ClosedFormError(ButtonInputError):
+    """A previously displayed form has been closed without a replacement form."""
+
+
 # Every query is a read-only, static projection. Credential payloads, phone
 # numbers and payment raw evidence are intentionally absent from selectors.
 SELECTORS = {
@@ -98,8 +102,38 @@ class AdminButtonUI:
                 raise ButtonInputError("هویت فرستنده معتبر نیست.")
         return current
 
-    def _send(self, user: dict, text: str, rows: list[list[dict]] | None = None) -> None:
-        self.controller._send(int(user["chat_id"]), text, inline_keyboard(rows) if rows else None)
+    def _send(self, user: dict, text: str, rows: list[list[dict]] | None = None) -> Any:
+        return self.controller._send(int(user["chat_id"]), text, inline_keyboard(rows) if rows else None)
+
+    def _retire_prompt(self, user: dict, message_id: Any) -> None:
+        """Remove consumed UI buttons, never the message or stored outbox data.
+
+        Cleanup is best effort: old clients/messages may not be editable. Nonce,
+        revision and domain idempotency remain authoritative even in that case.
+        """
+        if not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= 0:
+            return
+        try:
+            self.controller.telegram.edit_message_reply_markup(
+                int(user["chat_id"]), message_id, reply_markup={"inline_keyboard": []})
+        except TelegramError:
+            self.controller.log.warning("Could not retire an old admin keyboard; revision guard remains active")
+
+    def _publish(self, state: dict, user: dict, text: str, rows: list[list[dict]]) -> None:
+        previous = state.get("prompt_message_id")
+        result = self._send(user, text, rows)
+        if isinstance(result, dict) and isinstance(result.get("message_id"), int):
+            state["prompt_message_id"] = result["message_id"]
+            self._save(user, state)
+            if previous != result["message_id"]:
+                self._retire_prompt(user, previous)
+
+    def _recover_prompt(self, state: dict, event: dict, user: dict, admin: dict) -> None:
+        """Reject a stale action and show the current UI; never run its handler."""
+        clicked = (event.get("message") or {}).get("message_id")
+        self.render(state, user, admin)
+        if clicked != state.get("prompt_message_id"):
+            self._retire_prompt(user, clicked)
 
     @staticmethod
     def _button(label: str, suffix: str, **kwargs: Any) -> dict:
@@ -116,7 +150,6 @@ class AdminButtonUI:
         admin = self.authorise(user, admin)
         if group is not None and group not in GROUPS:
             raise ButtonInputError("بخش مدیریت شناخته نشد.")
-        self.db.clear_user_state(int(user["id"]))
         actions = [a for a in ACTIONS.values() if self.allowed(a, admin["role"])]
         if group:
             actions = [a for a in actions if a.group == group]
@@ -130,9 +163,13 @@ class AdminButtonUI:
             groups = [g for g in GROUPS if any(a.group == g for a in actions)]
             rows = [[self._button(GROUPS[g], "g:" + g)] for g in groups]
             title = "پنل مدیریت"
+        previous = self.db.get_user_state(int(user["id"]))
+        self.db.clear_user_state(int(user["id"]))
         role = {"owner": "مالک", "admin": "مدیر", "support": "پشتیبان"}[admin["role"]]
         self._send(user, f"<b>{title}</b>\nنقش شما: {role}\nگزینه را انتخاب کنید؛ نیازی به تایپ فرمان نیست.",
                    rows + self.navigation() if group else rows + [[callback_button("منوی اصلی", "menu")]])
+        if previous and previous["state"] == "admin:ui":
+            self._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     @staticmethod
     def _input_id(event: dict) -> str:
@@ -149,7 +186,9 @@ class AdminButtonUI:
     def _state(self, user: dict, admin: dict) -> dict:
         state = self.db.get_user_state(int(user["id"]))
         data = state.get("data", {}) if state and state["state"] == "admin:ui" else {}
-        if not data or data.get("actor") != admin["id"] or data.get("chat") != user["chat_id"]:
+        if not data:
+            raise ClosedFormError("این فرم بسته شده است؛ از پنل مدیریت ادامه دهید.")
+        if data.get("actor") != admin["id"] or data.get("chat") != user["chat_id"]:
             raise ButtonInputError("این فرم دیگر فعال نیست؛ از پنل مدیریت دوباره انتخاب کنید.")
         action = ACTIONS.get(data.get("action"))
         if action is None or not self.allowed(action, admin["role"]):
@@ -174,6 +213,8 @@ class AdminButtonUI:
                  "token": secrets.token_hex(6), "revision": 0, "values": {}, "labels": {},
                  "status": "editing", "last_input": None, "started_by": self._input_id(event),
                  "step": 0, "page": 1, "search": "", "selected": []}
+        if prior.get("prompt_message_id"):
+            state["prompt_message_id"] = prior["prompt_message_id"]
         if selected is not None:
             fields = form_fields(action, {})
             if not fields or not fields[0].kind.startswith("entity:"):
@@ -217,9 +258,19 @@ class AdminButtonUI:
         if len(parts) != 5 or parts[0] != "f":
             raise ButtonInputError("دکمه نامعتبر است.")
         _, token, revision, operation, value = parts
-        state = self._state(user, admin)
+        try:
+            state = self._state(user, admin)
+        except ClosedFormError as exc:
+            self._send(user, str(exc), self.navigation())
+            self._retire_prompt(user, (event.get("message") or {}).get("message_id"))
+            return True
         if token != state["token"]:
-            raise ButtonInputError("این دکمه مربوط به فرم قبلی است؛ از آخرین پیام استفاده کنید.")
+            self._recover_prompt(state, event, user, admin)
+            return True
+        # Older releases did not retain the prompt ID. Learn it only after
+        # checking the form token, so rollout also cleans up consumed keyboards.
+        if not state.get("prompt_message_id"):
+            state["prompt_message_id"] = (event.get("message") or {}).get("message_id")
         identity = self._input_id(event)
         if state.get("status") == "executing":
             if state.get("execution_input") == identity:
@@ -233,7 +284,8 @@ class AdminButtonUI:
                 self.render(state, user, admin)
             return True
         if revision != str(state["revision"]):
-            raise ButtonInputError("این دکمه قدیمی است؛ از آخرین پیام فرم استفاده کنید.")
+            self._recover_prompt(state, event, user, admin)
+            return True
         if operation == "list":
             if state["status"] != "done" or not value.isdigit() or int(value) < 1 or "list_pages" not in state:
                 raise ButtonInputError("صفحه نامعتبر است.")
@@ -245,7 +297,8 @@ class AdminButtonUI:
             self.execute(state, event, user, admin)
             return True
         if state["status"] == "done":
-            raise ButtonInputError("این فرم پایان یافته است. برای عملیات جدید از پنل استفاده کنید.")
+            self._recover_prompt(state, event, user, admin)
+            return True
         if operation == "confirm":
             if state["status"] != "confirm":
                 raise ButtonInputError("فرم هنوز کامل نشده است.")
@@ -433,11 +486,16 @@ class AdminButtonUI:
     def render(self, state: dict, user: dict, admin: dict) -> None:
         action = ACTIONS[state["action"]]
         if state["status"] == "done":
-            self._send(user, "این فرم پایان یافته است؛ عملیات بعدی را انتخاب کنید.", self.navigation(action.group))
+            self._publish(state, user, "این درخواست قبلاً انجام شده است؛ از گزینه‌های زیر ادامه دهید.",
+                          self.result_rows(state, admin))
             return
         if state["status"] == "executing":
             self._send(user, "این عملیات قبلاً تأیید شده و در حال بازیابی نتیجه است.", self.navigation(action.group))
             return
+        # Every published selection map has a new revision, including replay,
+        # stale recovery and re-render after catalog changes. Reusing a revision
+        # could silently map an old index to a newly inserted/reordered entity.
+        state["revision"] += 1
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
@@ -456,7 +514,6 @@ class AdminButtonUI:
             field = self.current_field(state)
             choices = self.options(field, state, admin)
             state["options"] = choices
-            self._save(user, state)
             for index, (value, label) in enumerate(choices):
                 selected = field.kind.startswith("multi:") and int(value) in state.get("selected", [])
                 rows.append([self._form_button(state, ("انتخاب‌شده: " if selected else "") + label,
@@ -473,7 +530,9 @@ class AdminButtonUI:
                 info = (f"\nصفحه {page} از {state['option_pages']} | مجموع: {state['option_total']}"
                         "\nبرای جست‌وجو نام، شماره یا یوزرنیم را بفرستید؛ سپس نتیجه را با دکمه انتخاب کنید.")
                 if not choices:
-                    info += "\nموردی یافت نشد؛ عبارت جست‌وجو را تغییر دهید یا به بخش قبل برگردید."
+                    info += ("\nدسته‌ای برای انتخاب نیست؛ برای دیدن کل فهرست «همه / بدون محدودیت» را بزنید."
+                             if field.default == "all" else
+                             "\nموردی یافت نشد؛ عبارت جست‌وجو را تغییر دهید یا به بخش قبل برگردید.")
             else:
                 info = "\nاز دکمه‌ها انتخاب کنید." if field.kind == "choice" else "\nمقدار را در یک پیام بفرستید."
             if field.kind.startswith("multi:"):
@@ -491,7 +550,8 @@ class AdminButtonUI:
         if state["step"] > 0:
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
         rows.append([self._button("لغو و بازگشت", "g:" + action.group, style="danger")])
-        self._send(user, text, rows)
+        self._save(user, state)
+        self._publish(state, user, text, rows)
 
     def execute(self, state: dict, event: dict, user: dict, admin: dict) -> None:
         from .admin import _ADMIN_INPUT_ERRORS
@@ -579,6 +639,13 @@ class AdminButtonUI:
             self._save(user, state)
         for text, markup in context["responses"]:
             self.controller._send(int(user["chat_id"]), text, markup)
+        if action.key.startswith("broadcast_"):
+            self._retire_prompt(user, state.get("prompt_message_id"))
+        else:
+            self._publish(state, user, "گزینه بعدی را انتخاب کنید.", self.result_rows(state, admin))
+
+    def result_rows(self, state: dict, admin: dict) -> list[list[dict]]:
+        action = ACTIONS[state["action"]]
         rows = []
         for key in RESULT_ACTIONS.get(action.key, ()):
             linked = ACTIONS[key]
@@ -586,8 +653,8 @@ class AdminButtonUI:
                 target = state["values"]["target"]
                 if self.entity_value(linked.fields[0], target, state) is not None:
                     rows.append([self._button(linked.label, f"open:{key}:{target}")])
-        if context["page"]:
-            page, pages = context["page"]
+        if "list_pages" in state and not action.mutation:
+            page, pages = state.get("result_page", 1), state["list_pages"]
             nav = []
             if page > 1:
                 nav.append(self._form_button(state, "صفحه قبل", "list", str(page - 1)))
@@ -595,8 +662,8 @@ class AdminButtonUI:
                 nav.append(self._form_button(state, "صفحه بعد", "list", str(page + 1)))
             if nav:
                 rows.append(nav)
-        if not action.key.startswith("broadcast_"):
-            self._send(user, "گزینه بعدی را انتخاب کنید.", rows + self.navigation(action.group))
+            rows.append([self._form_button(state, "نمایش دوباره نتیجه", "list", str(page))])
+        return rows + self.navigation(action.group)
 
     @staticmethod
     def friendly_error(text: str) -> str:

@@ -4,6 +4,8 @@
 
 ## اصول راهنما
 
+برای تغییر فرم دکمه‌ای، [BUTTON_UI_AUDIT.md](BUTTON_UI_AUDIT.md) و `tests/test_admin_ui_navigation.py` را بخوانید. تست کاربری باید callback/message ID را از keyboard ارسال‌شده استخراج کند، نه از state بازسازی کند. هر بازنماییِ نگاشت انتخاب‌ها revision تازه دارد؛ cleanup پیام قدیمی best effort و مستقل از امنیت/اجرای دامنه است. شناسهٔ پیام UI هرگز جای `ui-TOKEN` عملیات مالی را نمی‌گیرد.
+
 - ربات با Python 3.12+، کتابخانه `requests` و SQLite اجرا می‌شود؛ framework خارجی ربات یا ORM ندارد.
 - دریافت updateهای تلگرام فقط با `getUpdates` و long polling انجام می‌شود. Telegram webhook بخشی از این پروژه نیست.
 - در هر محیط فقط یک نمونه ربات با یک token و یک دیتابیس اجرا می‌شود.
