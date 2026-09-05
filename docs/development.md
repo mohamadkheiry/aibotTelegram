@@ -4,6 +4,8 @@
 
 ## اصول راهنما
 
+`AdminButtonUI.payment_context` نام canonical روش انتخاب‌شده را از گزینه‌های ثابت فرم و وضعیت را از DB زنده می‌خواند؛ نام setting دلخواه یا label ذخیره‌شده را مبنا نگیرید. وضعیت فعلی با `values.enabled` (هدف تأیید) متفاوت است. نقص کارت/کلید ارزی هشدار جدا دارد؛ هیچ secret در زمینه فرم نیاید. context خواندنی است و به‌جای handler فعال‌سازی تصمیم نمی‌گیرد. تست‌های `test_admin_payment_context.py` را برای هر سه روش، back/restart و replay حفظ کنید.
+
 کنترل ربات/تعمیرات در `AdminButtonUI.bot_status` از `bot_enabled` ساخته می‌شود. هر دو نمایش یک flag هستند؛ flag مستقل تعمیرات نسازید. callback باید `bot_on` یا `bot_off` صریحِ زمان نمایش باشد، نه toggle وضعیت لحظهٔ کلیک؛ confirmation و journal موجود را حفظ کنید. بعد از اجرا/بازیابی، دکمهٔ معکوس از DB تازه خوانده شود. آزمون مسیر در `tests/test_admin_bot_status.py` است.
 
 برای ناوبری مدیریت ابتدا [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) را بخوانید. `MAIN_GROUPS` ترتیب ۹ بخش پذیرفته‌شده است؛ باقی کلیدهای GROUPS زیرگروه یا سازگاری‌اند و نباید دوباره به root اضافه شوند. `admin_catalog.py` فقط query خواندنی و بازکردن فرم مشترک دارد. `minimum_step` را برای اصلاح target فرم زمینه‌دار دور نزنید؛ در callback مرور فقط ID پایدار معتبر، نه index متغیر فهرست، قرار دهید. تست هدفمند: `python -m unittest tests.test_admin_catalog_hierarchy tests.test_admin_ui_navigation tests.test_admin_buttons -v`. شواهد از keyboard خروجی گرفته می‌شوند و به poller واقعی وصل نمی‌شوند.

@@ -168,6 +168,27 @@ class AdminButtonUI:
         rows = [[self._button(label, target, style="danger" if enabled else "success")] for label in labels]
         return status, rows
 
+    def payment_context(self, state: dict) -> str:
+        """Read live configuration; never confuse the chosen target with it."""
+        method = state.get("values", {}).get("method")
+        if method is None:
+            return ""
+        names = {value: label for label, value in ACTIONS["payment"].fields[0].options}
+        if not isinstance(method, str) or method not in names:
+            raise ButtonInputError("روش پرداخت انتخاب‌شده معتبر نیست؛ از پنل دوباره انتخاب کنید.")
+        enabled = bool(self.db.get_setting(f"payment_{method}_enabled", method != "crypto"))
+        lines = ["روش انتخاب‌شده: " + names[method], "وضعیت فعلی: " + ("فعال" if enabled else "غیرفعال")]
+        # These are configuration prerequisites, not a network/provider health
+        # check. Do not disclose account numbers, owners or API key values.
+        if method == "card" and not (
+            str(self.db.get_setting("card_number", "") or "").strip()
+            and str(self.db.get_setting("card_owner", "") or "").strip()
+        ):
+            lines.append("تنظیمات کارت کامل نیست؛ تا ثبت شماره کارت و صاحب حساب، این روش به مشتری نمایش داده نمی‌شود.")
+        if method == "crypto" and not str(getattr(self.controller.settings, "plisio_api_key", "") or "").strip():
+            lines.append("تنظیمات پرداخت ارزی کامل نیست؛ تا تنظیم کلید سرویس در محیط اجرا، این روش به مشتری نمایش داده نمی‌شود.")
+        return "\n".join(lines)
+
     def home(self, user: dict, admin: dict, group: str | None = None) -> None:
         admin = self.authorise(user, admin)
         if group is not None and group not in GROUPS:
@@ -562,10 +583,13 @@ class AdminButtonUI:
 
     def render(self, state: dict, user: dict, admin: dict) -> None:
         action = ACTIONS[state["action"]]
+        payment_context = self.payment_context(state) if action.key == "payment" else ""
         if state["status"] == "done":
             text = "این درخواست قبلاً انجام شده است؛ از گزینه‌های زیر ادامه دهید."
             if action.key in {"bot_on", "bot_off"}:
                 text += "\n" + self.bot_status()[0]
+            if payment_context:
+                text += "\n" + payment_context
             self._publish(state, user, text,
                           self.result_rows(state, admin))
             return
@@ -579,12 +603,16 @@ class AdminButtonUI:
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
+            if payment_context:
+                lines.append(payment_context)
             if action.key in {"bot_on", "bot_off"}:
                 lines.extend(["وضعیت فعلی:\n" + self.bot_status()[0],
                               "پس از تأیید: " + ("ربات فعال و حالت تعمیرات غیرفعال می‌شود." if action.key == "bot_on" else
                                                  "ربات غیرفعال و حالت تعمیرات فعال می‌شود."),
                               "دسترسی مدیران برای فعال‌سازی دوباره محفوظ می‌ماند."])
             for field in form_fields(action, state["values"]):
+                if payment_context and field.key == "method":
+                    continue  # The canonical method name is already above.
                 label = state["labels"].get(field.key, "")
                 # Preview limits never alter the original arguments.
                 if len(label) > 140:
@@ -629,7 +657,10 @@ class AdminButtonUI:
                 if field.key == "icon":
                     default_label = "بدون آیکون"
                 rows.append([self._form_button(state, default_label, "default")])
-            text = f"<b>{action.label}</b>\nمرحله {state['step'] - state.get('minimum_step', 0) + 1}: {escape(field.label)}{info}"
+            text = f"<b>{action.label}</b>"
+            if payment_context:
+                text += "\n" + payment_context
+            text += f"\nمرحله {state['step'] - state.get('minimum_step', 0) + 1}: {escape(field.label)}{info}"
             if state.get("return_to") and state["labels"].get("target"):
                 selected_label = state["labels"]["target"]
                 preview = selected_label[:120] + ("…" if len(selected_label) > 120 else "")
@@ -734,6 +765,8 @@ class AdminButtonUI:
             text = "گزینه بعدی را انتخاب کنید."
             if action.key in {"bot_on", "bot_off"}:
                 text = self.bot_status()[0] + "\n" + text
+            if action.key == "payment":
+                text = self.payment_context(state) + "\n" + text
             self._publish(state, user, text, self.result_rows(state, admin))
 
     @staticmethod
