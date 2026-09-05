@@ -18,7 +18,9 @@ flowchart TB
     Support --> SupportScope
     Owner --> OwnerOnly
 
-    Guard["private chat و chat ID verifyشده<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
+    Panel["پنل دکمه‌ای متناسب با نقش<br/>انتخاب بخش و عملیات<br/>فرم، جست‌وجو و صفحه‌بندی<br/>بازگشت، لغو و تأیید mutation"]
+    Guard["private chat و chat ID verifyشده<br/>role زنده، token و revision فرم<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
+    Panel --> Guard
     Guard -.-> Owner
     Guard -.-> Admin
     Guard -.-> Support

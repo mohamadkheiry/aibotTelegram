@@ -1,5 +1,11 @@
 # ماتریس ردیابی نیازمندی، پیاده‌سازی و تست
 
+## تغییر پذیرفته‌شده: رابط دکمه‌محور
+
+REQ-UI-001 / UC-UI-01: تمام ۸۳ عملیات DOCUMENTED_COMMANDS با بخش‌ها و فرم‌های `admin_forms.py` و FSM `admin_ui.py` قابل اجرا هستند؛ ۵۴ عمل فرم تأیید و سه پیام گروهی preview شمارش‌شده دارند. [BUTTON_UI.md](BUTTON_UI.md) ماتریس یک‌به‌یک actionهاست. منوی مشتری ثابت مانده، ورود مدیر شرطی است و ورودی‌های مشتری دکمه لغو دارند. فقط start در setMyCommands معرفی می‌شود؛ compatibility فرمان و اعلان تاریخی حفظ شده است.
+
+شاهد: `tests/test_admin_buttons.py` شامل پوشش همه handlerها از فرم، role/revoke/forgery، permission prefix، stale/double confirm، wallet/toggle crash، replay آخرین ورودی، pipe lossless، انبار بدون echo، فیش/تیکت، تخفیف/combined، broadcast preview، FAQ category و فیلترهای catalog، pagination و خروج مشتری. تست‌های قبلی دامنه همچنان مرجع invariant هستند. نمودار ۱۶ FSM/تأیید، ۰۶ نقش و ۰۲ اجزای تازه را نشان می‌دهند.
+
 ## روش استفاده
 
 این ماتریس برای جلوگیری از گم‌شدن دلیل یک قابلیت ساخته شده است. هر تغییر بیزنسی باید حداقل یک شناسه `REQ-*` را به‌روزرسانی یا یک شناسه جدید اضافه کند و مسیر کد، تست و diagram آن را مشخص سازد.

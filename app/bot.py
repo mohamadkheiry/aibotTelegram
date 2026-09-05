@@ -42,6 +42,8 @@ from .keyboards import (
     inline_main_menu_keyboard,
     main_menu_keyboard,
     remove_keyboard,
+    reply_button,
+    reply_keyboard,
     url_button,
 )
 from .payment_server import ConfirmationOutcome, PaymentCallbackServer
@@ -173,11 +175,6 @@ class BotApplication:
             {
                 "commands": [
                     {"command": "start", "description": "شروع ربات"},
-                    {"command": "menu", "description": "منوی اصلی"},
-                    {"command": "orders", "description": "سفارش‌های من"},
-                    {"command": "support", "description": "پشتیبانی"},
-                    {"command": "admin", "description": "مدیریت ربات"},
-                    {"command": "cancel", "description": "لغو عملیات جاری"},
                 ]
             },
         )
@@ -361,9 +358,13 @@ class BotApplication:
             self.telegram.send_message(chat_id, "دسترسی شما به ربات مسدود شده است.")
             return
 
-        if text.startswith("/cancel"):
+        if text.startswith("/cancel") or text == "لغو و بازگشت":
             self.db.clear_user_state(user["id"])
             self.show_main_menu(user)
+            return
+
+        if text == "پنل مدیریت" and admin and self.admin_controller:
+            self._send_admin_home(admin)
             return
 
         if admin and self._maybe_send_completion_notice(admin):
@@ -470,7 +471,7 @@ class BotApplication:
             self.telegram.send_message(
                 chat_id,
                 "گزینه موردنظرت رو از منوی پایین انتخاب کن.",
-                reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+                reply_markup=self._reply_main_menu(user),
             )
 
     def _handle_callback(
@@ -678,12 +679,26 @@ class BotApplication:
             and self._category_path_is_active(int(product["category_id"]))
         )
 
+    def _reply_main_menu(self, user: dict[str, Any]) -> dict[str, Any]:
+        return main_menu_keyboard(
+            self.settings.button_icon_ids,
+            include_admin=self.db.is_admin(chat_id=int(user["chat_id"])),
+        )
+
+    @staticmethod
+    def _input_cancel_markup() -> dict[str, Any]:
+        # Replace a persistent reply menu while collecting text: otherwise a
+        # menu-button label can accidentally be saved as the customer's input.
+        return reply_keyboard([[reply_button("لغو و بازگشت")]],
+                              resize_keyboard=True, one_time_keyboard=True)
+
     def show_main_menu(self, user: dict[str, Any]) -> None:
         self.db.clear_user_state(user["id"])
         name = user.get("customer_name") or user.get("first_name") or "دوست عزیز"
         markup = inline_main_menu_keyboard(
             self.settings.button_icon_ids,
             str(self.db.get_setting("main_channel_url", "") or ""),
+            include_admin=self.db.is_admin(chat_id=int(user["chat_id"])),
         )
         message = self.telegram.send_message(
             user["chat_id"],
@@ -780,7 +795,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "💰 مبلغ دلخواه شارژ را به تومان وارد کن.\nمثال: <code>250000</code>",
-                reply_markup=remove_keyboard(),
+                reply_markup=self._input_cancel_markup(),
             )
             return True
         if data == "support":
@@ -808,7 +823,7 @@ class BotApplication:
             self.telegram.answer_callback_query(query_id)
             self.db.set_user_state(user["id"], "ticket_subject", {})
             self.telegram.send_message(
-                user["chat_id"], "موضوع تیکت را کوتاه بنویس:", reply_markup=remove_keyboard()
+                user["chat_id"], "موضوع تیکت را کوتاه بنویس:", reply_markup=self._input_cancel_markup()
             )
             return True
         if data == "tickets:list" or data.startswith("tickets:list:"):
@@ -883,7 +898,8 @@ class BotApplication:
             ):
                 raise NotFoundError("تیکت باز پیدا نشد.")
             self.db.set_user_state(user["id"], "ticket_reply", {"ticket_id": ticket_id})
-            self.telegram.send_message(user["chat_id"], "پیامت را برای پشتیبانی بفرست:")
+            self.telegram.send_message(user["chat_id"], "پیامت را برای پشتیبانی بفرست:",
+                                       reply_markup=self._input_cancel_markup())
             self.telegram.answer_callback_query(query_id)
             return True
         if data == "referral":
@@ -1759,7 +1775,7 @@ class BotApplication:
         if not user.get("customer_name"):
             self.db.set_user_state(user["id"], "purchase_name", state_data)
             self.telegram.send_message(
-                user["chat_id"], texts.ASK_NAME, reply_markup=remove_keyboard()
+                user["chat_id"], texts.ASK_NAME, reply_markup=self._input_cancel_markup()
             )
             return
         if not user.get("phone"):
@@ -1945,7 +1961,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 texts.DISCOUNT_PROMPT,
-                reply_markup=inline_keyboard([[back_button(f"ordersummary:{order_id}")]]),
+                reply_markup=self._input_cancel_markup(),
             )
             return True
         if data.startswith("checkout:"):
@@ -2068,7 +2084,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "📎 تصویر یا فایل فیش واریز را همینجا ارسال کن.",
-                reply_markup=remove_keyboard(),
+                reply_markup=self._input_cancel_markup(),
             )
             return True
         if data.startswith("cancelpay:"):
@@ -2108,7 +2124,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "📤 اطلاعات موردنیاز را به‌صورت متن، تصویر یا فایل ارسال کن.",
-                reply_markup=remove_keyboard(),
+                reply_markup=self._input_cancel_markup(),
             )
             return True
         if data.startswith("topupcard:"):
@@ -2840,7 +2856,8 @@ class BotApplication:
                 self.telegram.send_message(user["chat_id"], "موضوع باید بین ۳ تا ۱۲۰ نویسه باشد.")
                 return True
             self.db.set_user_state(user["id"], "ticket_body", {"subject": text})
-            self.telegram.send_message(user["chat_id"], "حالا شرح کامل درخواستت را بفرست.")
+            self.telegram.send_message(user["chat_id"], "حالا شرح کامل درخواستت را بفرست.",
+                                       reply_markup=self._input_cancel_markup())
             return True
 
         if name == "ticket_body":
@@ -5108,25 +5125,13 @@ class BotApplication:
         self.telegram.send_message(
             admin["chat_id"],
             "✅ نسخه کامل ربات الون اکانت آماده و فعال شد.\n\n"
-            "برای ورود به پنل مدیریت /admin را بزن و برای راهنمای همه فرمان‌ها /admin_help را ارسال کن.",
+            "از دکمه پنل مدیریت وارد شوید و بخش موردنظر را انتخاب کنید.",
+            reply_markup=inline_keyboard([[callback_button("پنل مدیریت", "adm:ui:home")]]),
         )
         self.db.set_setting("completion_notice_pending", False)
         return True
 
     def _send_admin_home(self, admin: dict[str, Any]) -> None:
-        role_name = {"owner": "مدیر مالک", "admin": "مدیر کل", "support": "پشتیبان"}.get(
-            admin.get("role"), admin.get("role")
-        )
-        self.telegram.send_message(
-            admin["chat_id"],
-            f"🛠 <b>پنل مدیریت</b>\n\nنقش: {escape(role_name)}\nراهنمای کامل: /admin_help",
-            reply_markup=inline_keyboard(
-                [
-                    [callback_button("سفارش‌ها", "adm:orders")],
-                    [callback_button("تیکت‌ها", "adm:tickets")],
-                    [callback_button("کاربران", "adm:users")],
-                    [callback_button("تنظیمات", "adm:settings")],
-                    [back_button("menu")],
-                ]
-            ),
-        )
+        user = self.db.get_user_by_chat_id(int(admin["chat_id"]))
+        if user and self.admin_controller:
+            self.admin_controller.button_ui.home(user, admin)

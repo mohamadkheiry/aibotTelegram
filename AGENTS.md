@@ -54,10 +54,13 @@ python -m unittest discover -s tests -v
 - API Telegram/retry: `app/telegram.py`
 - callback کارت: `app/payment_server.py`
 - UI: `app/keyboards.py`, `app/texts.py`
+- مدیریت دکمه‌محور: `app/admin_forms.py` (کاتالوگ فرم‌ها)، `app/admin_ui.py` (state پایدار، role، انتخاب و تأیید). هر عملیات تازه باید در فرم و تست پوشش همه فرمان‌ها ثبت شود. [قرارداد UI](docs/BUTTON_UI.md) را پیش از تغییر این مسیر بخوانید.
 - config: `app/config.py`, `.env.example`
 - migration: `app/schema.sql` و `Database._migrate_schema`
 
 SQL مستقیم جدید برای mutation در controllerها اضافه نکنید. ابتدا API دامنه‌ای در `Database` بسازید.
+
+UI نباید journal مالی دوم بسازد. nonce/revision و `last_input` فرم مستقل از effect یکتای `processed_admin_updates` هستند. ورودی‌های pipe را با `_command_parts` به handler مشترک بدهید؛ متن کاربر را به syntax فرمان بازتفسیر نکنید. `message_id` عملیات دکمه‌ای از token فرم ساخته می‌شود، نه message ID صفحه‌کلید. تست crash آخرین فیلد، executing، commit اثر و complete journal الزامی است.
 
 ## Definition of Done
 

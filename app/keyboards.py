@@ -210,6 +210,7 @@ def main_menu_keyboard(
     icon_ids: Mapping[str, str] | None = None,
     *,
     is_persistent: bool = True,
+    include_admin: bool = False,
 ) -> ReplyMarkup:
     """Return the exact five-row Persian main-menu reply keyboard.
 
@@ -234,12 +235,16 @@ def main_menu_keyboard(
         ]
         for row in MAIN_MENU_ROWS
     ]
+    if include_admin:
+        rows.append([reply_button("پنل مدیریت")])
     return reply_keyboard(rows, resize_keyboard=True, is_persistent=is_persistent)
 
 
 def inline_main_menu_keyboard(
     icon_ids: Mapping[str, str] | None = None,
     main_channel_url: str = "",
+    *,
+    include_admin: bool = False,
 ) -> ReplyMarkup:
     """Build the canonical five-row menu, including a direct Channel link."""
     icons = dict(icon_ids or {})
@@ -266,6 +271,8 @@ def inline_main_menu_keyboard(
                 button = callback_button(label, callbacks[label], **presentation)
             buttons.append(button)
         rows.append(buttons)
+    if include_admin:
+        rows.append([callback_button("پنل مدیریت", "adm:ui:home")])
     return inline_keyboard(rows)
 
 
@@ -292,7 +299,8 @@ def contact_keyboard(
     """One-time private-chat keyboard that requests the user's contact."""
 
     return reply_keyboard(
-        [[request_contact_button(text, style=style, icon_custom_emoji_id=icon_custom_emoji_id)]],
+        [[request_contact_button(text, style=style, icon_custom_emoji_id=icon_custom_emoji_id)],
+         [reply_button("لغو و بازگشت")]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )

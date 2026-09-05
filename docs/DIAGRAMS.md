@@ -57,7 +57,8 @@ flowchart TB
     Entry["app.main<br/>راه‌اندازی و مدیریت signal"]
     Config["app.config<br/>خواندن env و اعتبارسنجی تنظیمات"]
     Bot["app.bot.BotApplication<br/>مسیرهای کاربر و orchestration"]
-    Admin["app.admin.AdminController<br/>فرمان‌ها و نقش‌های مدیریتی"]
+    Admin["app.admin.AdminController<br/>handler مشترک و مسیر سازگار فرمان"]
+    Forms["app.admin_forms + app.admin_ui<br/>فرم دکمه‌ای، انتخاب، role و تأیید<br/>state پایدار token/revision/input"]
     UI["app.keyboards + app.texts + app.utils<br/>رندر امن متن و دکمه"]
     Repo["app.db.Database<br/>Repository و تراکنش‌های دامنه"]
     TG["app.telegram.TelegramClient<br/>Bot API، long polling و ACK/NACK offset<br/>سیاست رنگ دکمه theme/colored"]
@@ -71,6 +72,9 @@ flowchart TB
     Entry --> TG
     Entry --> Bot
     Bot --> Admin
+    Admin --> Forms
+    Forms --> Repo
+    Forms --> UI
     Bot --> UI
     Admin --> UI
     Bot --> Repo
@@ -405,7 +409,9 @@ flowchart TB
     Support --> SupportScope
     Owner --> OwnerOnly
 
-    Guard["private chat و chat ID verifyشده<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
+    Panel["پنل دکمه‌ای متناسب با نقش<br/>انتخاب بخش و عملیات<br/>فرم، جست‌وجو و صفحه‌بندی<br/>بازگشت، لغو و تأیید mutation"]
+    Guard["private chat و chat ID verifyشده<br/>role زنده، token و revision فرم<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
+    Panel --> Guard
     Guard -.-> Owner
     Guard -.-> Admin
     Guard -.-> Support
@@ -1059,6 +1065,40 @@ flowchart TD
     Crash -.-> Q2
     Created["Order و created-summary از first-contact اتمیک‌اند؛ replay همان update Order دوم نمی‌سازد"]
     Created -.-> A
+```
+
+## ۱۶. فرم دکمه‌ای مدیریت و مرز تأیید
+
+منبع: [16-admin-button-form.mmd](diagrams/16-admin-button-form.mmd)
+
+![فرم دکمه‌ای مدیریت](diagrams/rendered/16-admin-button-form.svg)
+
+```mermaid
+flowchart TB
+    A["شروع یا پنل مدیریت"] --> G{"مدیر فعال و هویت خصوصی اثبات شده؟"}
+    G -- خیر --> Deny["عدم نمایش یا رد دسترسی"]
+    G -- بله --> B["انتخاب بخش و عملیات مجاز"]
+    B --> C["ساخت فرم پایدار<br/>actor + chat + token + revision"]
+    C --> D["انتخاب از دکمه یا ثبت داده آزاد<br/>جست‌وجو و صفحه ۲۰تایی"]
+    D --> V{"هویت و revision معتبر؟"}
+    V -- خیر --> Stale["رد دکمه قدیمی یا نقش لغوشده"]
+    V -- بله --> Save["ثبت مقدار و last_input<br/>replay مرحله را دوباره جلو نمی‌برد"]
+    Save --> More{"فیلد باقی است؟"}
+    More -- بله --> D
+    More -- خیر --> M{"عملیات تغییردهنده؟"}
+    M -- بله --> Preview["خلاصه بدون echo اطلاعات محرمانه<br/>تأیید نهایی"]
+    M -- خیر --> Execute
+    Preview -- اصلاح --> D
+    Preview -- لغو --> B
+    Preview -- تأیید --> Execute["بازخوانی role و ثبت executing<br/>هویت ثابت اجرای فرم"]
+    Execute --> Domain["handler و تراکنش دامنه موجود<br/>journal و idempotency ثابت"]
+    Domain -- خطای موقت DB --> Retry["NACK و offset ثابت<br/>ادامه همان update و همان اثر"]
+    Retry --> Execute
+    Domain -- خطای ورودی --> Preview
+    Domain -- موفق --> Done["ثبت done و حذف secret از state<br/>پاسخ و navigation دکمه‌ای"]
+    Done --> Next["رد تأیید مجدد<br/>عملیات بعدی از پنل"]
+    Broadcast["پیام گروهی استثنای read handler است:<br/>پیش‌نمایش شمارش‌شده، سپس تأیید پایدار قبلی"]
+    Broadcast -.-> M
 ```
 
 ## ماتریس تغییر کد و نمودار

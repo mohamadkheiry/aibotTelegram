@@ -1,4 +1,4 @@
-"""Command-driven administrator interface for the Telegram bot.
+"""Shared administrator operations with button-first and command entry points.
 
 The controller contains no polling loop.  ``bot.py`` hands authenticated
 private-chat messages and callback queries to :class:`AdminController`.
@@ -328,6 +328,10 @@ class AdminController:
         self.notify_user = notify_user
         self.fulfill_order = fulfill_order
         self.log = logging.getLogger(__name__)
+        self._button_context: dict[str, Any] | None = None
+        from .admin_ui import AdminButtonUI
+
+        self.button_ui = AdminButtonUI(self)
         self._handlers = {
             "/admin_help": self._help,
             "/bot_on": self._bot_on,
@@ -572,6 +576,8 @@ class AdminController:
         chat_id = self._callback_chat_id(query, user)
         callback_message = {"chat": {"id": chat_id, "type": "private"}}
         try:
+            if data.startswith("adm:ui:"):
+                return self.button_ui.callback(data, query, user, admin)
             if data == "adm:orders":
                 self._orders("", callback_message, user, admin)
                 self._answer(callback_id, "فهرست سفارش‌ها ارسال شد.")
@@ -663,7 +669,11 @@ class AdminController:
                 return True
             self._answer(callback_id, "عملیات مدیریت شناخته نشد.", show_alert=True)
         except _ADMIN_INPUT_ERRORS as exc:
-            self._answer(callback_id, str(exc), show_alert=True)
+            if data.startswith("adm:ui:"):
+                self._send(chat_id, escape(self.button_ui.friendly_error(str(exc))),
+                           inline_keyboard(self.button_ui.navigation()))
+            else:
+                self._answer(callback_id, str(exc), show_alert=True)
         except TelegramError:
             self.log.warning(
                 "Telegram rejected an admin callback response",
@@ -709,7 +719,8 @@ class AdminController:
         if action == "cancel":
             self.db.clear_user_state(int(user["id"]))
             self._answer(callback_id, "ارسال لغو شد.")
-            self._send(chat_id, "ارسال گروهی لغو شد.")
+            self._send(chat_id, "ارسال گروهی لغو شد.",
+                       inline_keyboard(self.button_ui.navigation("broadcast")))
             return True
         if action != "confirm":
             self._answer(callback_id, "عملیات نامعتبر است.", show_alert=True)
@@ -729,6 +740,7 @@ class AdminController:
                 chat_id,
                 f"پیام گروهی برای {int(queued['queued_count']):,} مخاطب در صف ارسال قرار گرفت."
                 f"\nشناسه صف: <code>{escape(queued.get('id', '—'))}</code>",
+                inline_keyboard(self.button_ui.navigation("broadcast")),
             )
         except _ADMIN_INPUT_ERRORS as exc:
             self._answer(callback_id, "ثبت ارسال ناموفق بود.", show_alert=True)
@@ -832,7 +844,18 @@ class AdminController:
         if stored != dict(value):
             raise ConflictError("admin state replay payload changed")
 
+    def _command_parts(self, rest: str, minimum: int) -> list[str]:
+        if self._button_context is not None and self._button_context.get("parts") is not None:
+            parts = list(self._button_context["parts"])
+            if len(parts) < minimum:
+                raise AdminInputError("اطلاعات فرم کامل نیست.")
+            return parts
+        return pipe_parts(rest, minimum)
+
     def _send(self, chat_id: int, text: str, reply_markup: Mapping[str, Any] | None = None) -> Any:
+        if self._button_context is not None:
+            self._button_context["responses"].append((text, reply_markup))
+            return None
         return self.telegram.send_message(
             chat_id,
             clamp_text(text),
@@ -906,6 +929,10 @@ class AdminController:
             f"<b>{escape(title)}</b>\nصفحه {page:,} از {pages:,} | مجموع: {total:,}"
         ]
         blocks.extend(rows or [empty_text])
+        if self._button_context is not None:
+            self._button_context["page"] = (page, pages)
+            self._send_blocks(chat_id, blocks)
+            return
         blocks.extend(tail)
         navigation: list[str] = []
         if page > 1:
@@ -999,7 +1026,7 @@ class AdminController:
             tail=("جزئیات کاربر: <code>/user CHAT_ID</code>",),
         )
 
-    def _send_settings_panel(self, chat_id: int) -> None:
+    def _send_settings_panel(self, chat_id: int, *, button_mode: bool = False) -> None:
         def enabled(key: str, default: bool = False) -> str:
             return "فعال" if bool(self.db.get_setting(key, default)) else "غیرفعال"
 
@@ -1021,7 +1048,8 @@ class AdminController:
             f"\nشماره کارت: <code>{escape(masked_card)}</code>"
             f"\nصاحب حساب: {escape(card_owner)}"
             f"\nکانال اصلی: {escape(channel_url)}"
-            "\n\nویرایش تنظیمات: <code>/admin_help</code>",
+            + ("\n\nبرای ویرایش از دکمه‌های زیر انتخاب کنید." if button_mode
+               else "\n\nویرایش تنظیمات: <code>/admin_help</code>"),
         )
 
     def _notify(self, chat_id: int | None, text: str) -> Any:
@@ -1152,6 +1180,8 @@ class AdminController:
         state = state or self._get_state(user)
         if not state or not str(state.get("state", "")).startswith("admin:"):
             return False
+        if state["state"] == "admin:ui":
+            return self.button_ui.message(message, user, admin)
         chat_id = self._chat_id(message, user)
         if state["state"] == "admin:inventory":
             if self._active_role(admin) not in {"owner", "admin"}:
@@ -1212,7 +1242,14 @@ class AdminController:
             )
             return True
         if state["state"] == "admin:broadcast":
-            self._send(chat_id, "برای تأیید یا لغو ارسال گروهی از دکمه‌های پیام پیش‌نمایش استفاده کنید.")
+            if self._active_role(admin) not in {"owner", "admin"}:
+                raise AdminInputError("دسترسی ارسال گروهی ندارید.")
+            data = state.get("data", {})
+            if data.get("ui_input") == self.button_ui._input_id(message):
+                self._render_broadcast_preview(chat_id, data)
+            else:
+                self._send(chat_id, "برای تأیید یا لغو ارسال گروهی از دکمه‌های پیام پیش‌نمایش استفاده کنید.",
+                           inline_keyboard(self.button_ui.navigation("broadcast")))
             return True
         return False
 
@@ -1239,7 +1276,7 @@ class AdminController:
         self._send(self._chat_id(message, user), "ربات در حالت تعمیرات قرار گرفت.")
 
     def _set_card(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /set_card شماره کارت | نام صاحب حساب")
         card_number = parts[0].replace(" ", "").replace("-", "")
@@ -1328,7 +1365,7 @@ class AdminController:
             raise AdminInputError("برای جوین اجباری، ربات باید مدیر کانال باشد.")
 
     def _join_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /join_add @channel | عنوان | لینک عضویت")
         if not re.fullmatch(r"(?:@[A-Za-z0-9_]{5,32}|-100[0-9]{6,})", parts[0]):
@@ -1612,7 +1649,7 @@ class AdminController:
     def _category_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         if not rest.strip():
             raise AdminInputError("عنوان دسته الزامی است.")
-        parts = [part.strip() for part in rest.split("|")]
+        parts = self._command_parts(rest, 1)
         if len(parts) not in {1, 2, 3} or not parts[0]:
             raise AdminInputError("نمونه: /category_add عنوان | آیکون|0 | توضیح|0")
         if len(parts) > 2 and parts[2].lower().startswith("html:"):
@@ -1626,7 +1663,7 @@ class AdminController:
         self._send(self._chat_id(message, user), f"دسته ثبت شد. شناسه: <code>{category['id']}</code>")
 
     def _subcategory_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) not in {2, 3, 4}:
             raise AdminInputError(
                 "نمونه: /subcategory_add PARENT_ID | عنوان | آیکون|0 | توضیح|0"
@@ -1665,7 +1702,7 @@ class AdminController:
         self._send(self._chat_id(message, user), f"دسته {'فعال' if active else 'غیرفعال'} شد.")
 
     def _category_set(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError(
                 "نمونه: /category_set CATEGORY_ID | name|parent|icon|description|sort_order | VALUE"
@@ -1757,7 +1794,7 @@ class AdminController:
         )
 
     def _product_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 5)
+        parts = self._command_parts(rest, 5)
         if len(parts) != 5:
             raise AdminInputError("نمونه: /product_add CATEGORY_ID | عنوان | قیمت | مدت | ready|manual")
         product_type = parts[4].lower()
@@ -1775,7 +1812,7 @@ class AdminController:
         self._send(self._chat_id(message, user), f"محصول ثبت شد. شناسه: <code>{product['id']}</code>")
 
     def _product_set(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /product_set PRODUCT_ID | FIELD | VALUE")
         field = parts[1].lower()
@@ -2175,7 +2212,7 @@ class AdminController:
                     self._send(chat_id, f"پیوست: {escape(info['file_kind'])}")
 
     def _order_status(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 1)
+        parts = self._command_parts(rest, 1)
         head = parts[0].split()
         if len(head) != 2:
             raise AdminInputError("نمونه: /order_status ORDER_NUMBER STATUS | پیام اختیاری")
@@ -2221,7 +2258,7 @@ class AdminController:
         )
 
     def _complete(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /complete ORDER_NUMBER | متن تحویل")
         rendered_delivery = format_admin_text(parts[1])
@@ -2254,7 +2291,7 @@ class AdminController:
         self._send(self._chat_id(message, user), f"سفارش <code>{escape(updated['order_number'])}</code> تکمیل شد.")
 
     def _request_info(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /request_info ORDER_NUMBER | متن درخواست اصلاح")
         rendered_request = format_admin_text(parts[1])
@@ -2423,7 +2460,7 @@ class AdminController:
         self._send(self._chat_id(message, user), "پرداخت تأیید شد.")
 
     def _reject_payment(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /reject_payment PAYMENT_NUMBER | دلیل")
         payment = self._require_payment(parts[0])
@@ -2528,14 +2565,14 @@ class AdminController:
             lines.append("مورد بازی وجود ندارد.")
         self._send(self._chat_id(message, user), "\n".join(lines))
 
-    @staticmethod
     def _review_resolution_parts(
+        self,
         rest: str,
         command: str,
         *,
         allow_credit: bool = False,
     ) -> tuple[int, str, str]:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         left = parts[0].split()
         actions = {"dismiss", "refund_confirmed"}
         if allow_credit:
@@ -2890,13 +2927,15 @@ class AdminController:
                 for item in transactions
             )
         stable_id = target.get("chat_id") or target["id"]
-        lines.append(
+        history_hint = (
             "\n<b>تاریخچه کامل:</b>"
             f"\n<code>/user_orders {stable_id}</code>"
             f"\n<code>/user_transactions {stable_id}</code>"
             f"\n<code>/user_referrals {stable_id}</code>"
             f"\n<code>/user_rewards {stable_id}</code>"
         )
+        if self._button_context is None:
+            lines.append(history_hint)
         self._send_blocks(self._chat_id(message, user), lines)
 
     def _user_orders(
@@ -3109,7 +3148,7 @@ class AdminController:
         self._send(self._chat_id(message, user), "کاربر از حالت مسدود خارج شد.")
 
     def _wallet_adjust(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /wallet_adjust CHAT_ID | AMOUNT_SIGNED | دلیل")
         if not parts[0].strip().lstrip("-").isdigit():
@@ -3142,7 +3181,7 @@ class AdminController:
         )
 
     def _message(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /message CHAT_ID | متن")
         target = self._find_user(parts[0])
@@ -3183,7 +3222,7 @@ class AdminController:
         )
 
     def _discount_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 7)
+        parts = self._command_parts(rest, 7)
         if len(parts) not in {7, 10} or (len(parts) == 10 and any(not value for value in parts[7:])):
             raise AdminInputError(
                 "نمونه: /discount_add CODE | fixed|percent | VALUE | MAX_USES|0 | "
@@ -3338,6 +3377,8 @@ class AdminController:
                 blocks.append(f"<b>{sender}</b>: {escape(body[index:index + 600])}")
             if entry.get("attachment_file_id"):
                 blocks.append(
+                    f"پیوست {int(entry['id'])} ذخیره شده است؛ از دکمه دریافت پیوست استفاده کنید."
+                    if self._button_context is not None else
                     "پیوست ذخیره شده است؛ دریافت امن: "
                     f"<code>/ticket_attachment {int(entry['id'])}</code>"
                 )
@@ -3395,7 +3436,7 @@ class AdminController:
         return ticket
 
     def _ticket_reply(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 2)
+        parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /ticket_reply TICKET_NUMBER | پاسخ")
         ticket = self._require_ticket(parts[0])
@@ -3537,7 +3578,7 @@ class AdminController:
         )
 
     def _faq_category_set(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /faq_category_set CATEGORY_ID | name|sort_order | VALUE")
         category_id = _as_int(parts[0], "شناسه دسته سوالات")
@@ -3609,12 +3650,17 @@ class AdminController:
         )
 
     def _faq_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /faq_add دسته | سوال | جواب")
         if parts[2].lower().startswith("html:"):
             format_admin_text(parts[2])
-        category = self.db.create_faq_category(parts[0])
+        if self._button_context is not None:
+            category = self.db.get_faq_category(_as_int(parts[0], "شناسه دسته سوالات"))
+            if category is None:
+                raise AdminInputError("دسته سوالات پیدا نشد.")
+        else:
+            category = self.db.create_faq_category(parts[0])
         item = self.db.create_faq(parts[1], parts[2], category_id=int(category["id"]))
         self._send(self._chat_id(message, user), f"سؤال متداول ثبت شد. شناسه: <code>{item['id']}</code>")
 
@@ -3639,7 +3685,7 @@ class AdminController:
         self._send(self._chat_id(message, user), f"سؤال متداول {'فعال' if active else 'غیرفعال'} شد.")
 
     def _faq_set(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /faq_set FAQ_ID | question|answer|category|sort_order | VALUE")
         faq_id = _as_int(parts[0], "شناسه FAQ")
@@ -3694,7 +3740,7 @@ class AdminController:
         self._preview_broadcast({"kind": "all"}, rest.strip(), message, user, admin)
 
     def _broadcast_joined(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         if len(parts) != 3:
             raise AdminInputError("نمونه: /broadcast_joined FROM_DATE | TO_DATE | متن")
         start, end = _date_range(
@@ -3709,7 +3755,7 @@ class AdminController:
         )
 
     def _broadcast_product(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 4)
+        parts = self._command_parts(rest, 4)
         if len(parts) != 4:
             raise AdminInputError("نمونه: /broadcast_product PRODUCT_ID | FROM_DATE | TO_DATE | متن")
         product_id = _as_int(parts[0], "شناسه محصول")
@@ -3734,21 +3780,25 @@ class AdminController:
         user: Mapping[str, Any],
         _admin: Mapping[str, Any],
     ) -> None:
-        rendered_body = format_admin_text(body)
+        format_admin_text(body)
         target_count = self._broadcast_target_count(audience)
         token = secrets.token_urlsafe(6)
+        payload = {
+            "token": token, "audience": dict(audience), "body": body, "target_count": target_count,
+        }
+        if self._button_context is not None:
+            payload["ui_input"] = self._button_context["state"]["execution_input"]
         self.db.set_user_state(
             int(user["id"]),
             "admin:broadcast",
-            {
-                "token": token,
-                "audience": dict(audience),
-                # Keep the original marker so confirmation can validate and
-                # render the message again at the durable queue boundary.
-                "body": body,
-                "target_count": target_count,
-            },
+            payload,
         )
+        self._render_broadcast_preview(self._chat_id(message, user), payload)
+
+    def _render_broadcast_preview(self, chat_id: int, payload: Mapping[str, Any]) -> None:
+        rendered_body = format_admin_text(str(payload["body"]))
+        token = payload["token"]
+        target_count = int(payload["target_count"])
         markup = inline_keyboard(
             [
                 [callback_button("تأیید ارسال", f"adm:broadcast:confirm:{token}", style="success")],
@@ -3757,7 +3807,7 @@ class AdminController:
         )
         preview = clamp_text(rendered_body, 1200)
         self._send(
-            self._chat_id(message, user),
+            chat_id,
             "<b>پیش‌نمایش ارسال گروهی</b>"
             f"\nتعداد مخاطبان هدف: <b>{target_count:,}</b>"
             f"\n\n{preview}",
@@ -4084,7 +4134,7 @@ class AdminController:
         )
 
     def _reward_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
-        parts = pipe_parts(rest, 3)
+        parts = self._command_parts(rest, 3)
         event = parts[0].lower()
         if event not in {"start", "first_purchase", "product_purchase", "combined"}:
             raise AdminInputError("نوع رویداد پاداش معتبر نیست.")

@@ -3461,7 +3461,7 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             button
             for row in admin_home["reply_markup"]["inline_keyboard"]
             for button in row
-            if button.get("callback_data") == "adm:orders"
+            if button.get("callback_data") == "adm:ui:g:orders"
         )
         before_output = len(self.telegram.messages) + len(self.telegram.edits)
 

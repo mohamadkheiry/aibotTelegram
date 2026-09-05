@@ -1,5 +1,7 @@
 # مدل داده و invariantهای پایگاه داده
 
+افزوده رابط دکمه‌ای بدون migration: `user_states` از مقدار `admin:ui` برای action/actor/chat، token، revision، step، مقادیر مستقل، گزینه‌ها، last_input و وضعیت editing/confirm/executing/done استفاده می‌کند. executing هویت تأیید را پیش از handler نگه می‌دارد؛ message ID داخلی از token فرم ساخته می‌شود. secret پس از موفقیت از state حذف می‌شود. جدول processed_admin_updates و effect یکتای handler تغییر نکرده و schema 11 است. ساختار و crash boundary در [BUTTON_UI.md](BUTTON_UI.md).
+
 ## خلاصه
 
 پایگاه داده SQLite تنها source of truth سامانه است. همه timestampها به شکل ISO-8601 UTC ذخیره می‌شوند، مبلغ‌ها integer و فقط با currency برابر `TOMAN` هستند و اعشار شناور در منطق مالی استفاده نمی‌شود. schema پایه در `app/schema.sql` و migrationهای idempotent در `Database._migrate_schema` قرار دارند.
