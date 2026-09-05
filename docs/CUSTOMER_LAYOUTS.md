@@ -71,6 +71,7 @@
 - ترتیب فهرست‌های عمومی قبل از slice در `show_store/show_category/show_faq_categories/show_faqs/_show_join_required` اعمال می‌شود. چیدمان ردیف‌ها روی کپی markup هنگام send/edit/copy/document/photo اعمال می‌شود. هیچ poller یا client شبکهٔ دوم ساخته نمی‌شود.
 - `_customer_layout` فقط شناسه صفحه است؛ `_layout_slot` و `_layout_item` فقط presentation metadata داخلی‌اند و در مرز Telegram حذف می‌شوند. نام عمومی مساوی «بازگشت» یا «صفحه قبل» به navigation بازتفسیر نمی‌شود؛ slot و شناسهٔ اصلی تعیین‌کننده‌اند.
 - دکمه‌های شرطی از ورودی موجود مرتب می‌شوند: engine هیچ callback، URL، copy payload، contact request، style یا icon را از تنظیم مدیر تولید نمی‌کند. گزینه ناشناختهٔ آینده حذف نمی‌شود و انتهای کیبورد باقی می‌ماند؛ تست پوشش مانع اضافه‌شدن بی‌صدای صفحهٔ ثبت‌نشده است.
+- آیکون اختیاری از manifest عملیاتی مستقل [BUTTON_ICONS.md](BUTTON_ICONS.md) در کپی خروجی اضافه می‌شود، نه از draft چیدمان مدیر. آیکون صریح حفظ می‌شود؛ `theme` نیز صرفاً style را در مرز HTTP کنار می‌گذارد. این دو لایه callback، contact، داده canonical و نسخهٔ چیدمان را تغییر نمی‌دهند.
 
 ## داده، نسخه‌بندی و بازیابی
 

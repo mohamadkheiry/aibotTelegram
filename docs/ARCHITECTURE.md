@@ -1,5 +1,7 @@
 # معماری فنی ربات الون اکانت
 
+لایهٔ `button_icons.apply_icons` در `LayoutEngine.prepare` روی کپی markup آیکون معنایی می‌افزاید؛ فقط custom emoji ID از manifest معتبر/override محیط و با حفظ آیکون صریح. سپس metadata حذف و رنگ در TelegramClient اعمال می‌شود. [قرارداد و ابزار انتشار](BUTTON_ICONS.md).
+
 لایهٔ جدید `customer_layouts` بین markup canonical و ارسال قرار می‌گیرد: `LayoutTelegram` همان transport/poller را delegate می‌کند و فقط کپی reply markup را reflow و tagهای داخلی را حذف می‌کند. ترتیب کاتالوگ عمومی پیش از pagination اعمال می‌شود. `admin_layouts` ویرایشگر draft/confirm/executing با نسخهٔ مورد/والد است؛ ذخیره فقط از `Database.save_customer_layout` و journal موجود. outbox، callback تجاری و authorization کاربر تغییر نمی‌کنند. [قرارداد توسعه و بازیابی](CUSTOMER_LAYOUTS.md).
 
 رابط مدیریت پنج جزء دارد: `admin_forms.py` کاتالوگ عملیات و ۹ بخش اصلی، `admin_catalog.py` مرور درخت دسته/محصول/انبار، `admin_joins.py` مرور کانال‌های اجباری، `admin_ui.py` FSM پایدار دکمه‌ای و `admin.py` handler مشترک با مسیر سازگار فرمان. مرور در `admin:catalog` فقط شناسه و زمینه را ذخیره می‌کند؛ فرم در `admin:ui` token/revision و هویت input را نگه می‌دارد، role را زنده revalidate می‌کند و اجرای تأییدشده را به journal/دامنه موجود می‌سپارد. تراکنش مالی موازی یا poller جدید ندارد. جزئیات در [BUTTON_UI.md](BUTTON_UI.md)، [ADMIN_HIERARCHY.md](ADMIN_HIERARCHY.md) و نمودارهای ۰۲، ۰۶، ۱۶ و ۱۷ آمده است.

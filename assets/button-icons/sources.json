@@ -1,0 +1,279 @@
+{
+  "package": "lucide-static",
+  "version": "1.41.0",
+  "source": "https://registry.npmjs.org/lucide-static/-/lucide-static-1.41.0.tgz",
+  "integrity": "sha512-39fX7SH+Rwis0oUmLLOipOoFSiJll9yi2DyEGDaE7Sp0qQAEhEfMQ2scQNdWKeGVENGv1uXc5ZeZqBWsuhQSFg==",
+  "needs_repainting": true,
+  "icons": {
+    "shop": {
+      "lucide": "store",
+      "svg": "svg/shop.svg",
+      "webp": "webp/shop.webp",
+      "sha256": "b8fe881058defa74d3355d2aea9fa0b7683f2ac4ac7b6d618b89f4d936cfd4e8"
+    },
+    "wallet": {
+      "lucide": "wallet",
+      "svg": "svg/wallet.svg",
+      "webp": "webp/wallet.webp",
+      "sha256": "15765658f1af56149ca61d337e462abf4606db50ad6a77666bdde45c0789a801"
+    },
+    "account": {
+      "lucide": "user-round",
+      "svg": "svg/account.svg",
+      "webp": "webp/account.webp",
+      "sha256": "a18cb26c7fbc07dace1e2d6a443d254043cd3bd1c506b59ef7eb75ef6c46deaf"
+    },
+    "support": {
+      "lucide": "headset",
+      "svg": "svg/support.svg",
+      "webp": "webp/support.webp",
+      "sha256": "0e9e7ae26cc6d57a9a21e36985acdcb28ac537f4fade814ec159613319d8b62b"
+    },
+    "referral": {
+      "lucide": "gift",
+      "svg": "svg/referral.svg",
+      "webp": "webp/referral.webp",
+      "sha256": "97e3f0c5d63b1ef05f257d421d399bc10355cdcdea3bba9cae60a50139dfc822"
+    },
+    "channel": {
+      "lucide": "megaphone",
+      "svg": "svg/channel.svg",
+      "webp": "webp/channel.webp",
+      "sha256": "5c4de0a0ea08404642d71dfefac8db2732bfed105f8d1d84b9fae18b0fe87262"
+    },
+    "buy": {
+      "lucide": "shopping-bag",
+      "svg": "svg/buy.svg",
+      "webp": "webp/buy.webp",
+      "sha256": "eb2a3026b7a32b526d1d81b1f4a674575a0927c86ffe27a11c0b7c733c836ce6"
+    },
+    "info": {
+      "lucide": "info",
+      "svg": "svg/info.svg",
+      "webp": "webp/info.webp",
+      "sha256": "96059def1bf5f1ad931af9cb14bfc28eb3d8846c25aa8c1d8825777b180d055f"
+    },
+    "back": {
+      "lucide": "chevron-left",
+      "svg": "svg/back.svg",
+      "webp": "webp/back.webp",
+      "sha256": "1b4ea737c9f39a23f4b9fa913524a00464e1076f420c9e0b5491b271a47ba1e6"
+    },
+    "pay": {
+      "lucide": "badge-check",
+      "svg": "svg/pay.svg",
+      "webp": "webp/pay.webp",
+      "sha256": "757b254bc2440fdbd5607b3d6f82b636dcfdc6b587a1f6ff3a422abfe3b487b7"
+    },
+    "discount": {
+      "lucide": "ticket-percent",
+      "svg": "svg/discount.svg",
+      "webp": "webp/discount.webp",
+      "sha256": "3d5c31a35ec83f7149f2f4fb1c4fe9ed3e25f4e9f16e35243c67db66c201c13a"
+    },
+    "card": {
+      "lucide": "credit-card",
+      "svg": "svg/card.svg",
+      "webp": "webp/card.webp",
+      "sha256": "2bf44d802a236ce05f8fa1b06e31d0e434ba8fb5a39592a69b67eb2837d1a002"
+    },
+    "crypto": {
+      "lucide": "bitcoin",
+      "svg": "svg/crypto.svg",
+      "webp": "webp/crypto.webp",
+      "sha256": "aeb87db4fde68b458ee15acd4a8f54486c6e1415d871743757583370fe2bb8a9"
+    },
+    "copy": {
+      "lucide": "copy",
+      "svg": "svg/copy.svg",
+      "webp": "webp/copy.webp",
+      "sha256": "3c43014cbe8e08c1ab51db9618bbaac8e6b7dcf1d6bab5197964a64eaef9e632"
+    },
+    "receipt": {
+      "lucide": "receipt-text",
+      "svg": "svg/receipt.svg",
+      "webp": "webp/receipt.webp",
+      "sha256": "5d3765099da0564c13b0009c9070bca16fcda421f17ee58f726845e2d2eabefb"
+    },
+    "cancel": {
+      "lucide": "x",
+      "svg": "svg/cancel.svg",
+      "webp": "webp/cancel.webp",
+      "sha256": "5d3f9603b9aed78b61f86b39bc903a154665ac3872086fb3fe967ab7d7705465"
+    },
+    "order": {
+      "lucide": "clipboard-list",
+      "svg": "svg/order.svg",
+      "webp": "webp/order.webp",
+      "sha256": "95620caa7f4f3872ceed8102ef3e0ed9c4a65260d5daadc5369da4be6c98bda6"
+    },
+    "upload": {
+      "lucide": "upload",
+      "svg": "svg/upload.svg",
+      "webp": "webp/upload.webp",
+      "sha256": "599c11c7f66795f8c841dda5203e8839535ef1233c016c78b4323fc5023ba98f"
+    },
+    "phone": {
+      "lucide": "smartphone",
+      "svg": "svg/phone.svg",
+      "webp": "webp/phone.webp",
+      "sha256": "d68d8b7d4b9bd5900969392ab8949db8034e973652759b4e4f9bfc7704aeb7da"
+    },
+    "settings": {
+      "lucide": "settings-2",
+      "svg": "svg/settings.svg",
+      "webp": "webp/settings.webp",
+      "sha256": "ddcf57cfaa83b95ea066d286550d596e87263adcaf72b5ec56f7f396cd56790b"
+    },
+    "catalog": {
+      "lucide": "package",
+      "svg": "svg/catalog.svg",
+      "webp": "webp/catalog.webp",
+      "sha256": "db87574065086ac02d14838a1c4753eb85547bf087d8bb889938cf2a04f53293"
+    },
+    "users": {
+      "lucide": "users-round",
+      "svg": "svg/users.svg",
+      "webp": "webp/users.webp",
+      "sha256": "99e4236cca927157bd5530961bc80cdc93fbed36ca64ca31d5d15a6b5525320a"
+    },
+    "tickets": {
+      "lucide": "messages-square",
+      "svg": "svg/tickets.svg",
+      "webp": "webp/tickets.webp",
+      "sha256": "69abe0ade21d4328dca05a6584b6173db6791a34fd5d30fc67028ebcf6cdcb27"
+    },
+    "faq": {
+      "lucide": "circle-help",
+      "svg": "svg/faq.svg",
+      "webp": "webp/faq.webp",
+      "sha256": "01bd99bdbc0751a6f586c138df977cf31179cc08ba7016e9729dd853da5f62d7"
+    },
+    "reports": {
+      "lucide": "chart-no-axes-combined",
+      "svg": "svg/reports.svg",
+      "webp": "webp/reports.webp",
+      "sha256": "693bc1862fda712a36928b6a96e5dfb1625348f2b11d0264b8fa0b77b735cc57"
+    },
+    "admins": {
+      "lucide": "shield-user",
+      "svg": "svg/admins.svg",
+      "webp": "webp/admins.webp",
+      "sha256": "7c715c36b8e79373a2b81221bfad29c66522838d24edf2bc91888b0e33d2d76a"
+    },
+    "inventory": {
+      "lucide": "boxes",
+      "svg": "svg/inventory.svg",
+      "webp": "webp/inventory.webp",
+      "sha256": "b14dc459e80822f29d5e3cd1c09b8f765a61cf5737f9f60826e70642f138698f"
+    },
+    "broadcast": {
+      "lucide": "send",
+      "svg": "svg/broadcast.svg",
+      "webp": "webp/broadcast.webp",
+      "sha256": "b6d7426de74f7a297b1906e5759360523a3267b12eb998126ffaad5f45c7d317"
+    },
+    "layout": {
+      "lucide": "panels-top-left",
+      "svg": "svg/layout.svg",
+      "webp": "webp/layout.webp",
+      "sha256": "cd5a3528ee96ff4b90a9a9e22654ca60fdc76aa92de1f445ec5d679aeb4126b2"
+    },
+    "plus": {
+      "lucide": "plus",
+      "svg": "svg/plus.svg",
+      "webp": "webp/plus.webp",
+      "sha256": "9a3003c2047781f3e3713a8c3e0c886fc52348d1acbb2376d14fa471071bfb39"
+    },
+    "pencil": {
+      "lucide": "pencil",
+      "svg": "svg/pencil.svg",
+      "webp": "webp/pencil.webp",
+      "sha256": "836e90668bde8833329d01cd93a551c96e369e13aa801e05204390748ea81209"
+    },
+    "delete": {
+      "lucide": "trash-2",
+      "svg": "svg/delete.svg",
+      "webp": "webp/delete.webp",
+      "sha256": "7c1d0b826903cb99fb760184a99b781fc88813311801ea94487d64c04d6cde55"
+    },
+    "search": {
+      "lucide": "search",
+      "svg": "svg/search.svg",
+      "webp": "webp/search.webp",
+      "sha256": "02103a7a1e4d90c1151483ac3e3555ac344b09b9a2386804d2c508292cfd2aa6"
+    },
+    "refresh": {
+      "lucide": "refresh-cw",
+      "svg": "svg/refresh.svg",
+      "webp": "webp/refresh.webp",
+      "sha256": "7bc4603b8711b2ce4e58e812de579c23b21d861522dd4cf7416bced19e609f63"
+    },
+    "check": {
+      "lucide": "check",
+      "svg": "svg/check.svg",
+      "webp": "webp/check.webp",
+      "sha256": "21816580ee3e4a5f66d42325d51b31b2cc1f6aabf0ff4cc0fded129a11663235"
+    },
+    "next": {
+      "lucide": "chevron-right",
+      "svg": "svg/next.svg",
+      "webp": "webp/next.webp",
+      "sha256": "f02adf359f8bd51828ef2e3db4758a0c7eba0e4a26a1be92edbcb49bc30dc773"
+    },
+    "up": {
+      "lucide": "chevron-up",
+      "svg": "svg/up.svg",
+      "webp": "webp/up.webp",
+      "sha256": "931047c081d7eed24bfddb74c53a7c8e2f0b142870a9e527b15dc0b544e1c3c9"
+    },
+    "down": {
+      "lucide": "chevron-down",
+      "svg": "svg/down.svg",
+      "webp": "webp/down.webp",
+      "sha256": "03bdc1d3eff03a4c6db5029a14ebe95b7a9c9042abe86deda4efea7bc0774edb"
+    },
+    "power": {
+      "lucide": "power",
+      "svg": "svg/power.svg",
+      "webp": "webp/power.webp",
+      "sha256": "47073ad6133795c09e9ea876651a7201c0cb6c7f05f0805226ad1b7eaaba90da"
+    },
+    "calendar": {
+      "lucide": "calendar-days",
+      "svg": "svg/calendar.svg",
+      "webp": "webp/calendar.webp",
+      "sha256": "f6900a5d12b587d18f1fc91028f7d47690be87dbcb4f51f3f0cd667004a4cc53"
+    },
+    "folder": {
+      "lucide": "folder",
+      "svg": "svg/folder.svg",
+      "webp": "webp/folder.webp",
+      "sha256": "ecb0614bd84533b11d083283aff8c91742295cfdea64847e19336e982d59fb07"
+    },
+    "download": {
+      "lucide": "download",
+      "svg": "svg/download.svg",
+      "webp": "webp/download.webp",
+      "sha256": "170b17951eb826e707898a02c03c3230e71dd595e4a62881eac0763af4666bd0"
+    },
+    "menu": {
+      "lucide": "house",
+      "svg": "svg/menu.svg",
+      "webp": "webp/menu.webp",
+      "sha256": "e19449ddb6340132aacbb53dbc8d54f220125db94b6d8f2e2cd6de91e6c89791"
+    },
+    "list": {
+      "lucide": "list",
+      "svg": "svg/list.svg",
+      "webp": "webp/list.webp",
+      "sha256": "96bad6070cb1df5c15031fb38de6626529e2ed81e358a5d393eb0ca1cd7dc682"
+    },
+    "lock": {
+      "lucide": "lock-keyhole",
+      "svg": "svg/lock.svg",
+      "webp": "webp/lock.webp",
+      "sha256": "76c26e2d6703f46ae5268cf7312312dedd0786ed8e2e727319118c1c4d9c3797"
+    }
+  }
+}

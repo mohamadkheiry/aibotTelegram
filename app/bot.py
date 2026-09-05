@@ -127,7 +127,7 @@ class BotApplication:
     ) -> None:
         self.settings = settings
         self.db = database
-        self.layouts = LayoutEngine(database)
+        self.layouts = LayoutEngine(database, settings.button_icon_ids)
         self.telegram = LayoutTelegram(telegram.transport if isinstance(telegram, LayoutTelegram) else telegram, self.layouts)
         self.stop_event = threading.Event()
         if hasattr(self.telegram, "set_stop_event"):

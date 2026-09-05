@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .button_icons import apply_icons
+
 
 @dataclass(frozen=True)
 class Section:
@@ -226,8 +228,9 @@ def same_canonical_markup(first: str | None, second: str | None) -> bool:
 
 
 class LayoutEngine:
-    def __init__(self, db: Any):
+    def __init__(self, db: Any, button_icon_ids=None):
         self.db = db
+        self.button_icon_ids = dict(button_icon_ids or {})
 
     def snapshot(self, section: str) -> dict:
         definition(section)
@@ -265,7 +268,7 @@ class LayoutEngine:
             except (TypeError, ValueError):
                 # Invalid presentation must not strand a paid notification.
                 pass
-        result = clean_markup(markup)
+        result = clean_markup(apply_icons(markup, self.button_icon_ids))
         return json.dumps(result, ensure_ascii=False) if encoded else result
 
     def order_items(self, section: str, entries: list, key) -> list:

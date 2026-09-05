@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .utils import is_safe_https_url
+from .button_icons import ICON_SOURCES, validate_icon_ids
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -219,32 +221,24 @@ def load_settings(env_file: str | Path | None = None) -> Settings:
         get("DATABASE_PATH", str(data_dir / "alone_account.sqlite3"))
     ).expanduser().resolve()
     admin_chat_raw = get("BOOTSTRAP_ADMIN_CHAT_ID").strip()
-    icon_names = (
-        "shop",
-        "wallet",
-        "account",
-        "support",
-        "referral",
-        "channel",
-        "buy",
-        "info",
-        "back",
-        "pay",
-        "discount",
-        "card",
-        "crypto",
-        "copy",
-        "receipt",
-        "cancel",
-        "order",
-        "upload",
-        "phone",
-    )
-    icon_ids = {
+    icon_ids = {}
+    manifest = get("BUTTON_ICON_MANIFEST").strip()
+    if manifest:
+        manifest_path = Path(manifest).expanduser()
+        if not manifest_path.is_absolute():
+            manifest_path = selected.resolve().parent / manifest_path
+        try:
+            if manifest_path.stat().st_size > 65536:
+                raise ValueError("Manifest too large")
+            document = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+            icon_ids = validate_icon_ids(document["icons"])
+        except (OSError, ValueError, KeyError, TypeError):
+            raise RuntimeError("BUTTON_ICON_MANIFEST must be a readable JSON manifest with valid semantic custom-emoji IDs") from None
+    icon_ids.update({
         name: value
-        for name in icon_names
+        for name in ICON_SOURCES
         if (value := get(f"BUTTON_ICON_{name.upper()}").strip())
-    }
+    })
 
     settings = Settings(
         bot_token=token,

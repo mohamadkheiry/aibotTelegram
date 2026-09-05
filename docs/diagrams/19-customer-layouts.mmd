@@ -20,5 +20,6 @@ flowchart TB
     M --> N["اعمال ترتیب کاتالوگ پیش از صفحه‌بندی"]
     N --> O["markup اصلی و شرط‌های مجاز / outbox canonical"]
     O --> P["مرتب‌سازی کپی دکمه‌های موجود در مرز ارسال"]
-    P --> Q["حذف metadata / حفظ callback، URL، contact و رنگ"]
-    Q --> R["همان transport تلگرام / بدون poller دوم"]
+    P --> Q["آیکون اختیاری از manifest / حذف metadata / حفظ action"]
+    Q --> S["سیاست رنگ در کپی HTTP: colored یا theme"]
+    S --> R["همان transport تلگرام / بدون poller دوم"]

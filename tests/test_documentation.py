@@ -34,6 +34,7 @@ class DocumentationIntegrityTests(unittest.TestCase):
             "ADMIN_HIERARCHY.md",
             "ADMIN_JOINS.md",
             "CUSTOMER_LAYOUTS.md",
+            "BUTTON_ICONS.md",
         )
         for name in required:
             path = DOCS_ROOT / name
