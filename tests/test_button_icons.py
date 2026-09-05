@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import io
@@ -7,15 +8,19 @@ import json
 import os
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from app.admin_forms import GROUPS, MAIN_GROUPS
+from app.bot import BotApplication
 from app.button_icons import GROUP_ICONS, ICON_SOURCES, apply_icons, icon_key, validate_icon_ids
-from app.config import load_settings
+from app.config import Settings, load_settings
+from app.db import Database
 from app.customer_layouts import SECTIONS, LayoutEngine, LayoutTelegram, defaults, keyboard
-from app.keyboards import back_button, callback_button, contact_keyboard, inline_main_menu_keyboard
+from app.keyboards import back_button, callback_button, contact_keyboard, inline_main_menu_keyboard, main_menu_keyboard
 from app.telegram import TelegramAPIError, TelegramClient
+from tests.test_bot import FakeTelegram
 from tools.publish_button_icons import SafeDiagnosticsSession, publish
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -217,6 +222,43 @@ class ButtonIconTests(unittest.TestCase):
                 session.post("https://example.test")
                 self.assertEqual(session.category, expected)
                 self.assertNotIn("private-marker", session.category)
+
+    def test_durable_notice_callers_do_not_bake_runtime_icons_into_idempotency_data(self):
+        tree = ast.parse((ROOT / "app/bot.py").read_text(encoding="utf-8"))
+        for call in ast.walk(tree):
+            if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute) or call.func.attr != "_notify_user_durable":
+                continue
+            for keyword in call.keywords:
+                if keyword.arg == "reply_markup":
+                    self.assertFalse(any(isinstance(node, ast.Attribute) and node.attr == "button_icon_ids" for node in ast.walk(keyword.value)), f"Runtime icons in canonical durable markup at line {call.lineno}")
+
+    def test_topup_notice_survives_shutdown_and_manifest_change_without_outbox_rewrite(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            settings = Settings(bot_token="synthetic-token", database_path=root / "bot.sqlite3", data_dir=root,
+                                bootstrap_admin_chat_id=9001, button_icon_ids=ICONS)
+            db = Database(settings.database_path)
+            first_transport = FakeTelegram()
+            app = BotApplication(settings, db, first_transport)
+            app.initialize()
+            user = db.upsert_user(9002, 9002, username="synthetic_buyer")
+            payment = db.create_wallet_topup_payment(user["id"], 100000, "card", idempotency_key="icons-topup")
+            app.stop_event.set()
+            self.assertTrue(app._complete_payment(payment["id"]))
+            key = f"payment:{payment['id']}:topup-confirmed"
+            queued = db.get_outbound_message_by_idempotency_key(key)
+            self.assertEqual(queued["status"], "queued")
+            self.assertNotIn("icon_custom_emoji_id", queued["reply_markup_json"])
+            self.assertEqual(first_transport.messages, [])
+            changed_icons = {name: str(int(value) + 1000) for name, value in ICONS.items()}
+            transport = FakeTelegram()
+            restarted = BotApplication(replace(settings, button_icon_ids=changed_icons), db, transport)
+            for _ in range(2):
+                self.assertTrue(restarted._notify_user_durable(user, queued["body"], idempotency_key=key, reply_markup=main_menu_keyboard()))
+            self.assertEqual(len(transport.messages), 1)
+            self.assertEqual(transport.messages[0]["reply_markup"]["keyboard"][0][0]["icon_custom_emoji_id"], changed_icons["shop"])
+            self.assertEqual(db.get_outbound_message_by_idempotency_key(key)["reply_markup_json"], queued["reply_markup_json"])
+            self.assertEqual(db.wallet_balance(user["id"]), 100000)
 
 
 if __name__ == "__main__":

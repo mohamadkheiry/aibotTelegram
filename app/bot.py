@@ -3161,7 +3161,8 @@ class BotApplication:
                 f"مبلغ: {money(payment['base_amount'], self.settings.currency_label)}\n"
                 f"موجودی جدید: {money(balance, self.settings.currency_label)}",
                 idempotency_key=f"payment:{payment['id']}:topup-confirmed",
-                reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+                # Presentation config must not become durable idempotency data.
+                reply_markup=main_menu_keyboard(),
             )
             return True
         order = self.db.get_order(payment["order_id"])
@@ -3586,7 +3587,7 @@ class BotApplication:
                     f"مبلغ: {money(payment['base_amount'], self.settings.currency_label)}\n"
                     f"موجودی جدید: {money(balance, self.settings.currency_label)}",
                     idempotency_key=f"payment:{int(payment['id'])}:topup-confirmed",
-                    reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+                    reply_markup=main_menu_keyboard(),
                 )
             elif payment.get("provider_wallet_credit"):
                 balance = self.db.wallet_balance(int(user["id"]))
@@ -3600,7 +3601,7 @@ class BotApplication:
                     idempotency_key=(
                         f"payment:{int(payment['id'])}:provider-wallet-credit"
                     ),
-                    reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+                    reply_markup=main_menu_keyboard(),
                 )
             elif payment.get("order_id") is not None:
                 order = self.db.get_order(int(payment["order_id"]))

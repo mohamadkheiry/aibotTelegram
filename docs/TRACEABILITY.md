@@ -2,7 +2,7 @@
 
 ## REQ-UI-ICONS — ظاهر Premium و آیکون مینیمال
 
-درخواست مستقیم جدید: ۴۵ نماد Lucide دارای مجوز با custom emoji ID، بدون تغییر label/callback و با حالت شیشه‌ای inline وابسته به تم. پیاده‌سازی: `button_icons.py`، config manifest، `LayoutEngine.prepare` و ابزارهای build/publish. شاهد: ۱۶ تست `test_button_icons.py`، asset checksum/license و suite اصلی. انتقال به bot ID متفاوت نیازمند DB مستقل و تصمیم دامنه داده است؛ موفقیت تست ساختگی، انتشار واقعی pack یا Premium مالک را اثبات نمی‌کند. [شرح](BUTTON_ICONS.md).
+درخواست مستقیم جدید: ۴۵ نماد Lucide دارای مجوز با custom emoji ID، بدون تغییر label/callback و با حالت شیشه‌ای inline وابسته به تم. پیاده‌سازی: `button_icons.py`، config manifest، `LayoutEngine.prepare` و ابزارهای build/publish. شاهد: ۱۸ تست `test_button_icons.py`، asset checksum/license و suite اصلی؛ شامل اصلاح ذخیرهٔ آیکون عملیاتی در سه مسیر اعلان شارژ/اعتبار کیف پول، با آزمون واقعی shutdown/restart و تغییر manifest. انتقال به bot ID متفاوت نیازمند DB مستقل و تصمیم دامنه داده است؛ موفقیت تست ساختگی، انتشار واقعی pack یا Premium مالک را اثبات نمی‌کند. [شرح](BUTTON_ICONS.md).
 
 ## REQ-UI-LAYOUT — چیدمان قابل تنظیم تمام صفحه‌های کاربر
 

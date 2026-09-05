@@ -26,6 +26,8 @@
 
 `LayoutEngine.prepare` از کپی markup آیکون می‌سازد؛ `LayoutTelegram` همه send/edit/document/photo/copy و raw-callهای مربوط را پوشش می‌دهد. سپس metadata داخلی حذف و `TelegramClient.call` سیاست رنگ را اعمال می‌کند. دکمهٔ دارای آیکون صریح، همان آیکون قبلی را حفظ می‌کند؛ callback، URL، copy payload، contact request، label، شرط نمایش، ترتیب و مجوز عوض نمی‌شوند. outbox canonical برای ظاهر بازنویسی نمی‌شود.
 
+اعلان شارژ کیف پول و اعتبار جایگزینِ پرداخت ارزی باید `main_menu_keyboard()` بدون آرگومان تنظیم آیکون را queue کنند؛ تزئین فقط موقع send/retry انجام می‌شود. ممیزی یک باگ مشترک در سه call site یافت و اصلاح کرد: ذخیرهٔ IDهای عملیاتی داخل canonical می‌توانست با تعویض manifest، همان کلید اعلان را متعارض کند. تست shutdown پیش از ارسال، restart با آیکون تازه، ارسال یک‌باره و ثابت‌ماندن JSON ذخیره‌شده/موجودی کیف پول این مرز را حفظ می‌کند. آیکون صریح پیام‌های legacy و دادهٔ قدیمی بازنویسی نمی‌شوند.
+
 `BUTTON_ICON_MANIFEST` فایل JSON با کلید `icons` است؛ مقدار هر آیکون، رشتهٔ عددی custom emoji ID و کلید آن یکی از نام‌های `ICON_SOURCES` است. مسیر نسبی نسبت به پوشهٔ همان env تفسیر می‌شود. فایل بزرگ‌تر از ۶۴ KiB، JSON خراب، کلید ناشناخته یا مقدار غیرعددی fail closed است و محتوا در خطا echo نمی‌شود. متغیرهای `BUTTON_ICON_SHOP` و همتایانشان override اختیاری همان آیکون‌اند. manifest خالی و متغیرهای خالی، fallback بدون آیکون را حفظ می‌کنند.
 
 ```dotenv
