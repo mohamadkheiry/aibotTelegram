@@ -146,6 +146,11 @@ class CustomerLayoutTests(unittest.TestCase):
         transport.run_polling.assert_called_once_with("handler")
         proxy.call("sendMessage", {"chat_id": 55, "reply_markup": markup})
         self.assertNotIn("_customer_layout", transport.call.call_args.args[1]["reply_markup"])
+        proxy.edit_message_reply_markup(55, 7, markup)
+        self.assertEqual(
+            transport.edit_message_reply_markup.call_args.args[2],
+            proxy.engine.prepare(markup),
+        )
         self.assertEqual(markup, frozen)
 
     def test_legacy_outbox_tag_compatibility_does_not_relax_real_payload_collision(self):

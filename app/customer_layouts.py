@@ -306,6 +306,9 @@ class LayoutTelegram:
             return method
 
         def send(*args, **kwargs):
+            # This is the one wrapper whose markup is not keyword-only.
+            if name == "edit_message_reply_markup" and len(args) >= 3:
+                args = (*args[:2], self.engine.prepare(args[2]), *args[3:])
             if "reply_markup" in kwargs:
                 kwargs["reply_markup"] = self.engine.prepare(kwargs["reply_markup"])
             return method(*args, **kwargs)
