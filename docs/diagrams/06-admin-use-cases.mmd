@@ -1,0 +1,24 @@
+flowchart TB
+    subgraph Actors["نقش‌ها"]
+        direction LR
+        Owner(["مالک"])
+        Admin(["مدیر"])
+        Support(["پشتیبان"])
+    end
+
+    subgraph Scopes["دامنه‌های دسترسی"]
+        direction LR
+        Shared["مشترک مدیر و مالک<br/>تنظیم ربات، پرداخت، کارت و کانال<br/>مدیریت عضویت اجباری<br/>دسته، محصول، انبار و تخفیف<br/>سفارش، پرداخت، کاربر و کیف پول<br/>FAQ، broadcast، گزارش CSV و قواعد پاداش<br/>ثبت grant admin/support؛ pending تا proof دقیق"]
+        SupportScope["دامنه support<br/>مشاهده صفحه‌بندی‌شده کاربر، سفارش، تراکنش، دعوت و پاداش<br/>فهرست، پیوست، پاسخ و وضعیت تیکت<br/>پیام مستقیم و درخواست مجدد اطلاعات سفارش"]
+        OwnerOnly["فقط مالک<br/>افزودن یا تغییر نقش owner<br/>انتقال root marker به owner فعال و verifyشده<br/>backup کامل<br/>تعیین تکلیف review مالی با note و شاهد"]
+    end
+
+    Owner --> Shared
+    Admin --> Shared
+    Support --> SupportScope
+    Owner --> OwnerOnly
+
+    Guard["private chat و chat ID verifyشده<br/>journal started/completed<br/>خطای موقت DB: NACK، offset ثابت و replay پیش از update بعدی"]
+    Guard -.-> Owner
+    Guard -.-> Admin
+    Guard -.-> Support

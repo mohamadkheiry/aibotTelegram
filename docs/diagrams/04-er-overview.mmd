@@ -1,0 +1,180 @@
+erDiagram
+    USERS ||--o{ ORDERS : places
+    USERS ||--o{ PAYMENTS : owns
+    USERS ||--o{ WALLET_ENTRIES : has
+    USERS ||--o{ TICKETS : opens
+    USERS ||--o{ RESERVATIONS : queues
+    USERS o|--o{ OUTBOUND_MESSAGES : receives
+    USERS ||--o{ REFERRALS : inviter
+    USERS ||--o| REFERRALS : invitee
+
+    CATEGORIES o|--o{ CATEGORIES : parent_of
+    CATEGORIES ||--o{ PRODUCTS : groups
+    PRODUCTS ||--o{ ORDERS : snapshots_into
+    PRODUCTS ||--o{ INVENTORY_ITEMS : stocks
+    PRODUCTS ||--o{ RESERVATIONS : queues
+    PRODUCTS o|--o{ DISCOUNTS : scopes
+    PRODUCTS o|--o{ REWARD_RULES : scopes
+
+    ORDERS o|--o{ PAYMENTS : pays
+    ORDERS ||--o{ ORDER_DISCOUNTS : applies
+    ORDERS o|--o{ WALLET_ENTRIES : affects
+    ORDERS o|--o| INVENTORY_ITEMS : receives
+    ORDERS o|--o| RESERVATIONS : reserves
+    ORDERS ||--o{ REMINDERS : schedules
+    ORDERS o|--o{ REWARD_EVENTS : triggers
+
+    DISCOUNTS ||--o{ ORDER_DISCOUNTS : records
+    PAYMENTS o|--o{ WALLET_ENTRIES : credits
+    TICKETS ||--o{ TICKET_MESSAGES : contains
+    ADMINS o|--o{ TICKET_MESSAGES : replies
+    ADMINS o|--o{ WALLET_ENTRIES : adjusts
+    REFERRALS ||--o{ REWARD_EVENTS : earns
+    REWARD_RULES ||--o{ REWARD_EVENTS : grants
+    WALLET_ENTRIES ||--o| REWARD_EVENTS : backs
+
+    USERS {
+        int id PK
+        int telegram_user_id UK
+        int chat_id UK
+        string username
+        string customer_name
+        string phone
+        boolean is_blocked
+    }
+    ADMINS {
+        int id PK
+        string username_key UK
+        int chat_id UK
+        string role
+        boolean is_active
+        datetime identity_verified_at
+        boolean is_bootstrap_owner UK
+    }
+    PROCESSED_ADMIN_UPDATES {
+        int update_id PK
+        string fingerprint
+        string status
+        string effect_json
+        datetime completed_at
+    }
+    CATEGORIES {
+        int id PK
+        int parent_id FK
+        string name
+        int source_admin_update_id UK
+        boolean is_active
+    }
+    PRODUCTS {
+        int id PK
+        int category_id FK
+        string product_type
+        int price_amount
+        int duration_days
+        boolean reserve_enabled
+    }
+    ORDERS {
+        int id PK
+        string order_number UK
+        int user_id FK
+        int product_id FK
+        string order_origin
+        string status
+        int payable_amount
+        datetime reward_processed_at
+    }
+    PAYMENTS {
+        int id PK
+        string payment_number UK
+        int order_id FK
+        int user_id FK
+        string purpose
+        string method
+        string status
+    }
+    INVENTORY_ITEMS {
+        int id PK
+        int product_id FK
+        string payload
+        string status
+        int assigned_order_id FK
+        int source_admin_update_id UK
+    }
+    RESERVATIONS {
+        int id PK
+        int product_id FK
+        int user_id FK
+        int order_id FK
+        string status
+    }
+    DISCOUNTS {
+        int id PK
+        string code_key UK
+        string discount_type
+        int value
+        int product_id FK
+    }
+    ORDER_DISCOUNTS {
+        int id PK
+        int order_id FK
+        int discount_id FK
+        int amount
+        boolean is_active
+    }
+    WALLET_ENTRIES {
+        int id PK
+        int user_id FK
+        int order_id FK
+        int payment_id FK
+        int amount_signed
+        string entry_type
+        string idempotency_key UK
+    }
+    TICKETS {
+        int id PK
+        string ticket_number UK
+        int user_id FK
+        string status
+        int assigned_admin_id FK
+    }
+    TICKET_MESSAGES {
+        int id PK
+        int ticket_id FK
+        string sender_type
+        string body
+        string idempotency_key UK
+    }
+    OUTBOUND_MESSAGES {
+        int id PK
+        string idempotency_key UK
+        int recipient_user_id FK
+        string status
+        datetime scheduled_at
+    }
+    REFERRALS {
+        int id PK
+        int inviter_user_id FK
+        int invitee_user_id FK
+        string status
+    }
+    REWARD_RULES {
+        int id PK
+        string rule_key UK
+        string event_type
+        int product_id FK
+        int amount
+    }
+    REWARD_EVENTS {
+        int id PK
+        int reward_rule_id FK
+        int referral_id FK
+        int source_order_id FK
+        int wallet_entry_id FK
+    }
+    REMINDERS {
+        int id PK
+        int order_id FK
+        int user_id FK
+        int days_before
+        string status
+    }

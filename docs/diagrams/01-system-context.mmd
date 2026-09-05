@@ -1,0 +1,26 @@
+flowchart LR
+    User["کاربر فروشگاه"]
+    Owner["مالک و مدیر"]
+    Support["پشتیبان"]
+    Bank["سامانه اعلان تراکنش بانکی"]
+    Plisio["درگاه Plisio"]
+    Telegram["Telegram Bot API"]
+
+    subgraph System["سامانه ربات فروشگاهی الون اکانت"]
+        Bot["فرایند Python ربات"]
+        Database[("SQLite")]
+        Backup["فایل‌های پشتیبان"]
+    end
+
+    User -->|"پیام و Callback در گفت‌وگوی خصوصی"| Telegram
+    Owner -->|"فرمان و Callback مدیریتی"| Telegram
+    Support -->|"فرمان‌های محدود پشتیبانی"| Telegram
+    Bot -->|"getUpdates و ارسال پیام"| Telegram
+    Telegram -->|"Updateهای long polling"| Bot
+    Bank -->|"Callback امضاشده اختیاری"| Bot
+    Bot -->|"ساخت و بررسی فاکتور اختیاری"| Plisio
+    Bot <-->|"تراکنش‌های اتمیک و idempotent"| Database
+    Database -->|"SQLite online backup"| Backup
+
+    Note["Webhook تلگرام استفاده نمی‌شود؛ callback بانکی یک HTTP endpoint مستقل است."]
+    Note -.-> Bot

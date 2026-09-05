@@ -1,0 +1,42 @@
+flowchart TD
+    A(["انتخاب خرید محصول manual"])
+    B["اعتبارسنجی محصول و تکمیل نام و contact"]
+    C["ایجاد اتمیک Order، snapshot و خلاصه created-summary؛ سپس پاک‌کردن state"]
+    D["اعمال اختیاری تخفیف"]
+    E["تکمیل پرداخت"]
+    E0["queue/attempt اعلان canonical شماره سفارش، محصول، مبلغ و روش"]
+    E1{"اعلان sent یا terminal failed/cancelled است؟"}
+    E2["queued/sending؛ prompt و fulfillment تا retry متوقف"]
+    F["اعمال idempotent پاداش خرید"]
+    G["تغییر paid به awaiting_info"]
+    H["ارسال درخواست اطلاعات محصول به کاربر و مدیر"]
+    I["کاربر متن، تصویر یا فایل می‌فرستد"]
+    J{"سفارش هنوز awaiting_info یا processing است؟"}
+    K["رد ورودی stale"]
+    L["ذخیره customer_info_json و metadata فایل"]
+    M["تغییر awaiting_info به processing"]
+    N["اعلان پایدار owner/admin با hash نسخه محتوا"]
+    O{"اطلاعات کافی است؟"}
+    P["پشتیبان یا مدیر درخواست اصلاح می‌فرستد"]
+    Q["مدیر متن تحویل را با complete می‌فرستد"]
+    Q0{"render نهایی حداکثر ۳۹۰۰ نویسه است؟"}
+    Q1["رد پیش از mutation؛ سفارش processing می‌ماند"]
+    R["ثبت delivered_payload و completed_at"]
+    S["شروع مدت اشتراک و ساخت reminderها"]
+    T["ارسال پیام تکمیل؛ ثبت retry در صورت خطای Telegram"]
+    Z(["پایان"])
+
+    A --> B --> C --> D --> E --> E0 --> E1
+    E1 -->|"خیر"| E2 --> Z
+    E1 -->|"بله"| F --> G --> H --> I --> J
+    J -->|"خیر"| K --> Z
+    J -->|"بله"| L --> M --> N --> O
+    O -->|"خیر"| P --> I
+    O -->|"بله"| Q --> Q0
+    Q0 -->|"خیر"| Q1 --> Q
+    Q0 -->|"بله"| R --> S --> T --> Z
+
+    Rule["پرداخت به‌تنهایی زمان اشتراک محصول دستی را آغاز نمی‌کند؛ مبنا complete واقعی است."]
+    Rule -.-> S
+    Terminal["failure terminal اعلان در outbox می‌ماند اما سفارش paid را strand نمی‌کند"]
+    Terminal -.-> E1

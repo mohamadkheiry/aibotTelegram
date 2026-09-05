@@ -1,0 +1,95 @@
+flowchart TD
+    A(["سفارش pending_payment یا درخواست شارژ کیف پول"])
+    B{"نوع عملیات"}
+    C["محاسبه بدهی، تخفیف و hold کیف پول"]
+    D{"بدهی کاملاً پوشش داده شد؟"}
+    E["capture کیف پول و پرداخت کامل"]
+    F{"intent فعال Order یا topup کاربر وجود دارد؟"}
+    F1{"روش، مبلغ و terms دقیقاً یکسان است؟"}
+    F2["بازیابی همان intent"]
+    F3["conflict؛ بدون replace یا cancel ضمنی"]
+    G["فهرست روش‌های بیرونی configured و فعال"]
+    G1{"روش انتخاب‌شده هنوز available است؟"}
+    G2["مخفی یا رد به‌صورت fail closed"]
+    H{"روش بیرونی"}
+
+    I{"card rate و cancel cooldown مجاز است؟"}
+    I1["ثبت security event و alert پایدار"]
+    J["ساخت card payment با مبلغ یکتای فقط کارت و quarantine تاریخچه ۲۴ ساعته"]
+    K{"مسیر تأیید کارت"}
+    L["callback با secret، reference، amount و occurred_at"]
+    M{"رخداد دقیقاً منطبق و در مهلت است؟"}
+    M1["ثبت card event تأییدشده و settlement اتمیک"]
+    M2["ثبت card review؛ alert و resolve فقط owner، بدون credit خودکار"]
+    N["فیش card: نخستین ارسال قبل expiry؛ replacement تا expiry+7d"]
+    O["ذخیره file kind، payment verifying و alert owner/admin با hash نسخه"]
+    P{"تأیید مدیر؟"}
+    Q["failed و reconciliation والد"]
+
+    R0["ثبت Payment crypto provisional برای Order/topup و freeze user/purpose/amount/terms"]
+    R["create_invoice با payment_number پایدار و return_existing=1"]
+    R1["attach اتمیک شناسه و URL امن دقیق به همان Payment"]
+    S["نمایش و resume همان URL امن HTTPS؛ بدون receipt یا cancel"]
+    T["ابتدا recovery شاهد completed؛ سپس poll provider"]
+    U{"هویت و evidence چیست؟"}
+    U1["ثبت immutable completed evidence؛ سپس settlement"]
+    U2["terminal با crypto amount صفر: ثبت failed و reconciliation"]
+    U3["partial/nonzero crypto، unknown، identity یا optional fiat params mismatch: review"]
+    U4["alert پایدار؛ ادامه poll یا resolve مستند owner"]
+    U5["completed بعد از failed/resolution: review پرخطر؛ Order احیا نمی‌شود"]
+    U6["با شاهد completed: topup settle یا اعتبار جبرانی Order terminal"]
+
+    W["اثر مالی idempotent"]
+    X{"purpose"}
+    Y["ثبت ledger topup و افزایش کیف پول"]
+    Y2["ثبت manual_credit جبرانی؛ بدون احیای Order یا external_paid"]
+    Z["capture hold و ثبت سهم external فروش سفارش"]
+    AA["topup/compensation notice پایدار"]
+    AA0["اعلان canonical سفارش: شماره، محصول، مبلغ و روش"]
+    AAG{"وضعیت اعلان sent یا terminal failed/cancelled است؟"}
+    AAW["queued/sending؛ defer تمام reward/fulfillment تا retry"]
+    AA1["reward و fulfillment سفارش پس از gate"]
+    AC["اعلان پایدار تصمیم owner"]
+    AB(["پایان یا انتظار چرخه بعد"])
+
+    A --> B
+    B -->|"سفارش"| C --> D
+    D -->|"بله"| E --> Z
+    D -->|"خیر"| F
+    B -->|"شارژ"| F
+    F -->|"بله"| F1
+    F1 -->|"بله"| F2 --> AB
+    F1 -->|"خیر"| F3 --> AB
+    F -->|"خیر"| G --> G1
+    G1 -->|"خیر"| G2 --> AB
+    G1 -->|"بله"| H
+    H -->|"کارت"| I
+    I -->|"خیر"| I1 --> AB
+    I -->|"بله"| J --> K
+    K -->|"callback بانکی"| L --> M
+    M -->|"بله"| M1 --> W
+    M -->|"خیر"| M2 --> AB
+    K -->|"فیش دستی"| N --> O --> P
+    P -->|"بله"| W
+    P -->|"خیر"| Q --> AB
+    H -->|"ارزی"| R0 --> R --> R1 --> S --> T --> U
+    U -->|"completed و payment باز"| U1 --> W
+    U -->|"terminal-zero"| U2 --> AB
+    U -->|"ambiguous/review"| U3 --> U4 --> T
+    U -->|"completed پس از terminal محلی"| U5 --> U6 --> W
+    W --> X
+    X -->|"wallet_topup"| Y --> AA --> AB
+    X -->|"order باز"| Z --> AA0 --> AAG
+    AAG -->|"بله"| AA1 --> AB
+    AAG -->|"خیر"| AAW --> AB
+    X -->|"order terminal؛ late credit"| Y2 --> AC --> AA --> AB
+
+    Idem["provider/card evidence، payment key، wallet ledger key و outbox key اثر تکراری را مهار می‌کنند."]
+    Idem -.-> W
+    Legacy["legacy dual-active topup: هر دو در کیف پول جدا دیده می‌شوند؛ create intent دوم ممنوع می‌ماند."]
+    Legacy -.-> F
+    CrashSafe["خطای مبهم remote یا crash پیش از attach: provisional حفظ و همان payment_number/amount retry می‌شود؛ poll فقط پس از attach"]
+    CrashSafe -.-> R0
+    CrashSafe -.-> R1
+    Terminal["failure terminal اعلان قابل مشاهده است ولی Order paid را strand نمی‌کند"]
+    Terminal -.-> AAG

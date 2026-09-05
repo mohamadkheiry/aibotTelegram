@@ -1,0 +1,65 @@
+stateDiagram-v2
+    [*] --> PendingPayment: ایجاد سفارش
+
+    state "pending_payment" as PendingPayment
+    state "awaiting_confirmation" as AwaitingConfirmation
+    state "paid" as Paid
+    state "awaiting_stock" as AwaitingStock
+    state "awaiting_info" as AwaitingInfo
+    state "processing" as Processing
+    state "completed" as Completed
+    state "rejected" as Rejected
+    state "expired" as Expired
+    state "cancelled" as Cancelled
+    state "refunded (رزرو؛ بدون transition فعلی)" as Refunded
+
+    PendingPayment --> AwaitingConfirmation: انتظار تأیید
+    PendingPayment --> Paid: تسویه
+    PendingPayment --> Rejected
+    PendingPayment --> Expired
+    PendingPayment --> Cancelled
+
+    AwaitingConfirmation --> Paid
+    AwaitingConfirmation --> PendingPayment
+    AwaitingConfirmation --> Expired
+    AwaitingConfirmation --> Rejected
+    AwaitingConfirmation --> Cancelled
+
+    Paid --> AwaitingStock
+    Paid --> AwaitingInfo
+    Paid --> Processing
+    Paid --> Completed
+
+    AwaitingStock --> Processing
+    AwaitingStock --> Completed
+
+    AwaitingInfo --> Processing
+
+    Processing --> AwaitingInfo
+    Processing --> Completed
+
+    note right of Refunded
+        schema این مقدار را نگه می‌دارد، اما نسخه فعلی
+        workflow مالی اثبات‌شده برای ورود به آن ندارد.
+    end note
+
+    note left of AwaitingConfirmation
+        مسیرهای terminal فقط با workflow اختصاصی‌اند.
+        order_status هنگام payment باز آن‌ها را نمی‌پذیرد؛
+        لغو اختصاصی فقط card بدون فیش است و crypto
+        تا شاهد terminal ارائه‌دهنده محلی بسته نمی‌شود.
+        رد فیش پیش از expiry سفارش به pending برمی‌گردد.
+    end note
+
+    note right of Paid
+        جزئیات fulfillment بر اساس نوع محصول است:
+        ready به تحویل یا رزرو و manual به دریافت اطلاعات می‌رود.
+        اعلان canonical در queued/sending همه شاخه‌ها را می‌بندد؛
+        sent یا failure/cancellation نهایی gate را باز می‌کند.
+    end note
+
+    Expired --> [*]
+    Cancelled --> [*]
+    Refunded --> [*]
+    Completed --> [*]
+    Rejected --> [*]

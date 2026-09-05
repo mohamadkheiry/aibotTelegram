@@ -1,0 +1,122 @@
+%%{init: {"sequence": {"mirrorActors": false}}}%%
+sequenceDiagram
+    autonumber
+    actor User as کاربر
+    participant TG as Telegram Bot API
+    participant Bot as BotApplication
+    participant DB as Database و SQLite
+    participant Pay as بانک یا Plisio
+    participant Worker as Maintenance Worker
+    actor Admin as مدیر
+
+    User->>TG: انتخاب خرید یا شارژ و روش پرداخت
+    TG->>Bot: message یا callback_query
+    Bot->>Bot: کنترل setting و config روش؛ روش ناقص fail closed
+    Bot->>DB: create_order با created-summary اتمیک؛ سپس create_payment با idempotency key
+    Note over Bot,DB: state first-contact فقط پس از commit Order و order:id:created-summary پاک می‌شود
+    DB->>DB: enforce یک intent هر Order و یک topup تازه هر user در مجموع card/crypto
+    DB-->>Bot: همان intent فقط در replay روش/مبلغ/terms یکسان؛ وگرنه conflict
+    Bot-->>TG: card فقط receipt؛ crypto با URL امن قابل resume و بدون cancel/expiry محلی
+    Note over Bot,DB: legacy dual-active topup هر دو جدا نمایش داده می‌شوند، اما intent دوم تازه ساخته نمی‌شود
+    Note over Bot,DB: uniqueness مبلغ و quarantine ۲۴ ساعته فقط برای card است
+
+    alt callback خودکار کارت
+        Pay->>Bot: reference، amount و occurred_at با secret
+        Bot->>DB: ثبت card event و settlement در یک transaction
+        alt رخداد منطبق
+            DB-->>Bot: payment paid
+        else رخداد دیررس یا نامنطبق
+            DB-->>Bot: review بدون credit
+            Bot->>DB: queue alert مدیران
+            Admin->>Bot: card_resolve با note؛ بدون credit خودکار
+        end
+    else poll Plisio
+        Bot->>DB: پیش از network ثبت/reuse Payment provisional و freeze terms
+        Bot->>Pay: create_invoice با payment_number پایدار و return_existing=1
+        Pay-->>Bot: invoice id و URL
+        Bot->>DB: attach اتمیک invoice دقیق؛ provisional ناقص poll نمی‌شود
+        Worker->>Bot: ابتدا reconcile completed evidence سپس poll
+        Bot->>Pay: operation(invoice_id)
+        Pay-->>Bot: status، id/type، crypto amount و optional fiat params
+        Bot->>DB: commit immutable provider event با payload hash
+        alt completed و payment باز
+            Bot->>DB: settlement از شاهد durable
+        else terminal با crypto amount صفر
+            DB->>DB: failed و reconciliation parent
+        else partial/unknown، identity یا optional fiat mismatch
+            DB->>DB: verifying و review quarantine
+            Bot->>DB: queue alert مدیران
+            Note over Bot,Worker: poll ادامه دارد؛ completed/zero بعدی review را با event تازه حل می‌کند
+        else completed پس از resolution یا failed
+            DB->>DB: review پرخطر تازه؛ Order احیا نمی‌شود
+            Admin->>Bot: crypto_resolve فقط با شاهد completed دقیق
+            Bot->>DB: topup settle یا اعتبار جبرانی کیف پول، نه revenue Order
+        end
+        Note over DB,Worker: crash پس از ثبت completed evidence در run بعد بدون network بازیابی می‌شود
+    else تأیید فیش دستی
+        User->>TG: فیش card؛ نخستین قبل expiry یا replacement قبل expiry+7d
+        TG->>Bot: photo/document با file_id
+        Bot->>DB: submit receipt با file kind و status verifying
+        Bot->>DB: queue alert پایدار owner/admin با hash نسخه فیش
+        Admin->>Bot: payment_detail سپس approve/reject
+        Bot->>DB: settlement یا failed/reconcile
+    else کیف پول کافی
+        Bot->>DB: wallet hold و capture اتمیک
+    end
+
+    opt payment به paid رسیده است
+        Bot->>DB: queue notice با کلید ثابت
+        Worker->>DB: recover هر paid payment فاقد notice پس از crash
+    end
+
+    opt موفقیت بدون external payment
+        Worker->>DB: recover wallet-confirmed یا discount-confirmed فاقد outbox با cursor/wrap
+    end
+
+    DB-->>Bot: order paid، topup credited یا terminal compensation
+    opt purpose سفارش و order paid
+        Bot->>DB: queue اعلان canonical شماره/محصول/مبلغ/روش
+        Bot->>TG: attempt اعلان موفقیت
+        TG-->>Bot: message_id یا خطای retryable/terminal
+        Bot->>DB: status sent، queued/sending یا failed/cancelled
+        Worker->>DB: recover missing notice و retry با cursor
+        Bot->>DB: order_success_notice_ready
+        alt queued یا sending
+            DB-->>Bot: defer همه شاخه‌های fulfillment تا retry
+        else sent یا terminal failed/cancelled
+            DB-->>Bot: gate باز؛ failure terminal در outbox قابل مشاهده می‌ماند
+        end
+        Bot->>DB: grant_purchase_rewards
+        DB->>DB: reward event و wallet ledger یکتا
+        Bot->>DB: queue reward notice؛ سپس mark reward_processed_at
+        Worker->>DB: recover هر reward event فاقد notice با cursor/wrap
+        Worker->>DB: selector مستقل status=paid برای fulfillment؛ marker پاداش شرط نیست
+
+        alt محصول آماده و موجود
+            Bot->>DB: validate render حداکثر ۳۹۰۰؛ سپس assign و queue delivery اتمیک
+            DB->>DB: assign item و complete order
+            Note over Admin,DB: inventory_assign مستقیم فقط وقتی backlog ready همان محصول خالی است؛ وگرنه FIFO مقدم است
+        else محصول آماده و قابل رزرو
+            Bot->>DB: reserve_product
+            DB-->>Bot: order awaiting_stock
+            Worker->>DB: fulfill_next_reservation پس از شارژ انبار
+            Worker->>DB: queue delivery با کلید ثابت
+        else محصول دستی
+            Bot->>DB: status awaiting_info
+            Bot-->>User: درخواست اطلاعات
+            User->>Bot: متن یا فایل فعال‌سازی
+            Bot->>DB: ذخیره اطلاعات، status processing و alert نسخه‌بندی‌شده در workflow اتمیک
+            Admin->>Bot: مشاهده attachment و complete order
+            Bot->>DB: validate render حداکثر ۳۹۰۰؛ سپس completed، outbox و reminder
+        end
+        opt سفارش ready در processing پس از race موجودی
+            Worker->>DB: recover alert پایدار user و owner/admin از state processing
+            Worker->>DB: انتخاب قدیمی‌ترین order واجد stock فقط بدون reservation معتبر قدیمی‌تر همان محصول
+            Note over DB,Worker: cap fulfil رزرو مجوز دورزدن FIFO نیست
+        end
+    end
+
+    Worker->>DB: claim outbound message
+    Worker->>TG: sendMessage/sendDocument/sendPhoto
+    TG-->>Worker: message_id یا خطا
+    Worker->>DB: sent یا retry با backoff

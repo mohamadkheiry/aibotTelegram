@@ -1,0 +1,35 @@
+flowchart TD
+    A(["ورود کاربر به پشتیبانی"])
+    B{"انتخاب"}
+    C["مرور دسته FAQ و پاسخ‌ها"]
+    D["نمایش فهرست تیکت‌های کاربر"]
+    E["دریافت موضوع ۳ تا ۱۲۰ نویسه"]
+    F["دریافت شرح و پیوست اختیاری"]
+    G["ایجاد idempotent ticket و پیام اول"]
+    H["وضعیت open و alert پایدار owner/admin/support با cursor recovery"]
+    I["مشاهده گفت‌وگوی صفحه‌بندی‌شده"]
+    J{"تیکت بسته است؟"}
+    K["ارسال پاسخ کاربر؛ وضعیت open"]
+    L["پاسخ مدیر یا پشتیبان؛ وضعیت answered"]
+    M["commit پاسخ/status و notice کاربر در یک transaction؛ ارسال از outbox"]
+    N{"اقدام بعدی"}
+    O["بستن تیکت؛ وضعیت closed و closed_at"]
+    P["بازگشایی مدیریتی با وضعیت open یا answered"]
+    R["/ticket_attachment MESSAGE_ID؛ revalidate role/message/ticket و ارسال photo/document"]
+    Z(["پایان"])
+
+    A --> B
+    B -->|"FAQ"| C --> Z
+    B -->|"تیکت‌های من"| D --> I
+    B -->|"تیکت جدید"| E --> F --> G --> H --> I
+    I --> J
+    J -->|"خیر"| N
+    N -->|"پاسخ کاربر"| K --> H
+    N -->|"پاسخ مدیر"| L --> M --> I
+    N -->|"بستن"| O --> Z
+    J -->|"بله؛ فقط مشاهده"| Z
+    O -.->|"فرمان مدیر"| P --> I
+    I -.->|"owner/admin/support"| R --> I
+
+    Access["کاربر فقط تیکت خود را می‌بیند؛ پیام جدید به تیکت بسته پذیرفته نمی‌شود."]
+    Access -.-> I

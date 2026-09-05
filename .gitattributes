@@ -1,0 +1,25 @@
+* text=auto
+
+*.py text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.mmd text eol=lf
+*.svg text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitignore text eol=lf
+.env.example text eol=lf
+
+# Historical text exports are preserved byte-for-byte; checksums document the
+# exact requirement inputs and intentional trailing whitespace is not linted.
+docs/references/*.txt -text -eol -whitespace
+
+*.pdf binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.zip binary
+*.sqlite3 binary

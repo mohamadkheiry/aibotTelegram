@@ -1,0 +1,46 @@
+flowchart TD
+    A(["ورود با start ref_TelegramUserId"])
+    B{"دعوت‌کننده موجود و غیرخودی است؟"}
+    C["نادیده‌گرفتن ref نامعتبر"]
+    D["ثبت یک referral یکتا برای invitee"]
+    E{"عضویت اجباری کامل است؟"}
+    F["انتظار تا بررسی موفق عضویت"]
+
+    G["ارزیابی ruleهای فعال event=start"]
+    GS{"rule و بازه منطبق است؟"}
+    GR["ساخت reward_event و wallet_entry یکتا"]
+    GN["qualified کردن referral و صف notice پایدار"]
+
+    H["خرید تجاری invitee: origin=customer و subtotal مثبت"]
+    HX["تخصیص مدیر/سفارش داخلی صفرمبلغ: بدون purchase reward و بدون مصرف first_purchase"]
+    I["ارزیابی first_purchase و product_purchase"]
+    J["ارزیابی combined با همه شرط‌ها"]
+    K{"rule، بازه و شرط‌های خرید منطبق است؟"}
+    L["ساخت reward_event و wallet_entry یکتا"]
+    M["qualified کردن referral و صف notice پایدار"]
+    P["پس از تکمیل همه ruleهای خرید، ثبت reward_processed_at"]
+    R["maintenance: یافتن هر reward_event فاقد reward:id:notice با cursor و wrap"]
+    S["selector مستقل سفارش paid؛ reward_processed_at مانع fulfillment نیست"]
+    Q(["پایان"])
+
+    A --> B
+    B -->|"خیر"| C --> Q
+    B -->|"بله"| D --> E
+    E -->|"خیر"| F --> E
+    E -->|"بله"| G --> GS
+    GS -->|"خیر"| Q
+    GS -->|"بله"| GR --> GN --> Q
+
+    D -.-> H
+    HX -.-> Q
+    H --> I --> K
+    H --> J --> K
+    K -->|"خیر"| P
+    K -->|"بله"| L --> M --> P --> Q
+
+    Exact["کلید یکتای rule + referral + event و کلید ledger، اعمال دوباره را خنثی می‌کند."]
+    Exact -.-> GR
+    Exact -.-> L
+    R -.-> GR
+    R -.-> L
+    S -.-> P

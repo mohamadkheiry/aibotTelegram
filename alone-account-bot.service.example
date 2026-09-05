@@ -1,0 +1,47 @@
+[Unit]
+Description=Alone Account Telegram shop bot
+Documentation=file:/opt/alone-account-bot/docs/deployment.md
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=alonebot
+Group=alonebot
+WorkingDirectory=/opt/alone-account-bot
+EnvironmentFile=/etc/alone-account-bot.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=DATA_DIR=/var/lib/alone-account-bot
+Environment=DATABASE_PATH=/var/lib/alone-account-bot/alone_account.sqlite3
+ExecStart=/opt/alone-account-bot/.venv/bin/python -m app.main
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=75s
+KillSignal=SIGTERM
+UMask=0077
+
+StateDirectory=alone-account-bot
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/alone-account-bot
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

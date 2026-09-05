@@ -1,0 +1,65 @@
+flowchart TD
+    A(["هر اجرای maintenance"])
+    B["reconcile completed provider evidence ثبت‌شده؛ بدون network"]
+    C["poll crypto باز یا failed قابل‌پایش؛ ثبت immutable evidence"]
+    C1["completed/terminal-zero بعدی review باز را با رخداد تازه حل می‌کند"]
+    C2["partial، unknown، mismatch یا completed پس از resolution: review پرخطر"]
+    D["reconcile alert و notice تصمیم provider/card review، فیش، اطلاعات manual، ticket و security"]
+    D1["reconcile alert no-stock و هر reward_event فاقد notice با cursor/wrap"]
+    E0["expire سفارش unpaid و paymentهای card؛ crypto با deadline محلی expire نمی‌شود"]
+    M2["reconcile paid payment notice فاقد outbox"]
+    M3["reconcile wallet-only/full-discount success notice فاقد outbox با cursor/wrap"]
+    M4{"order_success_notice_ready؟"}
+    M5["queued/sending: defer همه شاخه‌های fulfillment"]
+    M6["sent یا terminal failed/cancelled: اجازه ادامه"]
+    D0["گرفتن snapshot سفارش‌های موفق با reward_processed_at تهی"]
+    E{"وضعیت سفارش paid است؟"}
+    F["اجرای after_order_paid"]
+    G["اجرای reconcile_purchase_rewards"]
+    H["grant_purchase_rewards با event و ledger یکتا"]
+    I["صف‌کردن notice هر پاداش با idempotency key ثابت"]
+    J{"notice ارسال یا به‌درستی در outbox ثبت شد؟"}
+    K["reward_processed_at همچنان تهی؛ تلاش در دور بعد"]
+    L["mark_order_rewards_processed"]
+    M0["selector مستقل همه سفارش‌های status=paid؛ مستقل از reward_processed_at"]
+    M["تلاش idempotent برای fulfillment ready/manual"]
+    N["بازسازی noticeهای awaiting_stock و awaiting_info"]
+    O["تکمیل reservationهای دارای موجودی به ترتیب FIFO"]
+    O2["fulfil سفارش ready در processing پس از restock"]
+    P["بازسازی delivery سفارش ready تکمیل‌شده"]
+    Q["claim batch reminder؛ cancel منقضی و محاسبه روز واقعی"]
+    Q2["outbox مالک retry؛ claim پیام‌ها یک‌به‌یک"]
+    R{"ارسال موفق است؟"}
+    S["ثبت sent و telegram_message_id"]
+    T{"خطا دائمی است؟"}
+    U["ثبت failed نهایی"]
+    V["بازگرداندن به queued با backoff"]
+    Z(["دور maintenance تمام شد"])
+
+    A --> B --> C
+    C --> C1 --> D
+    C --> C2 --> D
+    C -->|"pending یا network failure"| D
+    D --> D1 --> E0 --> M2 --> M3 --> M4
+    M4 -->|"خیر"| M5 --> Q2
+    M4 -->|"بله"| M6 --> D0 --> E
+    E -->|"بله"| F --> H
+    E -->|"خیر؛ ولی وضعیت موفق"| G --> H
+    H --> I --> J
+    J -->|"خیر"| K --> M0
+    J -->|"بله"| L --> M0
+    M0 --> M --> N
+    N --> O --> O2 --> P --> Q --> Q2 --> R
+    R -->|"بله"| S --> Z
+    R -->|"خیر"| T
+    T -->|"بله"| U --> Z
+    T -->|"خیر"| V --> Z
+
+    Crash["Crash پس از provider evidence یا هر commit مجاز است: ledger immutable، تراکنش DB، کلیدهای idempotency، outbox و marker کار را بازیابی می‌کنند."]
+    Crash -.-> B
+    Crash -.-> H
+    Crash -.-> D1
+    Crash -.-> M0
+    Crash -.-> Q2
+    Created["Order و created-summary از first-contact اتمیک‌اند؛ replay همان update Order دوم نمی‌سازد"]
+    Created -.-> A

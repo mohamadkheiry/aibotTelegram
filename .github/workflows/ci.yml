@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Compile
+        run: python -m compileall -q app tests
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Repository hygiene and secret scan
+        run: python -m unittest tests.test_repository_hygiene -v
+
+      - name: Test
+        run: python -m unittest discover -s tests -v
+
+      - name: Build container image
+        run: docker build --tag alone-account-bot:ci .
+
+      - name: Smoke-test writable container data volume
+        run: >-
+          docker run --rm
+          --mount type=volume,target=/app/data
+          --env BOT_TOKEN=ci-placeholder
+          alone-account-bot:ci
+          python -m app.main --migrate-only

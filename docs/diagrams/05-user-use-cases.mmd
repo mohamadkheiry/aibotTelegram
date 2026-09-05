@@ -1,0 +1,47 @@
+flowchart LR
+    User(["کاربر"])
+
+    subgraph Access["دسترسی و حساب"]
+        Start["شروع با لینک عادی یا دعوت"]
+        Join["تکمیل عضویت اجباری"]
+        Profile["مشاهده حساب و آمار"]
+    end
+
+    subgraph Commerce["فروشگاه"]
+        Browse["مرور دسته، زیردسته و محصول"]
+        Buy["خرید محصول آماده یا دستی"]
+        Discount["ثبت کد تخفیف"]
+        Pay["پرداخت با کیف پول، کارت یا ارز"]
+        Orders["مشاهده سفارش‌ها و وضعیت"]
+        Info["ارسال اطلاعات فعال‌سازی"]
+    end
+
+    subgraph Wallet["کیف پول"]
+        Balance["مشاهده موجودی و تراکنش‌ها"]
+        Topup["درخواست شارژ کیف پول"]
+    end
+
+    subgraph Service["ارتباط و نگهداری"]
+        FAQ["مطالعه پرسش‌های متداول"]
+        Ticket["ایجاد و ادامه تیکت"]
+        Referral["دریافت لینک دعوت و پاداش"]
+        Channel["ورود به کانال فروشگاه"]
+        Reminder["دریافت یادآور پایان اشتراک"]
+    end
+
+    User --> Start
+    User --> Join
+    User --> Profile
+    User --> Browse
+    User --> Buy
+    Buy --> Discount
+    Buy --> Pay
+    User --> Orders
+    User --> Info
+    User --> Balance
+    User --> Topup
+    User --> FAQ
+    User --> Ticket
+    User --> Referral
+    User --> Channel
+    Reminder --> User

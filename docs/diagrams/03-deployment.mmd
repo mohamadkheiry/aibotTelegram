@@ -1,0 +1,36 @@
+flowchart TB
+    subgraph Internet["سرویس‌های بیرونی"]
+        Telegram["api.telegram.org"]
+        BankSource["MacroDroid یا سامانه اعلان بانک"]
+        Plisio["API سرویس Plisio"]
+    end
+
+    subgraph Host["یک میزبان؛ فقط یک نمونه فعال"]
+        Service["systemd یا Docker Compose"]
+        subgraph Process["python -m app.main"]
+            Poller["Thread اصلی<br/>getUpdates + ACK/NACK offset"]
+            Maintenance["Thread نگهداری دوره‌ای"]
+            Callback["Thread HTTP callback بانکی<br/>فقط در صورت داشتن secret"]
+        end
+        Env[".env یا Secret Manager"]
+        Data["data/alone_account.sqlite3"]
+        Backups["مسیر امن backup"]
+        Proxy["Reverse proxy با HTTPS<br/>اختیاری"]
+    end
+
+    Service --> Process
+    Env --> Process
+    Poller <-->|"HTTPS خروجی"| Telegram
+    Maintenance -->|"بررسی پرداخت ارزی"| Plisio
+    BankSource -->|"HTTPS و header secret"| Proxy
+    Proxy -->|"loopback port 8787"| Callback
+    Poller --> Data
+    Maintenance --> Data
+    Callback --> Data
+    Data --> Backups
+
+    Warn["دو replica با یک token ممنوع: رقابت getUpdates و معماری تک‌نودی SQLite"]
+    Warn -.-> Process
+    Retry["NACK فقط برای خطای موقت DB: offset ثابت، توقف ادامه batch و backoff سقف‌دار"]
+    Retry -.-> Poller
+    Retry -.-> Data

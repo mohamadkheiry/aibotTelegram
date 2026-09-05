@@ -1,0 +1,33 @@
+flowchart TB
+    Entry["app.main<br/>راه‌اندازی و مدیریت signal"]
+    Config["app.config<br/>خواندن env و اعتبارسنجی تنظیمات"]
+    Bot["app.bot.BotApplication<br/>مسیرهای کاربر و orchestration"]
+    Admin["app.admin.AdminController<br/>فرمان‌ها و نقش‌های مدیریتی"]
+    UI["app.keyboards + app.texts + app.utils<br/>رندر امن متن و دکمه"]
+    Repo["app.db.Database<br/>Repository و تراکنش‌های دامنه"]
+    TG["app.telegram.TelegramClient<br/>Bot API، long polling و ACK/NACK offset"]
+    Worker["app.jobs.PeriodicWorker<br/>نگهداری دوره‌ای و run_maintenance"]
+    Card["app.payment_server<br/>HTTP callback و confirm_card_amount"]
+    Crypto["app.plisio.PlisioClient<br/>فاکتور و status polling"]
+    DB[("SQLite با WAL و foreign keys")]
+
+    Entry --> Config
+    Entry --> Repo
+    Entry --> TG
+    Entry --> Bot
+    Bot --> Admin
+    Bot --> UI
+    Admin --> UI
+    Bot --> Repo
+    Admin --> Repo
+    Bot --> TG
+    Admin --> TG
+    Bot --> Worker
+    Worker --> Bot
+    Bot --> Card
+    Card --> Bot
+    Bot --> Crypto
+    Repo <--> DB
+
+    Contract["مرز مهم: قوانین مالی/idempotency در Database؛ NACK خطای موقت DB تا poller؛ هماهنگی پیام و تحویل در BotApplication"]
+    Contract -.-> Repo
