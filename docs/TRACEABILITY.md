@@ -1,5 +1,9 @@
 # ماتریس ردیابی نیازمندی، پیاده‌سازی و تست
 
+## REQ-OPS-BOT-MIGRATION — انتشار روی ربات Premium و انتقال همهٔ سوابق فعلی
+
+درخواست صریح ۲۰۲۶-۰۹-۰۶: مقصد `@ElevenaccountsTestbot` و انتقال همهٔ داده‌ها. ابزارهای `migrate_bot_identity.py` و `transfer_ticket_attachments.py` بدون poller، همراه ۱۲ تست، snapshot کامل، حفظ محتوای تجاری، namespace کلید ورودی، reset فقط runtime رباتی، عدم replay اعلان و تبدیل فایل برای همان فرستنده را پوشش می‌دهند. guard داده مالی/انبار خارج دامنه عمداً محفوظ است؛ منبع فعلی چنین داده‌ای ندارد. [طرح/rollback](BOT_MIGRATION.md) و [وضعیت عملیاتی](CURRENT_DEPLOYMENT.md).
+
 ## REQ-QA-E2E — ممیزی مجدد کل اسناد و مسیرهای متصل
 
 درخواست مستقیم: آزمون از ابتدا تا انتهای سند و اصلاح مغایرت. [گزارش ممیزی سرتاسری](FULL_SPEC_AUDIT.md) نگاشت همه حوزه‌ها به شواهد تست را دارد. `tests/test_spec_end_to_end.py` در ۹ تست، keyboard و message ID واقعاً صادرشدهٔ برنامه را مصرف می‌کند؛ فقط مرز Telegram شبیه‌سازی شده و فرم، مجوز، SQLite و outbox واقعی‌اند.

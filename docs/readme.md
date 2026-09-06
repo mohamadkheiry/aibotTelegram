@@ -1,5 +1,7 @@
 # مرکز مستندات ربات الون اکانت
 
+عملیات و انتشار: ابتدا [CURRENT_DEPLOYMENT.md](CURRENT_DEPLOYMENT.md) برای مقصد تأییدشده و [BOT_MIGRATION.md](BOT_MIGRATION.md) برای انتقال کامل سوابق فعلی و تفکیک runtime ربات‌ها خوانده شود.
+
 ممیزی سرتاسری ۲۰۲۶-۰۹-۰۶: [FULL_SPEC_AUDIT.md](FULL_SPEC_AUDIT.md) شامل تطبیق دوباره با هر ۸ صفحهٔ منابع اصلی، چهار اصلاح این دور، مسیرهای متصل مشتری/مدیر و محدودیت تست زنده است.
 
 افزوده ظاهر Premium و انتقال ربات: [BUTTON_ICONS.md](BUTTON_ICONS.md) شامل ۴۵ آیکون Lucide، مجوز و بازتولید، manifest، حالت شیشه‌ای وابسته به تم، محدودیت‌های Telegram و تفکیک امن bot ID/دیتابیس است.

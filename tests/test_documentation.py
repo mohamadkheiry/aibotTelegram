@@ -30,6 +30,8 @@ class DocumentationIntegrityTests(unittest.TestCase):
             "ADMIN_GUIDE_FA.md",
             "SPEC_AUDIT.md",
             "FULL_SPEC_AUDIT.md",
+            "BOT_MIGRATION.md",
+            "CURRENT_DEPLOYMENT.md",
             "BUTTON_UI.md",
             "BUTTON_UI_AUDIT.md",
             "ADMIN_HIERARCHY.md",

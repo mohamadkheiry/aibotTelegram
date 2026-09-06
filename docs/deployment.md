@@ -1,5 +1,7 @@
 # راهنمای استقرار و بازگردانی
 
+مقصد تأییدشده و وضعیت cutover در [CURRENT_DEPLOYMENT.md](CURRENT_DEPLOYMENT.md) است. مالک انتقال همهٔ سوابق فعلی به ربات جدید را تأیید کرده؛ ابزارها، نگاشت پیوست، آرشیو کامل runtime قبلی و کنترل عدم replay در [BOT_MIGRATION.md](BOT_MIGRATION.md) آمده‌اند.
+
 برای ظاهر Premium و رباتی با bot ID تازه، ابتدا [BUTTON_ICONS.md](BUTTON_ICONS.md) را بخوانید: manifest آیکون read-only، `BUTTON_COLOR_MODE=theme`، تأیید Premium/Start مالک و تصمیم دامنه مهاجرت الزامی‌اند. bot ID متفاوت نباید با تغییر صرف token روی offset/journal/فایل‌های runtime قبلی راه‌اندازی شود.
 
 انتشار مدیریت چیدمان کاربران migration ندارد و schema 11 باقی است. backup، توقف poller قبلی، استقرار commit تست‌شده و شروع یک poller کافی است. هیچ چیدمان سفارشی یا تنظیم تجاری در rollout خودکار ساخته/تغییر داده نمی‌شود. smoke زنده: بازکردن «چیدمان دکمه‌های کاربران»، پیش‌نمایش و لغو. rollback امن ظاهر با واگرد/reset مدیر یا `Database.set_setting("customer_layouts_enabled", False)` انجام می‌شود و دادهٔ سفارش/مالی دست‌نخورده می‌ماند؛ برای بازگردانی کد قدیمی، decoder پاک‌سازی metadata را حفظ کنید. [جزئیات و محدودیت‌های rollback](CUSTOMER_LAYOUTS.md).

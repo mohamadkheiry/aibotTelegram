@@ -15,6 +15,8 @@
 
 ## فرمان‌های پایه قبل و بعد از تغییر
 
+برای کار عملیاتی، ابتدا `docs/CURRENT_DEPLOYMENT.md` و در انتقال هویت `docs/BOT_MIGRATION.md` را بخوانید. مقصد تأییدشده از این پس `@ElevenaccountsTestbot` است؛ helperهای قدیمی با runtime.env مبدأ نباید برای انتشار یا اطلاع‌رسانی تازه استفاده شوند.
+
 ```bash
 python -m compileall -q app tests
 python -m ruff check .
