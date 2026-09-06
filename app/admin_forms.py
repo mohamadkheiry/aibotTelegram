@@ -191,7 +191,7 @@ for key, kind, label, options in (
         NOTE, mutation=True)
 add("users", "فهرست و فیلتر کاربران", "users", choice("mode", "فیلتر کاربران", (
     ("همه کاربران", "all"), ("فعال", "active"), ("مسدود", "blocked"),
-    ("جدید در چند روز اخیر", "new"), ("بدون خرید در چند روز اخیر", "inactive"),
+    ("جدید در چند روز اخیر", "new"), ("بدون فعالیت در چند روز اخیر", "inactive"),
     ("عضویت در بازه", "joined"), ("خریداران محصول در بازه", "product"))))
 for key, label in (("user", "مشخصات کامل کاربر"), ("user_transactions", "تراکنش‌های کاربر"),
                    ("user_referrals", "زیرمجموعه‌های کاربر"), ("user_rewards", "پاداش‌های کاربر")):
@@ -280,8 +280,8 @@ def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
             fields.extend((
                 Field("minimum_successful_purchases", "حداقل خرید موفق زیرمجموعه", "nonnegative", default="0"),
                 choice("first_purchase", "آیا فقط اولین خرید مشمول باشد؟", YES_NO),
-                Field("minimum_referrals", "حداقل زیرمجموعه دعوت‌کننده", "nonnegative", default="0"),
-                Field("minimum_qualified_referrals", "حداقل زیرمجموعه دارای خرید موفق", "nonnegative", default="0"),
+                Field("minimum_referrals", "حداقل دعوت‌های ثبت‌شدهٔ خریدار", "nonnegative", default="0"),
+                Field("minimum_qualified_referrals", "حداقل دعوت‌های واجد پاداشِ خریدار", "nonnegative", default="0"),
                 Field("product_ids", "محصول‌های مجاز شرط ترکیبی", "multi:product", default="[]"),
                 Field("minimum_order_amount", "حداقل مبلغ سفارش به تومان", "nonnegative", default="0"),
             ))

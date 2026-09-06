@@ -361,7 +361,12 @@ class BotApplication:
             return
 
         if text.startswith("/cancel") or text == "لغو و بازگشت":
-            self.show_main_menu(user)
+            if self._access_guard(user, admin):
+                self.show_main_menu(user)
+            else:
+                # Cancel input even when access changed during the form, but
+                # never publish the shop menu through a disabled/join gate.
+                self.db.clear_user_state(user["id"])
             return
 
         if text == "پنل مدیریت" and admin and self.admin_controller:
@@ -2129,6 +2134,12 @@ class BotApplication:
             order = self.db.get_order(order_id)
             if not order or order["user_id"] != user["id"]:
                 raise NotFoundError("سفارش پیدا نشد.")
+            if order.get("product_type_snapshot") != "manual":
+                self.telegram.answer_callback_query(
+                    query_id, "این سفارش آماده است و نیازی به ارسال اطلاعات ندارد.",
+                    show_alert=True,
+                )
+                return True
             if order["status"] not in {"awaiting_info", "processing"}:
                 self.telegram.answer_callback_query(query_id, "این سفارش اطلاعات جدید نمی‌پذیرد.")
                 return True
@@ -2605,7 +2616,7 @@ class BotApplication:
                                 )
                             ]
                         )
-        if order["status"] in {"awaiting_info", "processing"}:
+        if order.get("product_type_snapshot") == "manual" and order["status"] in {"awaiting_info", "processing"}:
             rows.append([callback_button("ارسال اطلاعات", f"orderinfo:{order_id}", style="primary")])
         rows.append([back_button("profile:orders")])
         markup = customer_keyboard("order", rows)
@@ -2818,6 +2829,7 @@ class BotApplication:
             if (
                 not order
                 or order["user_id"] != user["id"]
+                or order.get("product_type_snapshot") != "manual"
                 or order.get("status") not in {"awaiting_info", "processing"}
             ):
                 self._end_stale_state(user, "این سفارش دیگر اطلاعات جدید نمی‌پذیرد.")

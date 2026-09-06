@@ -8,6 +8,8 @@
 
 ## اصول راهنما
 
+برای پذیرش سرتاسری، `tests/test_spec_end_to_end.py` مسیرها را با keyboard و message ID صادرشده به هم وصل می‌کند؛ مستقیم صدا زدن handler یا ساختن callback از state جای این تست نیست. fake فقط مرز Telegram را جایگزین می‌کند و دیتابیس موقت است. `order_information` در render، callback، state و تراکنش نهایی باید snapshot نوع manual را کنترل کند؛ `processing` به‌تنهایی کافی نیست. خروج متنی از فرم نیز باید access guard را رعایت و در صورت رد، فقط state را پاک کند. عنوان فیلتر inactive و شروط combined را با معنای query همگام نگه دارید. نتایج، چهار علت مستقل و مرز تست زنده در [FULL_SPEC_AUDIT.md](FULL_SPEC_AUDIT.md) ثبت شده‌اند.
+
 `AdminButtonUI.payment_context` نام canonical روش انتخاب‌شده را از گزینه‌های ثابت فرم و وضعیت را از DB زنده می‌خواند؛ نام setting دلخواه یا label ذخیره‌شده را مبنا نگیرید. وضعیت فعلی با `values.enabled` (هدف تأیید) متفاوت است. نقص کارت/کلید ارزی هشدار جدا دارد؛ هیچ secret در زمینه فرم نیاید. context خواندنی است و به‌جای handler فعال‌سازی تصمیم نمی‌گیرد. تست‌های `test_admin_payment_context.py` را برای هر سه روش، back/restart و replay حفظ کنید.
 
 کنترل خاموش/روشن در `AdminButtonUI.bot_status` از `bot_enabled` ساخته می‌شود. مطابق صفحهٔ اول هر دو PDF فقط یک دکمهٔ وضعیت نمایش دهید؛ دکمهٔ تکراری یا flag مستقل تعمیرات نسازید. callback باید `bot_on` یا `bot_off` صریحِ زمان نمایش باشد، نه toggle وضعیت لحظهٔ کلیک؛ confirmation و journal موجود را حفظ کنید. بعد از اجرا/بازیابی، یک دکمهٔ معکوس از DB تازه خوانده شود. عنوان تاریخی تعمیرات در callbackهای قدیمی همچنان همان هدف صریح را دارد. ۱۳ آزمون مسیر در `tests/test_admin_bot_status.py` و ممیزی UI-A07 در `BUTTON_UI_AUDIT.md` است.

@@ -464,6 +464,8 @@ flowchart TD
 
     Safe["پاداش شروع تا پس از عبور از guard عضویت پرداخت نمی‌شود."]
     Safe -.-> O
+    Cancel["لغو فرم نیز guard خاموشی و جوین را دوباره بررسی می‌کند؛ state ورودی حتی هنگام رد دسترسی پاک می‌شود، ولی منو فقط پس از عبور نمایش داده می‌شود."]
+    Cancel -.-> G
 ```
 
 ## ۸. Activity خرید محصول آماده
@@ -555,8 +557,8 @@ flowchart TD
     G["تغییر paid به awaiting_info"]
     H["ارسال درخواست اطلاعات محصول به کاربر و مدیر"]
     I["کاربر متن، تصویر یا فایل می‌فرستد"]
-    J{"سفارش هنوز awaiting_info یا processing است؟"}
-    K["رد ورودی stale"]
+    J{"مالکیت، نوع manual و وضعیت awaiting_info یا processing معتبرند؟"}
+    K["رد ورودی stale و پاک‌کردن state نامعتبر"]
     L["ذخیره customer_info_json و metadata فایل"]
     M["تغییر awaiting_info به processing"]
     N["اعلان پایدار owner/admin با hash نسخه محتوا"]
@@ -584,6 +586,8 @@ flowchart TD
     Rule -.-> S
     Terminal["failure terminal اعلان در outbox می‌ماند اما سفارش paid را strand نمی‌کند"]
     Terminal -.-> E1
+    TypeGuard["دکمهٔ اطلاعات فقط برای manual است؛ callback قدیمی ready پیش از بازکردن فرم رد می‌شود."]
+    TypeGuard -.-> I
 ```
 
 ## ۱۰. Activity پرداخت کیف پول، کارت و ارز

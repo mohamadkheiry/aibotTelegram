@@ -29,6 +29,7 @@ class DocumentationIntegrityTests(unittest.TestCase):
             "TRACEABILITY.md",
             "ADMIN_GUIDE_FA.md",
             "SPEC_AUDIT.md",
+            "FULL_SPEC_AUDIT.md",
             "BUTTON_UI.md",
             "BUTTON_UI_AUDIT.md",
             "ADMIN_HIERARCHY.md",

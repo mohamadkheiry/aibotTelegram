@@ -18,6 +18,8 @@
 
 گزارش تطبیق با فایل‌های اصلی، اصلاحات و شواهد تست در [docs/SPEC_AUDIT.md](docs/SPEC_AUDIT.md) و دو آموزش ویدیویی قابل بازتولید در [docs/training/README.md](docs/training/README.md) قرار دارند.
 
+بازبینی سرتاسری ۲۰۲۶-۰۹-۰۶، چهار اصلاح تازه و سفرهای متصل مشتری/مدیر در [docs/FULL_SPEC_AUDIT.md](docs/FULL_SPEC_AUDIT.md) ثبت شده‌اند؛ نتیجهٔ تست خودکار از انتشار و آزمون زندهٔ ربات جدید جداست.
+
 این مخزن «سورس قابل نصب» است؛ وجود سورس در GitHub به معنی میزبانی ۲۴ساعته process ربات نیست و استقرار production باید طبق [docs/deployment.md](docs/deployment.md) انجام شود.
 
 ## نکته امنیتی مهم
