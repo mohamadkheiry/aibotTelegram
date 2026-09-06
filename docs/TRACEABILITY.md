@@ -1,5 +1,9 @@
 # ماتریس ردیابی نیازمندی، پیاده‌سازی و تست
 
+## REQ-OPS-ICONS-LIVE — آیکون اختصاصی با مالک معرفی‌شده
+
+کاربر `@RoghayeHoseini` را مالک Telegram معرفی کرد. ۴۵ آیکون Lucide با repainting منتشر و در runtime `@ElevenaccountsTestbot` با حفظ `colored` فعال شدند؛ نقش‌های پنل تغییر نکردند. [manifest عمومی](../assets/button-icons/elevenaccounts-testbot.json)، تست `test_published_eleven_manifest_matches_licensed_asset_digest` در [test_button_icons.py](../tests/test_button_icons.py)، پوشش ۳۹ نوع صفحه/۹ بخش مدیریت و بررسی واقعی منوهای ارسالی به دو مدیر شواهد این نیازمندی‌اند. [API، بکاپ، restart و اعلان‌ها](CURRENT_DEPLOYMENT.md). نقش داخلی `owner` نباید جانشین تأیید صاحب بسته شود.
+
 ## REQ-OPS-COLORS — حفظ رنگ‌بندی در ربات جدید
 
 درخواست مستقیم ۲۰۲۶-۰۹-۰۶: رنگ‌های تعریف‌شده روی `@ElevenaccountsTestbot` فعال شوند. قرارداد انتشار `BUTTON_COLOR_MODE=colored` است؛ تغییر هویت یا افزودن آیکون به معنی انتخاب `theme` نیست. `test_colored_main_menu_preserves_reference_styles_in_every_inline_transport` و `test_default_and_explicit_colored_mode_preserve_reply_contact_styles` در [test_button_icons.py](../tests/test_button_icons.py) حفظ رنگ، برچسب، عمل، آیکون و canonical را می‌سنجند. [شواهد API، بکاپ و راه‌اندازی](CURRENT_DEPLOYMENT.md) و [قرارداد رنگ/آیکون](BUTTON_ICONS.md). schema، منطق کسب‌وکار و ترتیب سفارشی تغییر ندارند.

@@ -2,7 +2,21 @@
 
 تصمیم صریح کاربر در ۲۰۲۶-۰۹-۰۶: از این پس مقصد انتشار `@ElevenaccountsTestbot`، bot ID برابر `8545042168` است. `@kheirytestrobot` / `8255103609` صرفاً مبدأ تاریخی و rollback است؛ انتخاب آن به‌عنوان مقصد جدید مجاز نیست مگر با درخواست تازهٔ مالک.
 
-انتقال همهٔ داده‌ها و سوابق فعلی طبق [BOT_MIGRATION.md](BOT_MIGRATION.md) انجام شد. انتشار اولیه در ۲۰۲۶-۰۹-۰۶ ساعت ۱۳:۰۳:۴۶ و آخرین راه‌اندازی با رنگ‌های سند در همان روز ساعت **۱۷:۲۵:۳۶** به وقت Asia/Tehran روی همین میزبان Windows است. کد runtime از commit `0f512d00fb0629e3867f66f8d05d4b3d6eecc641` است؛ تغییر رنگ صرفاً در env خصوصی انجام شده و اصلاحات بعدی تست/مستندات به‌تنهایی نیازمند restart نیستند.
+انتقال همهٔ داده‌ها و سوابق فعلی طبق [BOT_MIGRATION.md](BOT_MIGRATION.md) انجام شد. انتشار اولیه در ۲۰۲۶-۰۹-۰۶ ساعت ۱۳:۰۳:۴۶ و آخرین راه‌اندازی با رنگ‌های سند و آیکون‌های اختصاصی در همان روز ساعت **۱۷:۴۶:۵۰** به وقت Asia/Tehran روی همین میزبان Windows است. کد runtime از commit `594ff8f5c8809a54abd91a21d7b48012fbdcb144` است؛ فعال‌سازی آیکون صرفاً با manifest و env خصوصی انجام شده و اصلاحات بعدی تست/مستندات به‌تنهایی نیازمند restart نیستند.
+
+## فعال‌سازی آیکون اختصاصی با مالک صحیح — ۲۰۲۶-۰۹-۰۶
+
+کاربر صریحاً **`@RoghayeHoseini`** را مالک Telegram معرفی کرد. تلاش قبلی با حساب bootstrap برنامه به `USER NOT FOUND` رسیده بود؛ این دو نوع مالکیت نباید یکی فرض شوند. بسته با حساب معرفی‌شده و chat ID پایدارِ تأییدشده از `getChat` منتشر شد. نقش‌های داخل پنل، `BOOTSTRAP_ADMIN_USERNAME` و مجوزهای سه مدیر تغییر نکردند.
+
+- [بستهٔ منتشرشدهٔ Lucide Minimal](https://t.me/addemoji/LucideMinimala4a1765b_by_ElevenaccountsTestbot) شامل ۴۵ custom emoji است. شمارش، ابعاد ۱۰۰×۱۰۰، `needs_repainting` و شناسه‌ها با `getStickerSet` و `getCustomEmojiStickers` تأیید شدند. اجرای دوبارهٔ ناشر همان بسته را بازیابی کرد، نه بسته‌ای تازه.
+- [manifest عمومی قابل‌استقرار](../assets/button-icons/elevenaccounts-testbot.json) همان ۴۵ نگاشت عملیاتی است؛ token، chat ID شخصی یا file ID خصوصی ندارد. نسخهٔ خصوصی آن در `work/eleven_runtime_data/button-icons.json` قرار دارد و برابری بایت‌به‌بایت این دو قبل از restart کنترل شد.
+- در آزمون واقعی روی منوی مالک، هر هفت دکمه `icon_custom_emoji_id` مورد انتظار را در پاسخ API داشتند؛ رنگ، عنوان، عمل و ترتیب نیز برابر بودند. تنها canonicalization عادی `Https` به `https` در URL کانال برای مقایسه نرمال شد؛ مسیر URL و دادهٔ canonical تغییر نکرد.
+- پس از بکاپ سالم، launcher/worker قبلی با Ctrl+C محدود به console همان درخت و با بررسی PID/path دقیق متوقف شدند. `--check` با ۴۵ آیکون و `colored` موفق شد و فقط یک poller مقصد با همان DB/offset شروع شد. schema و دادهٔ تجاری تغییر نکردند.
+- worker واقعی دو اعلان تازه و منوی آیکون‌دار برای `@RoghayeHoseini` و `@Hooshmandsazanjavan1` فرستاد. هر دو `sent` شدند؛ درخواست همان markup به API برای هر دو `message is not modified` برگرداند و مطابقت خروجی runtime تأیید شد. outbox این اعلان‌ها هیچ ID عملیاتی آیکون را ذخیره نکرده است؛ تزئین در زمان ارسال انجام شده و canonical بعد از ارسال/بازبینی ثابت مانده است.
+- ۶۵ تست مستقیم رنگ/آیکون/چیدمان/Telegram/اسناد/secret scan در venv runtime موفق شدند، از جمله regression تازهٔ manifest عمومی و digest دارایی‌های دارای مجوز. lint موفق است. نتیجهٔ مجموعهٔ کامل برای commit نهایی در [CI مخزن](https://github.com/mohamadkheiry/aibotTelegram/actions/workflows/ci.yml) بررسی شود. پیش‌نمایش خود دارایی‌ها در زمینهٔ روشن/تاریک بازبینی شد؛ این پیش‌نمایش اسکرین‌شات Telegram نیست.
+- پس از restart: integrity برابر `ok`، FK violation صفر، webhook خالی، pending update صفر، همهٔ journalهای مدیر `completed` و همهٔ outboxها `sent` بودند. نمایش دقیق در نسخه/تم تلگرام مخاطب نیازمند مشاهدهٔ همان کلاینت است؛ موفقیت API ادعای رندر پیکسلی یکسان همهٔ کلاینت‌ها نیست.
+
+بکاپ قبل از آیکون: `work/eleven_runtime_data/migration/before-icons-20260906.sqlite3` با SHA-256 برابر `8760e5773cc15df79c62f0f4b0c01a613382e67988b947d8be9ec7eca9b5de33`. rollback ظاهر با خالی‌کردن manifest و restart همان ربات انجام می‌شود؛ `BUTTON_COLOR_MODE=colored`، نقش‌ها، کاتالوگ، چیدمان و تاریخچه محفوظ می‌مانند.
 
 ## بازگردانی رنگ‌های سند — ۲۰۲۶-۰۹-۰۶
 
@@ -16,7 +30,7 @@
 
 بکاپ معتبر قبل از این تغییر: `work/eleven_runtime_data/migration/before-colors-20260906.sqlite3` با SHA-256 برابر `aa9b75c755647aa877b0882135d21cb68daab7eddd6d17f46fd87070e32545b1`. برای rollback ظاهر فقط با انتخاب مالک mode را تغییر و همان poller مقصد را restart کنید؛ DB، تاریخچه یا چیدمان restore/پاک نمی‌شوند.
 
-## شواهد انتشار
+## شواهد انتقال اولیه
 
 - `getMe` هویت `8545042168` / `ElevenaccountsTestbot` را تأیید کرد؛ webhook خالی و commands فقط `start` هستند. updateهای معوق حذف نشدند و توسط poller مقصد پردازش شدند؛ offset جدید جلو رفت و pending update به صفر رسید.
 - process مبدأ پس از بکاپ سالم با سیگنال graceful متوقف و نبود آن کنترل شد. مقصد فقط یک درخت process دارد: launcher محیط مجازی و child اجرای Python، نه دو poller. poller آزمایشی یا فراخوانی دستی `getUpdates` اجرا نشد.
@@ -28,8 +42,8 @@
 ## وضعیت فعلی و کار باقی‌مانده
 
 - `bot_enabled=false` دقیقاً مطابق انتخاب قبلی حفظ شده است: process آنلاین و پنل مدیران در دسترس است، اما دسترسی عمومی خاموش است. برای فعال‌کردن عمومی از کنترل وضعیت ربات در پنل استفاده شود؛ انتشار نباید این تنظیم کسب‌وکاری را ضمنی تغییر دهد.
-- `BUTTON_COLOR_MODE=colored` و manifest آیکون خالی است. دکمه‌های inline با رنگ‌های تعریف‌شده و **فعلاً بدون آیکون اختصاصی** ارسال می‌شوند؛ این CSS glass سفارشی نیست. ۴۵ دارایی Lucide آماده‌اند ولی pack هنوز منتشر/فعال نشده است. افزودن آن‌ها نباید رنگ‌ها را دوباره به `theme` تغییر دهد.
-- `@mohammadrezakheiry` همچنان owner فعال و تأییدشده است، اما `getChat` او در مقصد خطای ۴۰۰ می‌دهد. لازم است این حساب ربات جدید را Start کند؛ سپس طبق [BUTTON_ICONS.md](BUTTON_ICONS.md) مالکیت/مجوز Premium، انتشار pack، ارسال واقعی آیکون و اطلاعیه به مالک بررسی شوند. اطلاعیه به این حساب را ارسال‌شده تلقی نکنید و بسته را به نام ادمین دیگری نسازید.
+- `BUTTON_COLOR_MODE=colored` و manifest شامل **۴۵ آیکون فعال** است. دکمه‌های inline با رنگ‌های تعریف‌شده و آیکون‌های اختصاصی ارسال می‌شوند؛ این CSS glass سفارشی نیست. تغییر manifest یا آیکون نباید رنگ‌ها را دوباره به `theme` تغییر دهد.
+- `@RoghayeHoseini` مالک Telegram معرفی‌شده توسط کاربر و صاحب بستهٔ آیکون است. `@mohammadrezakheiry` فقط از نظر رکورد موجود برنامه همچنان نقش داخلی `owner` دارد؛ `getChat` او در مقصد خطای ۴۰۰ می‌دهد، بنابراین اطلاعیهٔ جدید به این حساب ارسال نشده است. این نبود دسترسی دیگر مانع انتشار آیکون نیست. تغییر نقش داخلی افراد یا انتقال مالکیت نیازمند درخواست جداگانه است و در rollout آیکون انجام نشده است.
 - در نخستین Start، ویرایش markup خوشامدگویی یک بار به مسیر fallback رفت و پیام انتخاب جداگانه ارسال شد؛ update پردازش شد و تکرار خطا یا عقب‌ماندن صف مشاهده نشد. مشاهدهٔ ظاهر در کلاینت مالک پس از فعال‌سازی آیکون همچنان لازم است.
 - میزبانی فعلی محلی است؛ خاموشی/خواب این رایانه یا قطع اینترنت ربات را متوقف می‌کند. این انتشار ادعای VPS، سرویس خودکار پس از boot یا دسترس‌پذیری ۲۴ساعته ندارد. استقرار دائم طبق [deployment.md](deployment.md) انجام شود.
 
@@ -41,11 +55,12 @@
 |---|---|
 | env مقصد | `work/eleven-token.env` |
 | محیط Python مستقل مقصد | `work/eleven_venv`؛ نصب با `requirements-runtime.lock` |
+| manifest فعال آیکون | `work/eleven_runtime_data/button-icons.json`؛ نسخهٔ عمومی قابل بازتولید در `assets/button-icons/elevenaccounts-testbot.json` مخزن است. |
 | DB و فایل‌های مقصد | `work/eleven_runtime_data/alone_account.sqlite3` و زیرشاخهٔ `migration/assets` |
 | آرشیو کامل مبدأ در لحظهٔ توقف | `work/eleven_runtime_data/migration/source-8255103609-20260906.sqlite3` |
 | بکاپ تاریخی منتقل‌شده | `work/eleven_runtime_data/migration/historical-backup-20260905T141717Z.sqlite3`؛ فایل اصلی آن نیز محفوظ است. |
 | DB و env مبدأ محفوظ برای بازیابی | `work/runtime_data/alone_account.sqlite3` و `work/runtime.env`؛ این‌ها مقصد انتشار تازه نیستند. |
-| log مقصد | `work/live_logs/eleven-colored-0f512d0-20260906T172536.*.log`؛ log انتشار اولیه نیز محفوظ است. |
+| log مقصد | `work/live_logs/eleven-icons-594ff8f-20260906T174650.*.log`؛ log انتشارهای قبلی نیز محفوظ است. |
 
 SHA-256 آرشیو کامل مبدأ: `41345142732d82a3d85793f9021e95320af3586cca2cc0bb8c16a936d5a413b5`. بکاپ تاریخی کپی‌شده: `0df4335519a929fd92d2a1143d9d1451ff5b5c9230b93a4f0752921046564bd4`. آرشیو با تمام ردیف‌های مبدأ مقایسه شد؛ مقصد نیز با طرح تبدیل صریح همهٔ جدول‌ها برابر بود. hash فایل DB زنده بعد از updateها تغییر می‌کند و معیار برابری byte-level آرشیو نیست.
 

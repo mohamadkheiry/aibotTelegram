@@ -190,6 +190,21 @@ class ButtonIconTests(unittest.TestCase):
             self.assertTrue((folder / item["svg"]).is_file())
             self.assertLess(len(raw), 128 * 1024)
 
+    def test_published_eleven_manifest_matches_licensed_asset_digest(self):
+        folder = ROOT / "assets" / "button-icons"
+        manifest = json.loads((folder / "elevenaccounts-testbot.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["version"], 1)
+        self.assertEqual(manifest["bot_id"], 8545042168)
+        self.assertEqual(manifest["source_package"], "lucide-static@1.41.0")
+        self.assertIs(manifest["needs_repainting"], True)
+        self.assertEqual(validate_icon_ids(manifest["icons"]), manifest["icons"])
+        self.assertEqual(set(manifest["icons"]), set(ICON_SOURCES))
+        digest = hashlib.sha256()
+        for key in ICON_SOURCES:
+            digest.update(key.encode() + (folder / "webp" / (key + ".webp")).read_bytes())
+        self.assertEqual(manifest["asset_sha256"], digest.hexdigest())
+        self.assertEqual(manifest["pack_name"], f"LucideMinimal{digest.hexdigest()[:8]}_by_ElevenaccountsTestbot")
+
     def test_publisher_reuses_pack_and_rejects_a_wrong_bot_before_any_write(self):
         client = Mock()
         client.call.return_value = {"id": 9, "username": "different_bot"}

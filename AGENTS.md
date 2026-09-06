@@ -66,6 +66,8 @@ python -m unittest discover -s tests -v
 
 SQL مستقیم جدید برای mutation در controllerها اضافه نکنید. ابتدا API دامنه‌ای در `Database` بسازید.
 
+مالکیت Telegram/بستهٔ آیکون مستقل از نقش داخلی `owner` و `BOOTSTRAP_ADMIN_USERNAME` است. مالک معرفی‌شده توسط کاربر برای بستهٔ جاری `@RoghayeHoseini` است؛ manifest عمومی تأییدشده در `assets/button-icons/elevenaccounts-testbot.json` قرار دارد. این معرفی به‌تنهایی مجوز تغییر نقش‌های پنل یا انتقال مالکیت نیست. از خطای دسترسی حساب bootstrap برای مسدودکردن انتشار با مالک صحیح نتیجه‌گیری نکنید.
+
 UI نباید journal مالی دوم بسازد. nonce/revision و `last_input` فرم مستقل از effect یکتای `processed_admin_updates` هستند. ورودی‌های pipe را با `_command_parts` به handler مشترک بدهید؛ متن کاربر را به syntax فرمان بازتفسیر نکنید. `message_id` عملیات دکمه‌ای از token فرم ساخته می‌شود، نه message ID صفحه‌کلید. تست crash آخرین فیلد، executing، commit اثر و complete journal الزامی است.
 
 ## Definition of Done

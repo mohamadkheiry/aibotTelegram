@@ -37,6 +37,8 @@ BUTTON_ICON_MANIFEST=/etc/alone-account-icons.json
 
 در Docker، manifest را read-only mount کنید؛ فایل‌های SVG/WebP داخل image runtime لازم نیستند. فعال‌کردن آیکون منجر به تغییر رنگ اولیهٔ builder یا شخصی‌سازی چیدمان نمی‌شود.
 
+نگاشت منتشرشدهٔ مقصد فعلی در [elevenaccounts-testbot.json](../assets/button-icons/elevenaccounts-testbot.json) موجود است. این فایل فقط شناسه‌های عمومی custom emoji و provenance دارایی‌ها را دارد و secret نیست؛ env، DB و file ID پیوست‌ها همچنان خصوصی‌اند. برای همین ربات می‌توان نسخهٔ تأییدشدهٔ این manifest را read-only mount کرد؛ قبل از استقرار هویت مقصد و اعتبار شناسه‌ها بررسی شود. تست `test_published_eleven_manifest_matches_licensed_asset_digest` کلیدها، metadata و hash محتوای بسته را کنترل می‌کند. [شواهد انتشار واقعی](CURRENT_DEPLOYMENT.md).
+
 ## ساخت و انتشار امن بسته
 
 ۱. `lucide-static@1.41.0` را در محیط ابزار جداگانه دریافت و SHA-512 موجود در `sources.json` را با tarball تطبیق دهید. Node.js، Sharp و Python پروژه لازم‌اند.
@@ -48,6 +50,8 @@ node tools/build_button_icons.cjs --lucide-dir /path/to/lucide-static/package --
 `SHARP_MODULE` و `PYTHON_PATH` مسیر اختیاری ابزارهای نصب‌شده‌اند. اسکریپت نسخه package را کنترل، SVGهای منتخب و مجوز را کپی و WebPها را بازتولید می‌کند. پیش‌نمایش، sheet آموزشی تم روشن/تاریک است؛ اسکرین‌شات Telegram نیست.
 
 ۲. مالک با حساب موردنظر، ربات جدید را Start کند. بدون شناخته‌شدن user برای ربات، `createNewStickerSet` می‌تواند با `USER NOT FOUND` رد شود.
+
+مالک بستهٔ Telegram را از `BOOTSTRAP_ADMIN_USERNAME` یا نقش داخلی `owner` استخراج نکنید؛ این‌ها نقش‌های بیزنسی برنامه‌اند، نه مدرک مالکیت BotFather. کاربر مالک فعلی را `@RoghayeHoseini` معرفی کرده و انتشار با حساب ایشان موفق شده است. `getChat` برای تأیید شناسه/نام کاربری و دسترسی استفاده شده، نه اثبات مستقل مالکیت ربات. نقش‌های پنل در این عملیات تغییر نمی‌کنند.
 
 ۳. توکن فقط از فایل env خصوصی یا محیط خوانده شود. نام کاربری/ID ربات و ID مالک باید صریح و تأییدشده باشند:
 

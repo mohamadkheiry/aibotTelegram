@@ -14,7 +14,7 @@
 
 مخزن رسمی: [mohamadkheiry/aibotTelegram](https://github.com/mohamadkheiry/aibotTelegram)
 
-مقصد انتشار از ۲۰۲۶-۰۹-۰۶ [@ElevenaccountsTestbot](https://t.me/ElevenaccountsTestbot) است؛ همهٔ داده‌ها و سوابق فعلی منتقل شده‌اند. [وضعیت زنده و محدودیت‌ها](docs/CURRENT_DEPLOYMENT.md) مرجع عملیاتی است: دسترسی عمومی مطابق تنظیم قبلی خاموش و آیکون اختصاصی تا Start حساب مالک در انتظار است.
+مقصد انتشار از ۲۰۲۶-۰۹-۰۶ [@ElevenaccountsTestbot](https://t.me/ElevenaccountsTestbot) است؛ همهٔ داده‌ها و سوابق فعلی منتقل شده‌اند و ۴۵ آیکون اختصاصی با حفظ رنگ‌ها فعال‌اند. [وضعیت زنده و محدودیت‌ها](docs/CURRENT_DEPLOYMENT.md) مرجع عملیاتی است؛ دسترسی عمومی مطابق تنظیم قبلی خاموش مانده است. مالک Telegram معرفی‌شده توسط کاربر `@RoghayeHoseini` است؛ این هویت را با نقش داخلی bootstrap یکی نگیرید.
 
 مرکز مستندات کامل بیزنس، یوزکیس، نمودارها، توسعه، پشتیبانی و استقرار در [docs/readme.md](docs/readme.md) قرار دارد. coding agentها باید ابتدا [AGENTS.md](AGENTS.md) را بخوانند.
 
