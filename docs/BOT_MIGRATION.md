@@ -39,6 +39,8 @@ python tools/migrate_bot_identity.py --source SOURCE_DB --target NEW_DB --archiv
 
 env و mapping شامل credential یا شناسهٔ خصوصی‌اند؛ در فرمان فقط مسیر فایل بیاید. تمام فایل‌های backing بکاپ تاریخی نیز باید در محل خصوصی قبلی محفوظ و قابل بازیابی بمانند؛ انتقال بعدی به سرور دیگر باید آن فایل‌ها و آرشیو تصویر اصلی را هم بسته‌بندی کند، نه فقط DB runtime جدید را.
 
+محیط اجرای مقصد مستقل از پکیج‌های عمومی میزبان ساخته می‌شود؛ `pip install -r requirements.txt -c requirements-runtime.lock` نسخه‌های آزموده‌شده را نصب می‌کند. `pip check` باید در همان venv مقصد موفق باشد؛ ناسازگاری پکیج نامرتبط میزبان را با تغییر سراسری محیط کاربر رفع نکنید.
+
 ## آزمون و rollback
 
 ۱۲ تست مستقل در [test_bot_identity_migration.py](../tests/test_bot_identity_migration.py) و [test_bot_attachment_transfer.py](../tests/test_bot_attachment_transfer.py) حفظ محتوا و نقش/وضعیت، namespace، عدم replay، رد overwrite، ناتمام‌بودن عملیات، داده مالی خارج دامنه، تبدیل/بازیابی فایل، خطای مبهم upload و عدم افشای URL محرمانه را می‌سنجند. suite کامل و lint نیز باید روی release موفق باشند.
