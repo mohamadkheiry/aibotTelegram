@@ -4,7 +4,7 @@
 
 ## ظاهر و محدودیت واقعی Telegram
 
-- دکمهٔ شیشه‌ای در این پروژه همان inline keyboard داخل پیام است؛ با `BUTTON_COLOR_MODE=theme` رنگ اجباری ارسال نمی‌شود و کلاینت سبک هماهنگ با تم خود را انتخاب می‌کند. blur، opacity، رنگ دلخواه نوشته یا شفافیت پیکسلی در Bot API فیلد مستقلی ندارند.
+- دکمهٔ شیشه‌ای در این پروژه همان inline keyboard داخل پیام است و با رنگ‌بندی سند سازگار است. طبق تأکید مالک در ۲۰۲۶-۰۹-۰۶، حالت انتشار `BUTTON_COLOR_MODE=colored` است؛ تعویض ربات یا افزودن آیکون مجوز تغییر این تنظیم نیست. `theme` فقط fallback انتخابی با تأیید مالک است که رنگ اجباری را حذف می‌کند. blur، opacity، رنگ دلخواه نوشته یا شفافیت پیکسلی در Bot API فیلد مستقلی ندارند.
 - درخواست شماره موبایل همچنان reply keyboard با `request_contact` است؛ تبدیل آن به inline، ارسال امن شمارهٔ خود کاربر را از بین می‌برد. این استثنا عمدی است.
 - آیکون از `icon_custom_emoji_id` می‌آید، نه از Unicode emoji داخل label؛ تنها استثنای قبلی ✅/❌ فهرست مدیریت جوین اجباری حفظ می‌شود.
 - قابلیت آیکون به Premium مالک ربات یا username واجدشرایط Fragment وابسته است؛ ادعای «ربات Premium است» جای تأیید قابلیت واقعی ارسال را نمی‌گیرد. `getMe` به‌تنهایی Premium مالک را ثابت نمی‌کند.
@@ -31,7 +31,7 @@
 `BUTTON_ICON_MANIFEST` فایل JSON با کلید `icons` است؛ مقدار هر آیکون، رشتهٔ عددی custom emoji ID و کلید آن یکی از نام‌های `ICON_SOURCES` است. مسیر نسبی نسبت به پوشهٔ همان env تفسیر می‌شود. فایل بزرگ‌تر از ۶۴ KiB، JSON خراب، کلید ناشناخته یا مقدار غیرعددی fail closed است و محتوا در خطا echo نمی‌شود. متغیرهای `BUTTON_ICON_SHOP` و همتایانشان override اختیاری همان آیکون‌اند. manifest خالی و متغیرهای خالی، fallback بدون آیکون را حفظ می‌کنند.
 
 ```dotenv
-BUTTON_COLOR_MODE=theme
+BUTTON_COLOR_MODE=colored
 BUTTON_ICON_MANIFEST=/etc/alone-account-icons.json
 ```
 
@@ -73,6 +73,6 @@ rotation توکن همان bot ID با انتقال به bot ID متفاوت ی�
 
 ## تست و rollback
 
-`tests/test_button_icons.py` پوشش ۳۹ نوع صفحه، ۹ بخش مدیریت، حفظ payload/label/آیکون صریح، contact، چیدمان، حالت theme، multipart/raw/edit، manifest، source/hash/license و انتشار مجدد idempotent را بررسی می‌کند. suite کامل خرید و outbox نیز باید سبز بماند.
+`tests/test_button_icons.py` پوشش ۳۹ نوع صفحه، ۹ بخش مدیریت، حفظ payload/label/آیکون صریح، contact، چیدمان، حالت theme، multipart/raw/edit، manifest، source/hash/license و انتشار مجدد idempotent را بررسی می‌کند. دو regression رنگ، حفظ رنگ‌های منوی اصلی در هر شش مسیر inline و رنگ‌های reply/contact در حالت colored صریح و پیش‌فرض را کنترل می‌کنند؛ دکمهٔ «لغو و بازگشت» در contact همچنان رنگ پیش‌فرض تعیین‌شدهٔ خود را دارد. suite کامل خرید و outbox نیز باید سبز بماند.
 
 Rollback ظاهر: manifest و overrideهای آیکون را از env کنار بگذارید؛ برای برگشت رنگ‌های مرجع `BUTTON_COLOR_MODE=colored` و سپس restart تک‌نمونه‌ای. DB و کاتالوگ پاک یا restore نمی‌شوند. rollback انتقال ربات نیازمند توقف مقصد و بازگردانی env/DB مختص مبدأ است؛ دو bot ID نباید از یک DB runtime استفاده کنند.

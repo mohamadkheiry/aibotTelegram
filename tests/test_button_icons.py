@@ -90,6 +90,51 @@ class ButtonIconTests(unittest.TestCase):
             self.assertNotIn("style", sent["inline_keyboard"][1][0])
             self.assertEqual(source, frozen)
 
+    def test_colored_main_menu_preserves_reference_styles_in_every_inline_transport(self):
+        session = Mock()
+        session.headers = {}
+        session.post.return_value.status_code = 200
+        session.post.return_value.json.return_value = {"ok": True, "result": {"message_id": 1}}
+        client = LayoutTelegram(TelegramClient("test-token", session=session, button_color_mode="colored"), self.engine())
+        source = inline_main_menu_keyboard(include_admin=True)
+        frozen = copy.deepcopy(source)
+        expected = self.engine().prepare(source)
+        styles = [["success"], ["success", "primary"], [None], ["primary"], [None], [None]]
+        for method in ("sendMessage", "sendPhoto", "sendDocument", "editMessageText", "editMessageReplyMarkup", "copyMessage"):
+            with self.subTest(method=method):
+                field = {"sendPhoto": "photo", "sendDocument": "document"}.get(method)
+                files = {field: ("synthetic.bin", io.BytesIO(b"synthetic"))} if field else None
+                client.call(method, {"chat_id": 1, "reply_markup": source}, files=files)
+                sent = session.post.call_args.kwargs["data" if files else "json"]["reply_markup"]
+                if isinstance(sent, str):
+                    sent = json.loads(sent)
+                self.assertEqual([[button.get("style") for button in row] for row in sent["inline_keyboard"]], styles)
+                self.assertEqual(sent, expected)
+                self.assertEqual(source, frozen)
+
+    def test_default_and_explicit_colored_mode_preserve_reply_contact_styles(self):
+        for policy in ({}, {"button_color_mode": "colored"}):
+            for source in (main_menu_keyboard(), contact_keyboard(style="primary")):
+                with self.subTest(policy=policy, contact="request_contact" in source["keyboard"][0][0]):
+                    session = Mock()
+                    session.headers = {}
+                    session.post.return_value.status_code = 200
+                    session.post.return_value.json.return_value = {"ok": True, "result": {"message_id": 1}}
+                    client = LayoutTelegram(TelegramClient("test-token", session=session, **policy), self.engine())
+                    frozen = copy.deepcopy(source)
+                    client.send_message(1, "synthetic", reply_markup=source)
+                    sent = session.post.call_args.kwargs["json"]["reply_markup"]
+                    self.assertEqual(sent, self.engine().prepare(frozen))
+                    self.assertEqual(source, frozen)
+                    if "request_contact" in source["keyboard"][0][0]:
+                        self.assertTrue(sent["keyboard"][0][0]["request_contact"])
+                        self.assertEqual(sent["keyboard"][0][0]["style"], "primary")
+                        self.assertEqual(sent["keyboard"][1][0]["text"], "لغو و بازگشت")
+                        self.assertNotIn("style", sent["keyboard"][1][0])
+                    else:
+                        self.assertEqual(sent["keyboard"][0][0]["style"], "success")
+                        self.assertEqual(sent["keyboard"][1][1]["style"], "primary")
+
     def test_no_manifest_is_a_lossless_no_icon_fallback(self):
         source = keyboard("main", [[callback_button("فروشگاه", "store", style="success")]])
         self.assertEqual(apply_icons(source, {}), source)

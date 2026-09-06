@@ -1,5 +1,9 @@
 # ماتریس ردیابی نیازمندی، پیاده‌سازی و تست
 
+## REQ-OPS-COLORS — حفظ رنگ‌بندی در ربات جدید
+
+درخواست مستقیم ۲۰۲۶-۰۹-۰۶: رنگ‌های تعریف‌شده روی `@ElevenaccountsTestbot` فعال شوند. قرارداد انتشار `BUTTON_COLOR_MODE=colored` است؛ تغییر هویت یا افزودن آیکون به معنی انتخاب `theme` نیست. `test_colored_main_menu_preserves_reference_styles_in_every_inline_transport` و `test_default_and_explicit_colored_mode_preserve_reply_contact_styles` در [test_button_icons.py](../tests/test_button_icons.py) حفظ رنگ، برچسب، عمل، آیکون و canonical را می‌سنجند. [شواهد API، بکاپ و راه‌اندازی](CURRENT_DEPLOYMENT.md) و [قرارداد رنگ/آیکون](BUTTON_ICONS.md). schema، منطق کسب‌وکار و ترتیب سفارشی تغییر ندارند.
+
 ## REQ-OPS-BOT-MIGRATION — انتشار روی ربات Premium و انتقال همهٔ سوابق فعلی
 
 درخواست صریح ۲۰۲۶-۰۹-۰۶: مقصد `@ElevenaccountsTestbot` و انتقال همهٔ داده‌ها. ابزارهای `migrate_bot_identity.py` و `transfer_ticket_attachments.py` بدون poller، همراه ۱۲ تست، snapshot کامل، حفظ محتوای تجاری، namespace کلید ورودی، reset فقط runtime رباتی، عدم replay اعلان و تبدیل فایل برای همان فرستنده را پوشش می‌دهند. guard داده مالی/انبار خارج دامنه عمداً محفوظ است؛ منبع فعلی چنین داده‌ای ندارد. [طرح/rollback](BOT_MIGRATION.md) و [وضعیت عملیاتی](CURRENT_DEPLOYMENT.md).
