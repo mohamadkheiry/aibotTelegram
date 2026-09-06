@@ -52,8 +52,9 @@
 - مجموعهٔ تازهٔ مسیرهای متصل و بازگشت باگ: `Ran 9 tests in 46.344s`، هر ۹ موفق.
 - اجرای نهایی Windows / Python 3.14: `Ran 463 tests in 543.502s`؛ `OK (skipped=2)`، یعنی ۴۶۱ موفق و فقط دو تست مجوز فایل POSIX اجرا‌نشده، بدون failure/error. این اجرا همهٔ ۹ تست تازه و مجموعهٔ قبلی را شامل است.
 - `ruff check .`، `compileall`، `pip check`، `git diff --check` و هر ۸ تست مستندات/پاکی مخزن موفق بودند. تست گزارش روزانه پس از استفاده از timezone تنظیم‌شده نیز جداگانه در ۱۷٫۴۷۷ ثانیه موفق شد تا وابستگی به مرز روز UTC نداشته باشد.
-- [CI مستقل لینوکس](https://github.com/mohamadkheiry/aibotTelegram/actions/workflows/ci.yml) روی همان push کل suite را با Python 3.12، از جمله دو تست POSIX، lint/compile/secret scan، Docker build و migration روی volume قابل‌نوشتن اجرا می‌کند. وضعیت اجرای commit تحویلی باید از همین workflow خوانده شود؛ نتیجهٔ ویندوز جای موفقیت CI نیست.
+- [CI مستقل لینوکس همین اصلاحات](https://github.com/mohamadkheiry/aibotTelegram/actions/runs/34007160475) روی commit سورس `57fc473064a2904f76099f555688349b10db645c` موفق شد: Python 3.12، `Ran 463 tests in 83.869s`، `OK` بدون skip/failure/error. هر دو تست POSIX، lint/compile/secret scan، Docker build و migration روی volume قابل‌نوشتن موفق بودند. ثبت این شواهد در مستندات تغییری در برنامه یا تست‌های آن commit نمی‌دهد؛ نتیجهٔ هر push بعدی نیز باید از [workflow](https://github.com/mohamadkheiry/aibotTelegram/actions/workflows/ci.yml) بررسی شود.
 - نمودارهای ۷ و ۹ رندر و بصری بازبینی شدند؛ شرح use case، قواعد بیزنس، رابط دکمه‌ای، ردیابی و راهنمای توسعه با اصلاحات هماهنگ‌اند. تست تطبیق هر ۱۹ منبع Mermaid با بلوک Markdown و SVG، لینک‌های محلی، هش منابع، وجود آموزش‌ها و اسکن پاکی مخزن موفق است. schema و مبلغ/موجودی محیط زنده تغییر نکرده‌اند.
+- decode کامل هر دو ویدیوی تحویلی با FFmpeg بدون خطا بود: H.264، ۱۹۲۰×۱۰۸۰ و ۱۵fps؛ آموزش مدیریت ۱۹۱ ثانیه و استقرار حدود ۱۸۰ ثانیه. این کنترل سلامت فایل است؛ بازبینی بصری تازهٔ این دور به صفحات منابع و دو نمودار تغییرکرده محدود بود.
 
 برای بازتولید از ریشهٔ مخزن، محیط توسعه را طبق [development.md](development.md) بسازید و اجرا کنید:
 
