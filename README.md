@@ -14,6 +14,8 @@
 
 مخزن رسمی: [mohamadkheiry/aibotTelegram](https://github.com/mohamadkheiry/aibotTelegram)
 
+مقصد انتشار از ۲۰۲۶-۰۹-۰۶ [@ElevenaccountsTestbot](https://t.me/ElevenaccountsTestbot) است؛ همهٔ داده‌ها و سوابق فعلی منتقل شده‌اند. [وضعیت زنده و محدودیت‌ها](docs/CURRENT_DEPLOYMENT.md) مرجع عملیاتی است: دسترسی عمومی مطابق تنظیم قبلی خاموش و آیکون اختصاصی تا Start حساب مالک در انتظار است.
+
 مرکز مستندات کامل بیزنس، یوزکیس، نمودارها، توسعه، پشتیبانی و استقرار در [docs/readme.md](docs/readme.md) قرار دارد. coding agentها باید ابتدا [AGENTS.md](AGENTS.md) را بخوانند.
 
 گزارش تطبیق با فایل‌های اصلی، اصلاحات و شواهد تست در [docs/SPEC_AUDIT.md](docs/SPEC_AUDIT.md) و دو آموزش ویدیویی قابل بازتولید در [docs/training/README.md](docs/training/README.md) قرار دارند.
