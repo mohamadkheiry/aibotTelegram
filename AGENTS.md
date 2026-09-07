@@ -17,6 +17,8 @@
 
 برای کار عملیاتی، ابتدا `docs/CURRENT_DEPLOYMENT.md` و در انتقال هویت `docs/BOT_MIGRATION.md` را بخوانید. مقصد تأییدشده از این پس `@ElevenaccountsTestbot` است؛ helperهای قدیمی با runtime.env مبدأ نباید برای انتشار یا اطلاع‌رسانی تازه استفاده شوند.
 
+تصمیم صریح کاربر در ۲۰۲۶-۰۹-۰۷: میزبان همهٔ انتشارهای بعدی `192.168.10.111` است، با ورود SSH حساب `mr-kheiry` و سرویس `alone-account-bot.service`. Windows فقط محیط توسعه/ساخت و آرشیو پیش از انتقال است؛ bot token واقعی را روی آن دوباره poll نکنید. برای rollout از DB جاری سرور استفاده کنید، نه snapshot قدیمی Windows. رمز SSH، env و دادهٔ runtime هرگز وارد مخزن نشوند. تغییر میزبان، بازگشت به اجرای محلی یا تغییر هویت ربات نیازمند درخواست صریح تازه است.
+
 ```bash
 python -m compileall -q app tests
 python -m ruff check .

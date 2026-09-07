@@ -3,8 +3,8 @@ Description=Alone Account Telegram shop bot
 Documentation=file:/opt/alone-account-bot/docs/deployment.md
 Wants=network-online.target
 After=network-online.target
-StartLimitIntervalSec=120
-StartLimitBurst=5
+# A prolonged startup network outage must not permanently disable the service.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -18,7 +18,7 @@ Environment=DATA_DIR=/var/lib/alone-account-bot
 Environment=DATABASE_PATH=/var/lib/alone-account-bot/alone_account.sqlite3
 ExecStart=/opt/alone-account-bot/.venv/bin/python -m app.main
 Restart=on-failure
-RestartSec=5s
+RestartSec=15s
 TimeoutStopSec=75s
 KillSignal=SIGTERM
 UMask=0077

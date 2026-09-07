@@ -1,5 +1,13 @@
 # راهنمای استقرار و بازگردانی
 
+## میزبان مصوب انتشار
+
+طبق درخواست صریح ۲۰۲۶-۰۹-۰۷، انتشار این پروژه از این پس فقط روی `192.168.10.111` از طریق SSH حساب `mr-kheiry` و unit اختصاصی `alone-account-bot.service` انجام می‌شود. هویت Telegram همان `@ElevenaccountsTestbot` است. مسیر کد `/opt/alone-account-bot`، داده `/var/lib/alone-account-bot` و secret خارج مخزن `/etc/alone-account-bot.env` است. وضعیت انتقال و شواهد آخرین release در [CURRENT_DEPLOYMENT.md](CURRENT_DEPLOYMENT.md) ثبت می‌شوند. رمز SSH در مستندات/گیت ذخیره نمی‌شود.
+
+Windows فقط محیط ساخت/تست آفلاین است. پیش از هر انتشار، از DB زندهٔ همین سرور backup بگیرید؛ snapshot قدیمی Windows را روی داده‌های تازهٔ سرور restore نکنید و حتی برای تست، poller محلی با token زنده نسازید. سایر پروژه‌ها و containerهای این میزبان در دامنهٔ این استقرار نیستند؛ reboot میزبان، تغییر firewall عمومی یا restart سرویس نامرتبط مجاز نیست.
+
+سرویس پس از boot فعال می‌شود و در خروج خطادار پس از ۱۵ ثانیه دوباره تلاش می‌کند. `StartLimitIntervalSec=0` مانع خاموشی دائمی پس از چند failure سریع startup می‌شود؛ خطای پایدار احراز هویت یا 409 همچنان نیازمند بررسی operator است، نه راه‌اندازی poller دوم. این recovery جای برق، اتصال شبکه و روشن‌بودن سرور را نمی‌گیرد. `systemctl stop` عمدی service را دوباره start نمی‌کند.
+
 مقصد تأییدشده و وضعیت cutover در [CURRENT_DEPLOYMENT.md](CURRENT_DEPLOYMENT.md) است. مالک انتقال همهٔ سوابق فعلی به ربات جدید را تأیید کرده؛ ابزارها، نگاشت پیوست، آرشیو کامل runtime قبلی و کنترل عدم replay در [BOT_MIGRATION.md](BOT_MIGRATION.md) آمده‌اند.
 
 برای ظاهر Premium و رباتی با bot ID تازه، ابتدا [BUTTON_ICONS.md](BUTTON_ICONS.md) را بخوانید: manifest آیکون read-only، حفظ `BUTTON_COLOR_MODE=colored`، تأیید Premium/Start مالک و تصمیم دامنه مهاجرت الزامی‌اند. `theme` فقط با انتخاب صریح مالک برای fallback رنگ به‌کار می‌رود. bot ID متفاوت نباید با تغییر صرف token روی offset/journal/فایل‌های runtime قبلی راه‌اندازی شود.
