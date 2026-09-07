@@ -26,6 +26,7 @@ python -m unittest discover -s tests -v
 ## invariantهای غیرقابل دورزدن
 
 - Telegram با یک instance از `getUpdates` اجرا می‌شود؛ webhook و poller دوم نسازید.
+- پایان retry محدود یک درخواست `getUpdates` نباید روی خطای شبکه/5xx/429 process را متوقف کند. بازیابی فقط دور دریافت batch، با offset ثابت، backoff سقف‌دار و توقف‌پذیر است؛ `retry_after` معتبر سقف نمی‌خورد. 401/409 و خطای handler را با outage شبکه یکی نگیرید و این retry را به sendMessage تعمیم ندهید. شاهد: `tests/test_polling_recovery.py`.
 - هیچ token، API key، secret، `.env`، دیتابیس، backup، log یا payload واقعی inventory را commit نکنید.
 - mutation مالی، inventory، payment، order و reward باید تراکنشی و idempotent باشد.
 - `wallet_entries` append-only است؛ correction فقط با entry جبرانی.

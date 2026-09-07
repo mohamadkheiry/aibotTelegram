@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import io
 import json
+import logging
+import math
 import re
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -20,6 +22,7 @@ import requests
 
 JsonObject = dict[str, Any]
 ChatId = int | str
+LOG = logging.getLogger(__name__)
 
 
 class TelegramError(RuntimeError):
@@ -108,7 +111,7 @@ def _safe_api_error_parameters(value: Any) -> dict[str, int | float]:
     try:
         if raw_retry_after is not None:
             parsed_retry_after = float(raw_retry_after)
-            if parsed_retry_after >= 0:
+            if math.isfinite(parsed_retry_after) and parsed_retry_after >= 0:
                 safe["retry_after"] = parsed_retry_after
     except (TypeError, ValueError, OverflowError):
         pass
@@ -435,14 +438,20 @@ class TelegramClient:
             is_server_error = status_code >= 500 or (
                 error_code is not None and error_code >= 500
             )
-            if attempt < self.max_retries and is_rate_limited:
+            if is_rate_limited:
+                # Preserve an HTTP-only delay even when this request exhausts
+                # its retry budget and the long-running poller takes over.
                 raw_retry_after = parameters.get("retry_after")
                 if raw_retry_after is None:
                     raw_retry_after = getattr(response, "headers", {}).get("Retry-After")
                 try:
-                    retry_after = max(0.0, float(raw_retry_after))
+                    retry_after = float(raw_retry_after)
+                    if not math.isfinite(retry_after) or retry_after < 0:
+                        raise ValueError("invalid retry delay")
                 except (TypeError, ValueError):
                     retry_after = self._backoff(attempt + 1)
+                parameters = {**parameters, "retry_after": retry_after}
+            if attempt < self.max_retries and is_rate_limited:
                 # A server-provided flood-control delay must not be capped.
                 self._wait_before_retry(
                     method,
@@ -507,6 +516,40 @@ class TelegramClient:
             raise TelegramTransportError("getUpdates", "result contains a non-object update")
         return result
 
+    def _poll_batch(self, **kwargs: Any) -> list[JsonObject]:
+        """Recover read-only polling after the finite HTTP retry budget ends.
+
+        Keep the exact offset and filters until a valid batch arrives. This
+        recovery wraps only getUpdates, never handlers or outgoing messages.
+        Authentication, conflict and other permanent API errors still escape.
+        """
+
+        retry_number = 0
+        stop_event = kwargs.get("stop_event")
+        while True:
+            retry_after = 0.0
+            try:
+                return self.get_updates(**kwargs)
+            except TelegramTransportError:
+                failure_code = "transport"
+            except TelegramAPIError as exc:
+                code = exc.error_code if exc.error_code is not None else exc.status_code
+                if code != 429 and not (code is not None and 500 <= code < 600):
+                    raise
+                failure_code = str(code)
+                if code == 429:
+                    supplied_delay = exc.retry_after
+                    if supplied_delay is not None and math.isfinite(supplied_delay):
+                        retry_after = max(0.0, supplied_delay)
+            retry_number += 1
+            delay = max(self._backoff(retry_number), retry_after)
+            # No provider text, request URL, token or update payload is logged.
+            LOG.warning(
+                "Temporary getUpdates failure (%s); retrying in %.2fs with unchanged offset",
+                failure_code, delay,
+            )
+            self._wait_before_retry("getUpdates", delay, stop_event)
+
     @staticmethod
     def offset_after(update: Mapping[str, Any], current: int | None = None) -> int:
         """Return the offset that acknowledges ``update``."""
@@ -537,7 +580,7 @@ class TelegramClient:
         self.last_update_offset = current
         while stop_event is None or not stop_event.is_set():
             try:
-                updates = self.get_updates(
+                updates = self._poll_batch(
                     offset=current,
                     timeout=timeout,
                     limit=limit,
@@ -590,7 +633,7 @@ class TelegramClient:
         handler_retry_number = 0
         while stop_event is None or not stop_event.is_set():
             try:
-                updates = self.get_updates(
+                updates = self._poll_batch(
                     offset=current,
                     timeout=timeout,
                     limit=limit,

@@ -238,6 +238,10 @@ PRAGMA foreign_key_check;
 - `/user CHAT_ID|@username|ORDER_NUMBER` فقط preview است. برای تاریخچه کامل از `/user_orders USER [STATUS|all] [PAGE|ORDER_NUMBER]`, `/user_transactions USER [PAGE]`, `/user_referrals USER [PAGE]` و `/user_rewards USER [PAGE]` استفاده کنید. search سفارش باید مالکیت همان user را تأیید کند.
 - نبود ردیف قدیمی با وجود total بزرگ، تکرار ردیف بین صفحه‌ها بدون mutation هم‌زمان، یا نبود راهنمای `بعدی` پیش از آخرین صفحه را regression بدانید؛ output را با SQL دارای PII در ticket کپی نکنید.
 
+## Runbook: قطع شبکه یا خطای موقت 5xx/429
+
+از اصلاح ۲۰۲۶-۰۹-۰۷، `run_polling` و `iter_updates` پس از پایان retry محدود یک درخواست نیز روی قطع شبکه، 5xx و 429 زنده می‌مانند. پیام `Temporary getUpdates failure (...)` به معنی تلاش مجدد همان offset با انتظار توقف‌پذیر است، نه نیاز به poller دوم یا restart. delay شبکه تا سقف ۳۰ ثانیهٔ پیش‌فرض افزایش می‌یابد؛ `retry_after` معتبر تلگرام می‌تواند طولانی‌تر باشد. پس از batch معتبر شمارنده reset می‌شود. خطای 401/409 همچنان terminal است: برای 401 اعتبار توکن مقصد و برای 409 runbook بعدی را بررسی کنید. recovery فقط دریافت update را پوشش می‌دهد؛ برای خطای handler/DB یا ارسال پیام از journal/outbox مربوط استفاده کنید.
+
 ## Runbook: خطای 409 یا دو poller
 
 نشانه اصلی خطای conflict مکرر `getUpdates` است.
