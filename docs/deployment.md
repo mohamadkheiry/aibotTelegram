@@ -6,6 +6,8 @@
 
 slot تازه در خواندن/واگرد چیدمان قدیمی اضافه می‌شود؛ تنظیم مدیر پاک نمی‌شود. rollback صرفاً کد است، نه restore DB قدیمی روی سفارش جدید. کد قدیمی ممکن است rich text یا layout تازه را کامل نمایش ندهد؛ پیش از rollback بررسی کنید. [دامنه و محدودیت‌ها](CLIENT_FEEDBACK_2026-09-08.md). تا تعیین تکلیف محرمانگی سورس، bundle خصوصی جای push عمومی تازه است.
 
+مجوز فایل پس از checkout نیز بخشی از preflight است: checkout تحت umask خصوصی ممکن است فایل Python تازه را root-only بسازد. حساب alonebot باید فایل‌های source مورد نیاز و schema/manifest را بخواند. در release جاری گروه alonebot و group-read فقط برای فایل‌های Python داخل app تنظیم شد؛ chmod بازگشتی روی env/data/backup ممنوع است. همیشه `--check` را با همان حساب service اجرا کنید، نه root.
+
 ## میزبان مصوب انتشار
 
 طبق درخواست صریح ۲۰۲۶-۰۹-۰۷، انتشار این پروژه از این پس فقط روی `192.168.10.111` از طریق SSH حساب `mr-kheiry` و unit اختصاصی `alone-account-bot.service` انجام می‌شود. هویت Telegram همان `@ElevenaccountsTestbot` است. مسیر کد `/opt/alone-account-bot`، داده `/var/lib/alone-account-bot` و secret خارج مخزن `/etc/alone-account-bot.env` است. وضعیت انتقال و شواهد آخرین release در [CURRENT_DEPLOYMENT.md](CURRENT_DEPLOYMENT.md) ثبت می‌شوند. رمز SSH در مستندات/گیت ذخیره نمی‌شود.
