@@ -315,14 +315,14 @@ class AdminButtonTests(unittest.TestCase):
     def test_customer_text_and_contact_inputs_have_button_cancellation(self):
         actor = {"id": 38001, "username": "customer_buttons", "first_name": "مشتری"}
         self.send_message(actor, text="/start")
-        for data, expected in (("wallet:topup", "wallet_topup_amount"), ("ticket:new", "ticket_subject"),
+        for data, expected in (("wallet:topup", "wallet_topup_amount"), ("ticket:new", "ticket_body"),
                                (f"buy:{self.product['id']}", "purchase_name")):
             self.send_callback(actor, data)
             state = self.db.get_user_state(self.actor_user(actor)["id"])
             self.assertEqual(state["state"], expected)
-            buttons = self.telegram.messages[-1]["reply_markup"]["keyboard"]
+            buttons = self.telegram.messages[-1]["reply_markup"]["inline_keyboard"]
             self.assertEqual([[b["text"] for b in row] for row in buttons], [["لغو و بازگشت"]])
-            self.send_message(actor, text="لغو و بازگشت")
+            self.send_callback(actor, buttons[0][0]["callback_data"])
             self.assertIsNone(self.db.get_user_state(self.actor_user(actor)["id"]))
         self.send_callback(actor, f"buy:{self.product['id']}")
         self.send_message(actor, text="نام مشتری")
@@ -472,6 +472,7 @@ class AdminButtonTests(unittest.TestCase):
         controller = self.app.admin_controller
         ui = controller.button_ui
         captured = []
+        self.db.create_discount("DEMO", discount_type="percent", value=10)
 
         def handler(key):
             def capture(rest, message, user, admin):
@@ -512,7 +513,7 @@ class AdminButtonTests(unittest.TestCase):
                         else:
                             value = {"card": "6037997512345678", "username": "sample_admin", "positive": "5",
                                      "integer": "0", "nonnegative": "0", "signed": "20", "word": "SAMPLE",
-                                     "url": "https://t.me/example_channel"}.get(field.kind, "متن | نمونه")
+                                     "url": "https://t.me/example_channel", "duration": "3 ماه"}.get(field.kind, "متن | نمونه")
                             self.send_message(self.OWNER, text=value)
                     if self.state()["status"] == "confirm":
                         self.click("confirm")

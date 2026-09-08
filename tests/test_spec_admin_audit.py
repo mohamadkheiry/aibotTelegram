@@ -25,7 +25,7 @@ class SpecAdminAuditTests(unittest.TestCase):
         self.messages: list[str] = []
         self.telegram = SimpleNamespace(send_message=self.send_message)
         self.controller = AdminController(
-            self.db, self.telegram, SimpleNamespace(currency_label="تومان")
+            self.db, self.telegram, SimpleNamespace(currency_label="تومان", timezone="Asia/Tehran")
         )
 
     def send_message(self, chat_id: int, text: str, **kwargs: Any) -> dict[str, Any]:

@@ -17,6 +17,7 @@ from app.admin import AdminController, DOCUMENTED_COMMANDS
 from app.admin_help import ADMIN_HELP
 from app.db import Database
 from app.keyboards import contains_emoji
+from app.utils import display_datetime
 
 
 class FakeTelegram:
@@ -80,7 +81,7 @@ class AdminControllerTests(unittest.TestCase):
         self.db = Database(self.root / "bot.sqlite3")
         self.db.initialize()
         self.telegram = FakeTelegram()
-        self.settings = SimpleNamespace(data_dir=self.root / "data", currency_label="تومان")
+        self.settings = SimpleNamespace(data_dir=self.root / "data", currency_label="تومان", timezone="Asia/Tehran")
         self.owner_user = self.db.upsert_user(1001, 1001, username="owner", first_name="Owner")
         self.owner = self.db.bootstrap_admin("owner", 1001, role="owner")
         self.notices: list[tuple[int, str]] = []
@@ -695,8 +696,8 @@ class AdminControllerTests(unittest.TestCase):
         )
         self.assertEqual(discount["minimum_order_amount"], 500)
         self.assertEqual(discount["per_user_limit"], 2)
-        self.assertTrue(discount["starts_at"].startswith("2026-01-01"))
-        self.assertTrue(discount["ends_at"].startswith("2027-01-01"))
+        self.assertEqual(discount["starts_at"], "2025-12-31T20:30:00+00:00")
+        self.assertEqual(discount["ends_at"], "2026-12-31T20:30:00+00:00")
 
         self.handle("/discount_delete SAVE10")
         self.assertFalse(any(item["code"] == "SAVE10" for item in self.db.list_discounts()))
@@ -1037,8 +1038,8 @@ class AdminControllerTests(unittest.TestCase):
             item["text"] for item in self.telegram.messages[before:]
         )
 
-        self.assertIn(f"اولین خرید: {oldest['paid_at']}", profile)
-        self.assertIn(f"آخرین خرید: {newest['paid_at']}", profile)
+        self.assertIn(f"اولین خرید: {display_datetime(oldest['paid_at'])}", profile)
+        self.assertIn(f"آخرین خرید: {display_datetime(newest['paid_at'])}", profile)
 
     def test_admin_add_requires_both_identity_fields_and_prevents_owner_escalation(self) -> None:
         self.handle("/admin_add @newadmin admin")
@@ -1472,10 +1473,14 @@ class AdminControllerTests(unittest.TestCase):
                 self.owner,
             )
         )
-        self.assertEqual(self.db.get_payment(rejected_payment["id"])["status"], "failed")
-        self.assertEqual(self.db.get_order(rejected_order["id"])["status"], "pending_payment")
-        self.assertIn("تأیید نشد", self.notices[-1][1])
-        self.assertEqual(self.telegram.callback_answers[-1]["text"], "پرداخت رد شد.")
+        # The receipt button opens the mandatory-reason form; it is not a
+        # financial decision until the administrator supplies and confirms it.
+        self.assertEqual(self.db.get_payment(rejected_payment["id"])["status"], "verifying")
+        self.assertEqual(self.db.get_order(rejected_order["id"])["status"], "awaiting_confirmation")
+        state = self.db.get_user_state(self.owner_user["id"])
+        self.assertEqual(state["data"]["action"], "reject_payment")
+        self.assertEqual(state["data"]["values"]["target"], rejected_payment["payment_number"])
+        self.assertNotIn("پرداخت رد شد.", self.telegram.callback_answers[-1]["text"])
 
     def test_report_sends_human_summary_and_utf8_csv(self) -> None:
         today = datetime.now(UTC).date().isoformat()

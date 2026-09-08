@@ -1,5 +1,7 @@
 # معماری فنی ربات الون اکانت
 
+اصلاحات ۲۰۲۶-۰۹-۰۸: `utils.telegram_input_text` مرز ورودی rich و `texts.ready_instructions` متن مشترک تحویل و guard دامنه است. `Database.set_user_ticket_status` نسخه مکالمه و outbox اتمیک دارد. اعلان فیش در همان outbox به شکل رسانه/caption است؛ پیش از ارسال نسخه فیش و مجوز گیرنده revalidate می‌شوند. timeout رسانه fallback دوم نمی‌سازد، ولی خطای قطعی نبود رسانه fallback متنی دارد. [گزارش و محدودیت‌ها](CLIENT_FEEDBACK_2026-09-08.md).
+
 لایهٔ `button_icons.apply_icons` در `LayoutEngine.prepare` روی کپی markup آیکون معنایی می‌افزاید؛ فقط custom emoji ID از manifest معتبر/override محیط و با حفظ آیکون صریح. سپس metadata حذف و رنگ در TelegramClient اعمال می‌شود. [قرارداد و ابزار انتشار](BUTTON_ICONS.md).
 
 لایهٔ جدید `customer_layouts` بین markup canonical و ارسال قرار می‌گیرد: `LayoutTelegram` همان transport/poller را delegate می‌کند و فقط کپی reply markup را reflow و tagهای داخلی را حذف می‌کند. ترتیب کاتالوگ عمومی پیش از pagination اعمال می‌شود. `admin_layouts` ویرایشگر draft/confirm/executing با نسخهٔ مورد/والد است؛ ذخیره فقط از `Database.save_customer_layout` و journal موجود. outbox، callback تجاری و authorization کاربر تغییر نمی‌کنند. [قرارداد توسعه و بازیابی](CUSTOMER_LAYOUTS.md).

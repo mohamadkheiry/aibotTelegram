@@ -34,10 +34,12 @@ class ChannelSpecificationAuditTests(unittest.TestCase):
         )
         self.assertEqual(rows[-1][0]["url"], "https://t.me/example_channel")
         self.assertNotIn("callback_data", rows[-1][0])
-        self.assertEqual(send.call_count, 1)
+        self.assertEqual(send.call_count, 2)  # Silent removal, deleted, then the actual inline menu.
         self.assertEqual(
-            send.call_args.kwargs["reply_markup"], {"remove_keyboard": True}
+            send.call_args_list[0].kwargs["reply_markup"], {"remove_keyboard": True}
         )
+        self.assertIn("inline_keyboard", send.call_args.kwargs["reply_markup"])
+        self.assertTrue(any(c["method"] == "deleteMessage" for c in self.telegram.calls))
 
     def test_inline_main_menu_preserves_layout_styles_icons_and_safe_actions(self):
         icons = {
@@ -105,7 +107,7 @@ class ChannelSpecificationAuditTests(unittest.TestCase):
         self.send_callback(self.CUSTOMER, "channel")
         self.assertIn("لینک معتبر کانال", self.telegram.messages[-1]["text"])
 
-    def test_main_menu_edit_failure_keeps_single_welcome_and_actionable_fallback(self):
+    def test_main_menu_does_not_depend_on_editing_a_reply_removal_message(self):
         self.db.set_setting("main_channel_url", "https://t.me/example_channel")
         with patch.object(
             self.telegram,
@@ -113,24 +115,21 @@ class ChannelSpecificationAuditTests(unittest.TestCase):
             side_effect=TelegramError("edit unavailable"),
         ):
             self.send_message(self.CUSTOMER, text="/start")
-        self.assertEqual(len(self.telegram.messages), 2)
+        self.assertEqual(len(self.telegram.messages), 1)
         self.assertEqual(
             sum("منوی اصلی" in row["text"] for row in self.telegram.messages), 1
         )
-        self.assertEqual(
-            self.telegram.messages[0]["reply_markup"], {"remove_keyboard": True}
-        )
         fallback = self.telegram.messages[-1]
-        self.assertIn("یکی از گزینه", fallback["text"])
+        self.assertIn("منوی اصلی", fallback["text"])
         self.assertEqual(
             fallback["reply_markup"]["inline_keyboard"][-1][0]["url"],
             "https://t.me/example_channel",
         )
 
-    def test_cancelled_menu_edit_does_not_send_during_shutdown(self):
+    def test_cancelled_keyboard_cleanup_does_not_send_during_shutdown(self):
         with patch.object(
             self.telegram,
-            "edit_message_reply_markup",
+            "delete_message",
             side_effect=TelegramRequestCancelled("stopping"),
         ):
             with self.assertRaises(TelegramRequestCancelled):

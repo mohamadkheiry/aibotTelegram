@@ -1,5 +1,9 @@
 # ماتریس ردیابی نیازمندی، پیاده‌سازی و تست
 
+## REQ-FEEDBACK-20260908 — گزارش‌های متنی کارفرما
+
+[ماتریس FB-01 تا FB-25](CLIENT_FEEDBACK_2026-09-08.md) هر گروه اصلاح/بهبود را به سند یا درخواست تازه وصل می‌کند؛ صوت بدون متن، سیاست کم‌واریزی و مرحله بعد پاداش جدا مانده‌اند. شواهد: [test_client_feedback.py](../tests/test_client_feedback.py) همراه مجموعه‌های سرتاسری موجود. نمودارهای ۰۵، ۱۱ و ۱۹ و قراردادهای توسعه/استقرار همگام‌اند. ۲۵ گروه را با ۲۵ باگ مستقل یا بررسی صوت‌ها یکی نگیرید.
+
 ## REQ-OPS-ICONS-LIVE — آیکون اختصاصی با مالک معرفی‌شده
 
 کاربر `@RoghayeHoseini` را مالک Telegram معرفی کرد. ۴۵ آیکون Lucide با repainting منتشر و در runtime `@ElevenaccountsTestbot` با حفظ `colored` فعال شدند؛ نقش‌های پنل تغییر نکردند. [manifest عمومی](../assets/button-icons/elevenaccounts-testbot.json)، تست `test_published_eleven_manifest_matches_licensed_asset_digest` در [test_button_icons.py](../tests/test_button_icons.py)، پوشش ۳۹ نوع صفحه/۹ بخش مدیریت و بررسی واقعی منوهای ارسالی به دو مدیر شواهد این نیازمندی‌اند. [API، بکاپ، restart و اعلان‌ها](CURRENT_DEPLOYMENT.md). نقش داخلی `owner` نباید جانشین تأیید صاحب بسته شود.

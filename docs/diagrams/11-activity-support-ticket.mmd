@@ -3,10 +3,10 @@ flowchart TD
     B{"انتخاب"}
     C["مرور دسته FAQ و پاسخ‌ها"]
     D["نمایش فهرست تیکت‌های کاربر"]
-    E["دریافت موضوع ۳ تا ۱۲۰ نویسه"]
-    F["دریافت شرح و پیوست اختیاری"]
+    E["یک پیام شرح یا caption و پیوست اختیاری"]
+    F["ساخت موضوع کوتاه از نخستین خط؛ سازگاری state قدیمی"]
     G["ایجاد idempotent ticket و پیام اول"]
-    H["وضعیت open و alert پایدار owner/admin/support با cursor recovery"]
+    H["وضعیت open و alert پایدار با دکمه مشاهده/پاسخ؛ cursor recovery"]
     I["مشاهده گفت‌وگوی صفحه‌بندی‌شده"]
     J{"تیکت بسته است؟"}
     K["ارسال پاسخ کاربر؛ وضعیت open"]
@@ -26,8 +26,14 @@ flowchart TD
     J -->|"خیر"| N
     N -->|"پاسخ کاربر"| K --> H
     N -->|"پاسخ مدیر"| L --> M --> I
-    N -->|"بستن"| O --> Z
-    J -->|"بله؛ فقط مشاهده"| Z
+    N -->|"بستن توسط مدیر"| O --> Z
+    N -->|"بستن توسط مشتری"| Confirm
+    J -->|"بله؛ درخواست بازگشایی مشتری"| Confirm
+    Confirm["prompt تأیید با nonce و snapshot مکالمه"] --> Choice{"تأیید صریح همان prompt؟"}
+    Choice -->|"لغو یا خروج"| Cancel["حذف prompt و پاک‌سازی state"] --> I
+    Choice -->|"بله"| Guard{"مالکیت و نسخه status/time/message-count معتبر؟"}
+    Guard -->|"خیر / پیام تازه"| I
+    Guard -->|"بله"| Atomic["status + notice در یک transaction؛ بدون پاسخ به تیکت بسته"] --> I
     O -.->|"فرمان مدیر"| P --> I
     I -.->|"owner/admin/support"| R --> I
 

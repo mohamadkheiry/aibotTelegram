@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from .admin_forms import PRODUCT_FIELDS
-from .utils import escape, money, normalize_digits, render_rich_text, split_telegram_html
+from .utils import display_datetime, duration_text, escape, money, normalize_digits, render_rich_text, split_telegram_html
 
 
 class AdminCatalog:
@@ -52,7 +52,7 @@ class AdminCatalog:
     def _item(self, item_id: int, product_id: int | None = None) -> dict:
         # Never include credential payloads in navigation queries or previews.
         item = self.controller._query_one(
-            "SELECT id, product_id, status, assigned_order_id, assigned_user_id, created_at "
+            "SELECT id, product_id, status, assigned_order_id, assigned_user_id, assigned_at, created_at "
             "FROM inventory_items WHERE id=?", (item_id,))
         if not item or product_id is not None and item["product_id"] != product_id:
             self.error("این موجودی در انبار محصول انتخاب‌شده نیست یا حذف شده است.")
@@ -63,7 +63,7 @@ class AdminCatalog:
         stored = self.db.get_user_state(int(user["id"]))
         if stored and stored["state"] == "admin:catalog":
             data = stored["data"]
-            return {key: copy.deepcopy(data[key]) for key in ("kind", "id", "page", "search", "field", "product_id", "category_context", "stock_context")
+            return {key: copy.deepcopy(data[key]) for key in ("kind", "id", "page", "search", "status", "field", "product_id", "category_context", "stock_context")
                     if key in data}
         if stored and stored["state"] == "admin:ui":
             return copy.deepcopy(stored["data"].get("return_to", {}))
@@ -151,6 +151,8 @@ class AdminCatalog:
         return inherited if inherited.get("id") == product["category_id"] else {"kind": "category", "id": product["category_id"]}
 
     def product(self, product_id: int, user: dict, admin: dict, *, kind: str = "product", field: str | None = None) -> None:
+        if field == "duration_days":
+            field = "duration"  # Historical buttons route to the unified field.
         product = self._product(product_id)
         category_context = self._category_context(product, user)
         context = {"kind": kind, "id": product_id, "category_context": category_context}
@@ -159,7 +161,7 @@ class AdminCatalog:
         if kind == "product":
             stock = self.controller._query_one(
                 "SELECT COUNT(*) total, COALESCE(SUM(status='available'), 0) available FROM inventory_items WHERE product_id=?", (product_id,))
-            text = (title + f"\nقیمت: {money(product['price_amount'])}\nمدت: {escape(product.get('duration_label') or '—')}"
+            text = (title + f"\nقیمت: {money(product['price_amount'])}\nمدت: {escape(duration_text(product.get('duration_label'), product.get('duration_days')) or '—')}"
                     f"\nفرمت: {'موجود در انبار' if product['product_type'] == 'ready' else 'نیازمند اطلاعات کاربر'}"
                     f"\nنمایش: {'فعال' if product['is_visible'] else 'مخفی'} | قابل خرید: {'بله' if product['is_available'] else 'خیر'}"
                     f"\nرزرو: {'فعال' if product['reserve_enabled'] else 'غیرفعال'}"
@@ -186,6 +188,8 @@ class AdminCatalog:
             value = product.get(_PRODUCT_FIELDS[field])
             if field in {"features", "reminder_days"}:
                 value = "؛ ".join(map(str, json.loads(product[field + "_json"])))
+                if field == "reminder_days" and not value:
+                    value = "غیرفعال"
             elif field == "type":
                 value = "موجود در انبار" if value == "ready" else "نیازمند اطلاعات کاربر"
             elif field == "renewable":
@@ -213,15 +217,24 @@ class AdminCatalog:
             rows.append([self.button("بازگشت به محصول", f"product:{product_id}")])
         self._publish(context, text, rows + self.ui.navigation(), user, admin)
 
-    def stock(self, product_id: int, user: dict, admin: dict, *, page: int = 1, search: str = "") -> None:
+    def stock(self, product_id: int, user: dict, admin: dict, *, page: int = 1, search: str = "", status: str = "all") -> None:
         product = self._product(product_id)
-        query = ("SELECT id, status FROM inventory_items WHERE product_id=? "
-                 "AND instr(CAST(id AS TEXT), ?)>0 ORDER BY id DESC")
-        items, total, pages, page = self._page(query, (product_id, search), page)
+        labels = {"all": "همه آیتم‌ها", "available": "آماده تحویل", "assigned": "تحویل‌شده", "disabled": "غیرفعال"}
+        if status not in labels:
+            self.error("وضعیت انبار معتبر نیست.")
+        query = ("SELECT i.id, i.status FROM inventory_items i LEFT JOIN orders o ON o.id=i.assigned_order_id "
+                 "LEFT JOIN users u ON u.id=i.assigned_user_id WHERE i.product_id=? AND (?='all' OR i.status=?) "
+                 "AND instr(lower(i.id || ' ' || COALESCE(o.order_number,'') || ' ' || COALESCE(u.username,'') || ' ' || COALESCE(u.chat_id,'')), lower(?))>0 ORDER BY i.id DESC")
+        items, total, pages, page = self._page(query, (product_id, status, status, search.lstrip("@")), page)
         text = f"<b>انبار {escape(product['name'])}</b>\nصفحه {page} از {pages} | کل آیتم‌ها: {total}"
-        text += "\nبرای جست‌وجو، شناسهٔ آیتم را بفرستید. اطلاعات محرمانه در فهرست بازنشر نمی‌شود."
-        labels = {"available": "آماده تحویل", "assigned": "تحویل‌شده", "disabled": "غیرفعال"}
-        rows = [[self.button(f"آیتم {item['id']} · {labels[item['status']]}", f"item:{product_id}:{item['id']}")] for item in items]
+        text += f"\nفیلتر: {labels[status]}\nجست‌وجو با شناسه آیتم، شماره سفارش، یوزرنیم یا چت‌آی‌دی؛ اطلاعات محرمانه در فهرست و جست‌وجو بازنشر نمی‌شود."
+        icons = self.controller.settings.button_icon_ids
+        status_icons = {"available": "check", "assigned": "broadcast", "disabled": "cancel", "all": "list"}
+        filters = [self.button(label, f"stockfilter:{product_id}:{key}", icon_custom_emoji_id=icons.get(status_icons[key])) for key, label in labels.items()]
+        rows = [filters[:2], filters[2:]]
+        rows += [[self.button(f"آیتم {item['id']} · {labels[item['status']]}", f"item:{product_id}:{item['id']}",
+                              icon_custom_emoji_id=icons.get(status_icons[item['status']]))] for item in items]
+        rows.append([self.button("جست‌وجوی آیتم‌ها", f"stocksearch:{product_id}")])
         rows += self._pager(f"stock:{product_id}", page, pages)
         if not items:
             text += "\nموجودی در این فهرست یافت نشد."
@@ -233,7 +246,7 @@ class AdminCatalog:
             text += "\nاین محصول دستی است؛ سقف تعداد قابل فروش را از گزینهٔ زیر تغییر دهید."
             rows.append([self.button("تغییر سقف موجودی دستی", f"edit:{product_id}:stock_limit")])
         rows.append([self.button("بازگشت به محصول", f"product:{product_id}")])
-        self._publish({"kind": "stock", "id": product_id, "page": page, "search": search,
+        self._publish({"kind": "stock", "id": product_id, "page": page, "search": search, "status": status,
                        "category_context": self._category_context(product, user)}, text, rows + self.ui.navigation(), user, admin)
 
     def item(self, product_id: int, item_id: int, user: dict, admin: dict) -> None:
@@ -241,6 +254,13 @@ class AdminCatalog:
         item = self._item(item_id, product_id)
         labels = {"available": "آماده تحویل", "assigned": "تحویل‌شده", "disabled": "غیرفعال"}
         text = f"<b>آیتم {item_id}</b>\nمحصول: {escape(product['name'])}\nوضعیت: {labels[item['status']]}"
+        text += f"\nتاریخ افزودن (تهران): {display_datetime(item.get('created_at'), self.controller.settings.timezone)}"
+        if item.get("assigned_order_id"):
+            order = self.db.get_order(int(item["assigned_order_id"]))
+            recipient = self.db.get_user(int(item["assigned_user_id"])) if item.get("assigned_user_id") else None
+            text += f"\nشماره سفارش: <code>{escape((order or {}).get('order_number') or '—')}</code>"
+            text += f"\nکاربر: @{escape((recipient or {}).get('username') or '—')} | چت‌آی‌دی: <code>{(recipient or {}).get('chat_id') or '—'}</code>"
+            text += f"\nتاریخ تحویل (تهران): {display_datetime(item.get('assigned_at'), self.controller.settings.timezone)}"
         rows = []
         if item["status"] != "assigned":
             actions = [("inventory_edit", "ویرایش اطلاعات اکانت"), ("inventory_delete", "حذف موجودی")]
@@ -250,6 +270,7 @@ class AdminCatalog:
             rows += [[self.button(label, f"act:item:{item_id}:{key}")] for key, label in actions]
         else:
             text += "\nاین موجودی قبلاً تحویل شده و قابل تغییر، حذف یا تخصیص دوباره نیست."
+        rows.append([self.button("نمایش اطلاعات محرمانه این آیتم", f"payload:{product_id}:{item_id}")])
         previous = self.context(user)
         stock_context = previous if previous.get("kind") == "stock" and previous.get("id") == product_id else previous.get("stock_context", {})
         if stock_context.get("kind") != "stock" or stock_context.get("id") != product_id:
@@ -264,7 +285,7 @@ class AdminCatalog:
         if kind == "category":
             self.category(identifier, user, admin, page=int(context.get("page") or 1), search=str(context.get("search") or ""))
         elif kind == "stock":
-            self.stock(identifier, user, admin, page=int(context.get("page") or 1), search=str(context.get("search") or ""))
+            self.stock(identifier, user, admin, page=int(context.get("page") or 1), search=str(context.get("search") or ""), status=str(context.get("status") or "all"))
         elif kind == "item":
             self.item(int(context["product_id"]), identifier, user, admin)
         elif kind in {"product", "fields", "field", "format"}:
@@ -297,6 +318,8 @@ class AdminCatalog:
                 context = {"kind": "category", "id": category.get("parent_id") or 0}
         elif kind == "product":
             product = self._product(identifier)
+            if field == "duration_days":
+                field = "duration"
             if field is not None:
                 if key != "product_set" or field not in dict((key, label) for label, key in PRODUCT_FIELDS):
                     self.error("مشخصهٔ محصول معتبر نیست.")
@@ -337,17 +360,28 @@ class AdminCatalog:
             self.start_action(parts[1], int(parts[2]), parts[3], event, user, admin)
             return True
         if route == "clear" and len(parts) == 3 and parts[2].isdigit() and parts[1] in {"category", "stock"}:
-            self.open_context({"kind": parts[1], "id": int(parts[2])}, user, admin)
+            self.open_context({"kind": parts[1], "id": int(parts[2]),
+                               "status": context.get("status", "all") if context.get("id") == int(parts[2]) else "all"}, user, admin)
             return True
         if len(parts) < 2 or not parts[1].isdigit():
             self.error("دکمهٔ محصولات معتبر نیست.")
         identifier = int(parts[1])
+        if route == "stockfilter" and len(parts) == 3:
+            self.stock(identifier, user, admin, status=parts[2])
+            return True
+        if route == "stocksearch" and len(parts) == 2:
+            self._product(identifier)
+            context = {**context, "kind": "stock", "id": identifier}
+            self._publish(context, "شناسه آیتم، شماره سفارش، یوزرنیم یا چت‌آی‌دی را بفرستید؛ سپس آیتم را با دکمه انتخاب کنید.",
+                          [[self.button("بازگشت به انبار", f"stock:{identifier}")]], user, admin)
+            return True
         if route in {"category", "stock"} and len(parts) in {2, 3}:
             if len(parts) == 3 and not parts[2].isdigit():
                 self.error("صفحه معتبر نیست.")
             page = int(parts[2]) if len(parts) == 3 else 1
             search = context.get("search", "") if context.get("kind") == route and context.get("id") == identifier else ""
-            self.open_context({"kind": route, "id": identifier, "page": page, "search": search}, user, admin)
+            self.open_context({"kind": route, "id": identifier, "page": page, "search": search,
+                               "status": context.get("status", "all") if context.get("id") == identifier else "all"}, user, admin)
         elif route in {"product", "fields", "format"} and len(parts) == 2:
             self.product(identifier, user, admin, kind=route)
         elif route == "field" and len(parts) == 3:
@@ -357,6 +391,14 @@ class AdminCatalog:
                               field=parts[2] if route == "edit" else None, flag=parts[2] if route == "toggle" else None)
         elif route == "item" and len(parts) == 3 and parts[2].isdigit():
             self.item(identifier, int(parts[2]), user, admin)
+        elif route == "payload" and len(parts) == 3 and parts[2].isdigit():
+            item = self._item(int(parts[2]), identifier)
+            # Explicit, privileged read only; never include payload in state,
+            # selector queries, callback data or log output.
+            record = self.controller._query_one("SELECT payload FROM inventory_items WHERE id=? AND product_id=?", (item["id"], identifier))
+            for part in split_telegram_html(f"<b>اطلاعات محرمانه آیتم {item['id']}</b>\n<pre>{escape(record['payload'])}</pre>", maximum=3500):
+                self.controller.telegram.send_message(user["chat_id"], part, protect_content=True)
+            self.item(identifier, item["id"], user, admin)
         else:
             self.error("دکمهٔ محصولات معتبر نیست.")
         return True

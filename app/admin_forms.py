@@ -56,7 +56,7 @@ YES_NO = (("بله", "true"), ("خیر", "false"))
 PRODUCT_FIELDS = (
     ("نام", "name"), ("دسته", "category"), ("نوع تحویل", "type"), ("آیکون", "icon"),
     ("توضیح کوتاه", "short_description"), ("توضیح کامل", "long_description"),
-    ("قیمت به تومان", "price"), ("عنوان مدت", "duration"), ("مدت به روز", "duration_days"),
+    ("قیمت به تومان", "price"), ("مدت اشتراک", "duration"),
     ("نوع اکانت", "account_type"), ("روش فعال‌سازی", "activation"),
     ("قابل تمدید", "renewable"), ("گارانتی", "warranty"), ("ویژگی‌ها", "features"),
     ("راهنمای فعال‌سازی", "activation_instructions"), ("شرایط استفاده", "usage_terms"),
@@ -92,7 +92,7 @@ INVENTORY = entity("inventory", "انتخاب آیتم انبار")
 FAQ_CATEGORY = entity("faq_category", "انتخاب دسته پرسش‌ها")
 FAQ = entity("faq", "انتخاب پرسش")
 NOTE = Field("note", "توضیح")
-BODY = Field("body", "متن پیام", hint="متن را در یک پیام بفرستید. قالب HTML فقط با پیشوند html: فعال می‌شود.")
+BODY = Field("body", "متن پیام", hint="متن را در یک پیام بفرستید؛ قالب‌بندی و ایموجی سفارشی تلگرام حفظ می‌شود. HTML نوشتاری با پیشوند html: هم قابل استفاده است.")
 TITLE = Field("name", "عنوان")
 AMOUNT = Field("amount", "مبلغ به تومان", "positive")
 STATUS = choice("status", "وضعیت سفارش", ORDER_OPTIONS)
@@ -143,7 +143,7 @@ add("category_set", "ویرایش دسته", "catalog", CATEGORY,
     Field("value", "مقدار جدید", "dynamic"), mutation=True, pipe=True)
 add("products", "فهرست محصولات", "catalog", replace(CATEGORY, default="all"))
 add("product_add", "افزودن محصول", "catalog", CATEGORY, TITLE, AMOUNT,
-    Field("duration", "مدت اشتراک", hint="مثلاً ۳۰ روز؛ مدت عددی بر حسب روز محاسبه می‌شود."),
+    Field("duration", "مدت اشتراک", "duration", hint="واحد را بنویسید؛ مثلاً ۳ ماه یا ۳۰ روز. هر ماه ۳۰ روز و هر سال ۳۶۵ روز است؛ عددِ تنها یعنی روز. برای اشتراک دائمی: بدون انقضا."),
     choice("type", "نوع تحویل", (("آماده و خودکار", "ready"), ("فعال‌سازی دستی", "manual"))),
     mutation=True, pipe=True)
 add("product_set", "ویرایش مشخصات محصول", "catalog", PRODUCT,
@@ -300,13 +300,16 @@ def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
             resolved = choice("value", "نوع تحویل", (("آماده و خودکار", "ready"), ("فعال‌سازی دستی", "manual")))
         elif name == "renewable":
             resolved = choice("value", "قابل تمدید است؟", YES_NO)
+        elif name == "duration":
+            resolved = replace(field, kind="duration", hint=ACTIONS["product_add"].fields[3].hint)
         elif name in {"price", "sort_order", "stock_limit", "duration_days"}:
             kind = {"price": "positive", "sort_order": "integer", "stock_limit": "nonnegative", "duration_days": "positive"}[name]
             resolved = replace(field, kind=kind,
-                               default="none" if name in {"stock_limit", "duration_days"} else None)
+                               default="none" if name in {"stock_limit", "duration_days"} else None,
+                               hint="یک عدد ترتیب وارد کنید؛ عدد کوچک‌تر زودتر نمایش داده می‌شود. نمونه: ۱۰" if name == "sort_order" else "")
         elif name == "reminder_days":
             resolved = Field("value", "روزهای یادآوری پیش از انقضا", "reminders",
-                             (("روز پایان اشتراک", "0"), ("یک روز قبل", "1"),
+                             (("غیرفعال‌کردن یادآوری", "off"), ("روز پایان اشتراک", "0"), ("یک روز قبل", "1"),
                               ("سه و یک روز قبل و روز پایان", "3,1,0")), default="0",
                              hint="برای مقدار سفارشی، روزهای صحیح نامنفی را با ویرگول جدا کنید. صفر یعنی روز پایان، پیش از انقضا.")
         else:

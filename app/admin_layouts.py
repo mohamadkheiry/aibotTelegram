@@ -5,7 +5,7 @@ import copy
 import secrets
 from typing import Any
 
-from .customer_layouts import GROUPS, SECTIONS, LayoutEngine, defaults, definition, validate
+from .customer_layouts import GROUPS, SECTIONS, LayoutEngine, defaults, definition, upgrade_saved_layout, validate
 from .db import ConflictError, NotFoundError, ValidationError
 from .utils import escape
 
@@ -407,7 +407,7 @@ class AdminLayouts:
                     if not document.get("history"):
                         raise ValueError("چیدمان قبلی وجود ندارد.")
                     inherited = self.engine.snapshot(state["section"].split(":")[0])["config"] if ":" in state["section"] else defaults(state["section"])
-                    preview = document["history"][-1] or inherited
+                    preview = upgrade_saved_layout(state["section"], document["history"][-1] or inherited)
                 state.update(phase="confirm", operation=value, preview_config=preview)
             elif op == "confirm":
                 if state.get("phase") != "confirm" or type(event.get("_admin_update_id")) is not int:

@@ -309,7 +309,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 3. فقط photo/document دریافت و به payment متصل می‌شود.
 4. payment به `verifying` و order به `awaiting_confirmation` می‌رود.
 5. receipt و دکمه‌های تأیید/رد با اعلان پایدار برای مدیران مجاز ارسال می‌شود؛ maintenance اعلان جاافتاده را دوباره queue می‌کند.
-6. مدیر با `/payment_detail PAYMENT_NUMBER` فیش را در نوع اصلی `photo/document` بازمی‌فرستد، مبلغ و کاربر را کنترل و `/approve_payment` یا `/reject_payment` اجرا می‌کند.
+6. مدیر از دکمه جزئیات فیش را در نوع اصلی می‌بیند و مبلغ/کاربر را کنترل می‌کند؛ رد ابتدا فرم دلیل و تأیید نهایی دارد. فرمان‌های قدیمی فقط مسیر سازگار اختیاری‌اند. اعلان تازه فیش رسانه با caption و همان دکمه‌هاست؛ timeout fallback تکراری نمی‌سازد و خطای قطعی نبود رسانه اعلان متنی قابل بازیابی دارد.
 7. approve برای Order ابتدا اعلان canonical موفقیت را queue/attempt می‌کند و بعد از آماده‌شدن gate، UC-11/12/13 را آغاز می‌کند؛ topup فقط credit/اعلان خودش را دارد.
 
 **جریان‌های جایگزین/خطا:** ارسال زودتر از delay پیام انتظار می‌دهد؛ crypto یا text بدون فایل رد می‌شود؛ نخستین فیش در/بعد از `expires_at` پذیرفته نمی‌شود؛ replacement فیش به‌موقع تا تصمیم نهایی مجاز است؛ گذشت زمان آن را خودکار منقضی نمی‌کند و مهلت نخستین ارسال تغییر نمی‌کند؛ entity نهایی فیش تازه نمی‌پذیرد؛ payment دارای فیش یا `verifying` حتی با callback قدیمی لغو نمی‌شود؛ failure شبکه‌ایِ اعلان مدیر فیش را از DB حذف نمی‌کند؛ replay approve/reject اثر دوم ندارد؛ support اجازه تأیید/رد ندارد.
@@ -491,12 +491,12 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 
 **جریان اصلی تیکت:**
 
-1. کاربر موضوع ۳ تا ۱۲۰ نویسه می‌فرستد.
-2. شرح متنی یا photo/document می‌فرستد.
+1. کاربر شرح را در یک پیام متنی یا caption همراه photo/document می‌فرستد؛ مرحله جداگانه موضوع ندارد.
+2. موضوع کوتاه از نخستین خط ساخته می‌شود؛ state موضوع قدیمی برای سازگاری پشتیبانی می‌شود.
 3. Ticket `open` و نخستین TicketMessage با idempotency key ساخته می‌شود.
 4. همه owner/admin/support فعال با alert پایدار per-admin مطلع می‌شوند؛ attachment با فرمان `/ticket_attachment MESSAGE_ID` در همان alert قابل بازیابی است.
 5. کاربر/پشتیبان در تیکت باز پاسخ می‌دهند؛ مکالمه از جدید به قدیم صفحه‌بندی می‌شود. owner/admin/support از `/ticket` شناسه پیام فایل‌دار را می‌گیرند و `/ticket_attachment MESSAGE_ID` همان photo/document commit‌شده را پس از revalidation نقش و entity بازمی‌فرستد.
-6. مدیر status را answered/closed می‌کند یا closed را reopen می‌کند.
+6. مدیر status را answered/closed می‌کند یا closed را reopen می‌کند. مشتری نیز فقط برای تیکت خودش دکمه بستن/بازگشایی و تأیید صریح دارد؛ خروج یا پیام تازه مکالمه تأیید قبلی را بی‌اثر می‌کند. تغییر status و notice در یک transaction ثبت می‌شوند.
 
 **جریان‌های جایگزین/خطا:** موضوع یا body نامعتبر دوباره درخواست می‌شود؛ replay پیام دوم نمی‌سازد؛ user به تیکت/پیوست دیگران دسترسی ندارد؛ actor بدون role، MESSAGE_ID ناموجود، پیام بدون فایل یا kind خارج photo/document رد می‌شود و raw file ID در متن جزئیات افشا نمی‌شود؛ شکست copy/alert شبکه metadata را از DB حذف نمی‌کند، maintenance با cursor/wrap alert per-admin را بازیابی و فرمان attachment را ارائه می‌کند؛ closed پاسخ user نمی‌پذیرد؛ reply/status/close و notice کاربر در transaction/outbox پایدارند تا crash میان mutation و send اعلان را گم نکند؛ FAQ غیرفعال یا callback قدیمی نمایش داده نمی‌شود.
 
@@ -513,7 +513,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 
 **پیش‌شرط‌ها:** ACT-R User معتبر؛ برای پاداش خرید Referral و rule منطبق وجود دارد و Order از نوع `order_origin=customer` با `subtotal_amount > 0` است.
 
-**پس‌شرط موفق:** لینک deep-link، تعداد invited/qualified و reward total نمایش داده می‌شود؛ در خرید منطبق، WalletEntry/RewardEvent دقیقاً یک‌بار و اعلان پایدار ایجاد می‌شود.
+**پس‌شرط موفق:** لینک deep-link با ارسال/کپی، تعداد invited/qualified، خریدار تجاری یکتا و مجموع پاداش واقعاً ثبت‌شده نمایش داده می‌شود؛ در خرید منطبق، WalletEntry/RewardEvent دقیقاً یک‌بار و اعلان پایدار ایجاد می‌شود. پاداش خرید خود شخص افزوده نشده است.
 
 **جریان اصلی:**
 

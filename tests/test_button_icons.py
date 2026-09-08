@@ -314,9 +314,9 @@ class ButtonIconTests(unittest.TestCase):
             transport = FakeTelegram()
             restarted = BotApplication(replace(settings, button_icon_ids=changed_icons), db, transport)
             for _ in range(2):
-                self.assertTrue(restarted._notify_user_durable(user, queued["body"], idempotency_key=key, reply_markup=main_menu_keyboard()))
+                self.assertTrue(restarted._notify_user_durable(user, queued["body"], idempotency_key=key, reply_markup=inline_main_menu_keyboard()))
             self.assertEqual(len(transport.messages), 1)
-            self.assertEqual(transport.messages[0]["reply_markup"]["keyboard"][0][0]["icon_custom_emoji_id"], changed_icons["shop"])
+            self.assertEqual(transport.messages[0]["reply_markup"]["inline_keyboard"][0][0]["icon_custom_emoji_id"], changed_icons["shop"])
             self.assertEqual(db.get_outbound_message_by_idempotency_key(key)["reply_markup_json"], queued["reply_markup_json"])
             self.assertEqual(db.wallet_balance(user["id"]), 100000)
 

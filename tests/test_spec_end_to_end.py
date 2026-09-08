@@ -176,14 +176,14 @@ class SourceEndToEndTests(unittest.TestCase):
                 self.db.set_setting("bot_enabled", True)
                 user = self.customer()
                 self.click(self.CUSTOMER, "کیف پول")
-                self.click(self.CUSTOMER, "افزایش موجودی")
+                self.assertEqual(self.db.get_user_state(user["id"])["state"], "wallet_topup_amount")
                 if gate == "disabled":
                     self.db.set_setting("bot_enabled", False)
                 with patch.object(self.app, "_check_memberships", return_value=gate != "join"):
-                    self.click(self.CUSTOMER, "لغو و بازگشت")
+                    self.click(self.CUSTOMER, "بازگشت")
                 self.assertIsNone(self.db.get_user_state(user["id"]))
                 self.assertNotIn("فروشگاه", [b["text"] for b in self.buttons(self.CUSTOMER)])
-                self.assertIn("بروزرسانی" if gate == "disabled" else "عضویت", self.screen(self.CUSTOMER)["text"])
+                self.assertIn("بروزرسانی" if gate == "disabled" else "عضویت", self.telegram.callback_answers[-1]["text"])
 
     def test_inactive_filter_is_labelled_by_activity_not_purchases(self):
         active = self.customer()
@@ -239,7 +239,7 @@ class SourceEndToEndTests(unittest.TestCase):
         self.click(self.CUSTOMER, "فروشگاه")
         self.click(self.CUSTOMER, "دسته ممیزی")
         self.click(self.CUSTOMER, "زیرگروه ممیزی")
-        self.click(self.CUSTOMER, product["name"])
+        self.click(self.CUSTOMER, data=f"prod:{product['id']}")
         self.click(self.CUSTOMER, "خرید")
         if not user.get("customer_name"):
             self.send(self.CUSTOMER, text="خریدار ممیزی")
@@ -280,7 +280,7 @@ class SourceEndToEndTests(unittest.TestCase):
         self.click(self.CUSTOMER, "کارت به کارت")
         payment = self.db.latest_order_payment(order["id"])
         self.assertEqual(payment["base_amount"], 60000)
-        copied = next(b["copy_text"]["text"] for b in self.buttons(self.CUSTOMER) if b["text"] == "کپی مبلغ")
+        copied = next(b["copy_text"]["text"] for b in self.buttons(self.CUSTOMER) if b["text"] == "کپی مبلغ به تومان")
         self.assertEqual(int(copied), payment["payable_amount"])
         self.click(self.CUSTOMER, "ارسال فیش واریز")
         self.send(self.CUSTOMER, photo=[{"file_id": "audit-receipt-photo", "width": 80, "height": 80}])
@@ -362,8 +362,9 @@ class SourceEndToEndTests(unittest.TestCase):
         self.customer()
         self.click(self.CUSTOMER, "پشتیبانی")
         self.click(self.CUSTOMER, "ثبت تیکت")
-        self.send(self.CUSTOMER, text="درخواست کمک ممیزی")
-        self.send(self.CUSTOMER, document={"file_id": "audit-ticket-file", "file_name": "audit.txt"})
+        update = self.message(self.CUSTOMER, document={"file_id": "audit-ticket-file", "file_name": "audit.txt"})
+        update["message"]["caption"] = "درخواست کمک ممیزی"
+        self.assertIsNot(self.app.process_update_safe(update), False)
         ticket = self.db.list_tickets(user_id=user["id"])[0]
         self.action("ticket_reply", {"target": ticket["ticket_number"], "body": "پاسخ پشتیبانی ممیزی"})
         self.action("ticket_attachment", {"target": ticket["ticket_number"],

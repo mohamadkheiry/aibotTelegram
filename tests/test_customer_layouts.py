@@ -178,6 +178,9 @@ class CustomerLayoutTests(unittest.TestCase):
             if name in {"customer_keyboard", "_input_cancel_markup"}:
                 self.assertTrue(node.args, node.lineno)
                 argument = node.args[0]
+                if isinstance(argument, ast.Name):
+                    self.assertEqual((name, argument.id), ("customer_keyboard", "section"))
+                    continue  # _input_cancel_markup forwards the registered caller's section.
                 prefix = argument.value if isinstance(argument, ast.Constant) else argument.values[0].value
                 known.add(prefix.split(":")[0])
             if name == "inline_keyboard":
@@ -187,7 +190,7 @@ class CustomerLayoutTests(unittest.TestCase):
         # Shared builders cover all main-menu replies and all contact prompts.
         known.update({"main", "input_contact"})
         self.assertEqual(known, set(SECTIONS))
-        self.assertEqual(len(admin_only), 5)
+        self.assertEqual(len(admin_only), 6)
         self.assertTrue(all(not contains_emoji(spec.title) for spec in SECTIONS.values()))
 
 

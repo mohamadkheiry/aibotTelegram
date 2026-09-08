@@ -63,7 +63,7 @@ update مدیریتی با `(update_id, fingerprint)` وارد journal `started/
 ## Telegram و محتوای خروجی
 
 - متن معمولی همیشه escape می‌شود.
-- HTML فقط با پیشوند صریح `html:` فعال و با allowlist tag/attribute اعتبارسنجی می‌شود. `href` فقط HTTPS مطلق است؛ `http`، `tg:`، `mailto:`، userinfo، `localhost`، IP literal محلی/خصوصی/reserved و host عددی مبهم رد می‌شوند و مقصد Telegram باید به شکل canonical `https://t.me/...` نوشته شود.
+- HTML از `html:` معتبر یا تبدیل entityهای UTF-16 فرم Telegram تولید و با allowlist tag/attribute اعتبارسنجی می‌شود. range نامعتبر/متقاطع و لینک ناامن markup فعال نمی‌شوند. `href` فقط HTTPS مطلق است؛ `http`، `tg:`، `mailto:`، userinfo، `localhost`، IP literal محلی/خصوصی/reserved و host عددی مبهم رد می‌شوند؛ مقصد Telegram باید canonical یعنی `https://t.me/...` باشد.
 - هر URL بیرونیِ قابل کلیک، `rules_url`، URL invoice provider و callback عمومی باید مطلق، HTTPS و بدون credential، whitespace/control، `localhost`، IP literal محلی/خصوصی/reserved یا host عددی مبهم باشد. validator عمداً DNS lookup انجام نمی‌دهد و درباره hostname عمومی که بعداً به IP خصوصی resolve شود تضمین DNS-level/TOCTOU نمی‌دهد؛ callsiteهای فعلی لینک client-side هستند. URL دکمه در زمان render نیز دوباره fail closed می‌شود تا داده legacy ناامن نمایش داده نشود.
 - URL کانال اصلی فقط canonical `https://t.me/...` و invite جوین اجباری فقط canonical HTTPS روی `t.me` یا `telegram.me`، بدون port/query/fragment، پذیرفته می‌شود؛ دامنه مشابه یا suffix جعلی رد است.
 - label دکمه‌ها بدون Unicode emoji است؛ icon سفارشی فقط ID ارائه‌شده Telegram است.

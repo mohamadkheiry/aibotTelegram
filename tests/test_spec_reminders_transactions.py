@@ -130,12 +130,20 @@ class ReminderAndTransactionSpecificationTests(unittest.TestCase):
                 idempotency_key=f"spec-transaction:{index}", now=BASE_TIME,
             )
         self.app.show_transactions(self.user)
-        text = self.telegram.messages[-1]["text"]
+        screen = self.telegram.messages[-1]
+        buttons = [b for row in screen["reply_markup"]["inline_keyboard"] for b in row
+                   if b.get("callback_data", "").startswith("transaction:")]
+        self.assertEqual(len(buttons), 4)
+        text = "\n".join(b["text"] for b in buttons)
         for label in ("اصلاح موجودی توسط مدیر", "پاداش دعوت", "شارژ کیف پول", "افزایش اعتبار"):
             self.assertIn(label, text)
-        self.assertEqual(text.count("یادداشت اختصاصی"), 4)
         self.assertEqual(text.count("2026-01-10"), 4)
         self.assertLessEqual(len(text), 4096)
+        for b in buttons:
+            key = ":".join(b["callback_data"].split(":")[1:3])
+            self.app.show_transaction(self.user, key, page=0, query={"message": {
+                "message_id": screen["message_id"], "chat": {"id": self.user["chat_id"]}}})
+            self.assertIn("یادداشت اختصاصی", self.telegram.edits[-1]["text"])
 
 
 if __name__ == "__main__":

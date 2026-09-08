@@ -192,7 +192,14 @@ class UserFlowAdversarialRegressionTests(unittest.TestCase):
             if f"profile:transactions:{page + 1}" not in self.callbacks(surface):
                 break
             page += 1
-        rendered = "\n".join(surface["text"] for surface in surfaces)
+        details = []
+        for surface in surfaces:
+            for data in self.callbacks(surface):
+                if data.startswith("transaction:"):
+                    self.app.process_update(self.callback(data))
+                    details.append(self.telegram.edits[-1]["text"])
+        rendered = "\n".join(details)
+        self.assertEqual(len(details), 35)
         for index in range(35):
             self.assertEqual(rendered.count(f"TXMARK-{index:03d}"), 1)
 

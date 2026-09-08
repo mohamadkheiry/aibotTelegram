@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 
 _DIGIT_TABLE = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
@@ -280,6 +281,97 @@ def render_rich_text(value: Any) -> str:
         return format_admin_text(raw)
     except ValueError:
         return escape(raw[5:].lstrip())
+
+
+def telegram_input_text(text: str, entities: Any) -> str:
+    """Store native Telegram formatting as validated, opt-in HTML.
+
+    Entity offsets are UTF-16, not Python indexes. Invalid/crossing ranges are
+    ignored without losing any visible text; URLs and attributes never bypass
+    the same allowlist used for administrator-authored HTML.
+    """
+    if not isinstance(entities, list) or not entities or text.lower().startswith("html:"):
+        return text.strip()
+    boundaries = {0: 0}
+    offset = 0
+    for index, character in enumerate(text, 1):
+        offset += 2 if ord(character) > 0xFFFF else 1
+        boundaries[offset] = index
+    tags = {"bold": ("<b>", "</b>"), "italic": ("<i>", "</i>"),
+            "underline": ("<u>", "</u>"), "strikethrough": ("<s>", "</s>"),
+            "spoiler": ("<tg-spoiler>", "</tg-spoiler>"), "code": ("<code>", "</code>"),
+            "pre": ("<pre>", "</pre>"), "blockquote": ("<blockquote>", "</blockquote>"),
+            "expandable_blockquote": ("<blockquote expandable>", "</blockquote>")}
+    spans = []
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        start, length = entity.get("offset"), entity.get("length")
+        if type(start) is not int or type(length) is not int or length <= 0:
+            continue
+        if start not in boundaries or start + length not in boundaries:
+            continue
+        kind = entity.get("type")
+        tag = tags.get(kind)
+        if kind == "custom_emoji" and re.fullmatch(r"[1-9][0-9]{0,19}", str(entity.get("custom_emoji_id", ""))):
+            tag = (f'<tg-emoji emoji-id="{entity["custom_emoji_id"]}">', "</tg-emoji>")
+        elif kind == "text_link" and is_safe_https_url(entity.get("url")):
+            tag = (f'<a href="{html.escape(entity["url"], quote=True)}">', "</a>")
+        if tag:
+            spans.append((boundaries[start], boundaries[start + length], *tag))
+    spans.sort(key=lambda span: (span[0], -span[1], span[2]))
+    accepted, stack = [], []
+    for span in spans:
+        while stack and span[0] >= stack[-1][1]:
+            stack.pop()
+        if stack and (span[1] > stack[-1][1] or stack[-1][2] in {"<pre>", "<code>"}):
+            continue
+        if span not in accepted:
+            accepted.append(span)
+            stack.append(span)
+    if not accepted:
+        return text.strip()
+    starts, ends = {}, {}
+    for span in accepted:
+        starts.setdefault(span[0], []).append(span)
+        ends.setdefault(span[1], []).insert(0, span)
+    result = []
+    for index in range(len(text) + 1):
+        result.extend(span[3] for span in ends.get(index, []))
+        result.extend(span[2] for span in starts.get(index, []))
+        if index < len(text):
+            result.append(escape(text[index]))
+    stored = "html:" + "".join(result)
+    format_admin_text(stored)
+    return stored
+
+
+def plain_rich_text(value: Any) -> str:
+    """Visible text for labels/popups only; never use it to rewrite stored data."""
+    return html.unescape(re.sub(r"<[^>]*>", "", render_rich_text(value)))
+
+
+def custom_emoji_id(value: Any) -> str | None:
+    match = re.search(r'<tg-emoji emoji-id="([1-9][0-9]{0,19})">', render_rich_text(value or ""))
+    return match.group(1) if match else None
+
+
+def display_datetime(value: Any, timezone: str = "Asia/Tehran") -> str:
+    """Presentation only: all persistence and money matching remain in UTC."""
+    if not value:
+        return "—"
+    try:
+        parsed = parse_iso(str(value))
+        return parsed.astimezone(ZoneInfo(timezone)).strftime("%Y-%m-%d · %H:%M")
+    except (ValueError, TypeError, OverflowError):
+        return str(value)
+
+
+def duration_text(label: Any, days: int | None = None) -> str:
+    value = str(label or "").strip()
+    if re.fullmatch(r"[0-9۰-۹٠-٩]+", value):
+        return f"{normalize_digits(value)} روز"
+    return value or (f"{days} روز" if days else "")
 
 
 def utc_now() -> datetime:

@@ -27,8 +27,18 @@ class AdminPaymentContextTests(unittest.TestCase):
     state = fixture.AdminNavigationTests.state
     prompt = fixture.AdminNavigationTests.prompt
     button_update = fixture.AdminNavigationTests.button_update
-    click = fixture.AdminNavigationTests.click
     assert_retired = fixture.AdminNavigationTests.assert_retired
+
+    def click(self, **kwargs):
+        # Method choices now expose live status in their emitted label.
+        name = kwargs.get("label")
+        if name in {"کیف پول", "کارت بانکی", "رمزارز"}:
+            prompt = kwargs.get("prompt") or self.prompt()
+            labels = [b["text"] for row in prompt["reply_markup"]["inline_keyboard"] for b in row
+                      if b["text"].startswith(name + " · ")]
+            self.assertEqual(len(labels), 1)
+            kwargs["label"] = labels[0]
+        return fixture.AdminNavigationTests.click(self, **kwargs)
 
     def open_payment(self):
         self.send_message(self.OWNER, text="/start")

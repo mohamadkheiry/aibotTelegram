@@ -53,39 +53,43 @@ _section("category", "داخل دسته و زیردسته", "catalog", "items=ز
 _section("product", "صفحه محصول", "catalog", "buy=خرید|more=توضیحات تکمیلی|rules=مشاهده قوانین|back=بازگشت", scoped="product")
 _section("product_details", "توضیحات کامل محصول", "catalog", "buy=خرید|rules=مشاهده قوانین|back=بازگشت", scoped="product")
 _section("profile", "حساب من", "account", "stats=آمار من|orders=سفارش‌های من|transactions=تراکنش‌های من|back=بازگشت")
-_section("stats", "آمار من", "account", "back=بازگشت")
+_section("stats", "آمار من", "account", "refresh=بروزرسانی|back=بازگشت")
 _section("orders", "فهرست سفارش‌های من", "account", "items=دکمه‌های سفارش|" + NAV,
          rows=(("items",), ("prev", "next"), ("back",)))
-_section("transactions", "تراکنش‌های من", "account", NAV, rows=(("prev", "next"), ("back",)))
+_section("transactions", "تراکنش‌های من", "account", "items=تراکنش‌ها|" + NAV, rows=(("items",), ("prev", "next"), ("back",)))
+_section("transaction", "جزئیات تراکنش", "account", "back=بازگشت")
 _section("wallet", "کیف پول و پرداخت‌های باز", "account", "receipt=ارسال فیش واریز|cancel=لغو پرداخت|invoice=ادامه پرداخت ارزی|retry=تلاش دوباره برای پرداخت ارزی|support=پیگیری از پشتیبانی|topup=افزایش موجودی|back=بازگشت")
-_section("referral", "دعوت و کسب درآمد", "account", "share=ارسال لینک به دوستان|back=بازگشت")
+_section("referral", "دعوت و کسب درآمد", "account", "share=ارسال لینک به دوستان|copy=کپی لینک دعوت|back=بازگشت")
 _section("channel", "ورود به کانال رسمی", "main", "channel=ورود به کانال")
 _section("support", "منوی پشتیبانی", "support", "faqs=سوالات متداول|new=ثبت تیکت|tickets=تیکت‌های قبلی|back=بازگشت")
 _section("faq_categories", "دسته‌های سؤال‌های متداول", "support", "items=دسته‌های سؤال|" + NAV,
          rows=(("items",), ("prev", "next"), ("back",)), public=True)
 _section("faqs", "سؤال‌های یک دسته", "support", "items=سؤال‌ها|" + NAV,
          rows=(("items",), ("prev", "next"), ("back",)), scoped="faq_category", public=True)
-_section("faq", "پاسخ سؤال متداول", "support", "back=بازگشت", scoped="faq")
+_section("faq", "پاسخ سؤال متداول", "support", "new=ثبت تیکت|back=بازگشت", scoped="faq")
 _section("tickets", "فهرست تیکت‌های من", "support", "items=دکمه‌های تیکت|" + NAV,
          rows=(("items",), ("prev", "next"), ("back",)))
-_section("ticket", "گفت‌وگوی تیکت و پیوست‌ها", "support", "items=دریافت پیوست|prev=قدیمی‌تر|next=جدیدتر|reply=ارسال پاسخ|back=بازگشت",
-         rows=(("items",), ("prev", "next"), ("reply",), ("back",)))
+_section("ticket", "گفت‌وگوی تیکت و پیوست‌ها", "support", "items=دریافت پیوست|prev=قدیمی‌تر|next=جدیدتر|reply=ارسال پاسخ|close=بستن تیکت|reopen=باز کردن مجدد تیکت|back=بازگشت",
+         rows=(("items",), ("prev", "next"), ("reply",), ("close",), ("reopen",), ("back",)))
+_section("ticket_confirm", "تأیید وضعیت تیکت", "support", "confirm=تأیید تغییر وضعیت|back=بازگشت")
 _section("order_summary", "خلاصه و تأیید سفارش", "purchase", "pay=پرداخت|discount=ثبت کد تخفیف|back=بازگشت")
 _section("payment_methods", "انتخاب روش پرداخت سفارش", "purchase", "wallet=کیف پول|card=کارت به کارت|crypto=پرداخت ارزی|back=بازگشت")
 _section("topup_methods", "انتخاب روش شارژ کیف پول", "purchase", "card=کارت به کارت|crypto=پرداخت ارزی|back=بازگشت")
-_section("card_payment", "پرداخت کارت‌به‌کارت", "purchase", "amount=کپی مبلغ|card=کپی شماره کارت|receipt=ارسال فیش واریز|cancel=لغو پرداخت")
+_section("card_payment", "پرداخت کارت‌به‌کارت", "purchase", "amount=کپی مبلغ به تومان|rial=کپی مبلغ به ریال|card=کپی شماره کارت|receipt=ارسال فیش واریز|cancel=لغو پرداخت", rows=(("amount", "rial"), ("card",), ("receipt",), ("cancel",)))
 _section("crypto_payment", "پرداخت ارزی", "purchase", "invoice=رفتن به صفحه پرداخت|back=بازگشت")
 _section("crypto_error", "لینک نامعتبر پرداخت ارزی", "purchase", "back=بازگشت")
 _section("order", "جزئیات و پیگیری سفارش", "purchase", "pay=ادامه پرداخت|receipt=ارسال فیش واریز|invoice=ادامه پرداخت ارزی|retry=تلاش دوباره برای پرداخت ارزی|support=پیگیری از پشتیبانی|info=ارسال اطلاعات|back=بازگشت")
 for _key, _title in (("name", "نام خریدار"), ("discount", "کد تخفیف"), ("topup", "مبلغ شارژ"),
                      ("receipt", "ارسال فیش"), ("order_info", "اطلاعات سفارش دستی"),
-                     ("ticket_subject", "موضوع تیکت"), ("ticket_body", "متن تیکت"), ("ticket_reply", "پاسخ تیکت")):
+                     ("ticket_body", "متن تیکت"), ("ticket_reply", "پاسخ تیکت")):
     _section("input_" + _key, "فرم " + _title, "input", "cancel=لغو و بازگشت")
 _section("input_contact", "فرم ارسال شماره موبایل", "input", "contact=ارسال شماره موبایل|cancel=لغو و بازگشت")
 _section("discount_error", "خطای کد تخفیف", "input", "back=بازگشت")
 _section("order_notice", "اعلان ثبت اطلاعات، رزرو و تأمین سفارش", "notice", "order=مشاهده سفارش")
 _section("info_notice", "اعلان درخواست اطلاعات سفارش", "notice", "info=ارسال اطلاعات")
 _section("wallet_notice", "اعلان نتیجه پرداخت کیف پول", "notice", "wallet=کیف پول")
+_section("ticket_notice", "اعلان ثبت یا پاسخ تیکت", "notice", "view=مشاهده تیکت|reply=ارسال پیام جدید|back=بازگشت")
+_section("reminder_notice", "یادآوری پایان اشتراک", "notice", "order=مشاهده سفارش")
 
 
 def definition(section: str) -> Section:
@@ -101,6 +105,28 @@ def definition(section: str) -> Section:
 def defaults(section: str) -> dict:
     spec = definition(section)
     return {"rows": [list(row) for row in spec.rows], "columns": 1, "item_order": [], "reverse": False}
+
+
+def upgrade_saved_layout(section: str, config: dict) -> dict:
+    """Append only newly introduced slots to a saved pre-feedback layout.
+
+    Used only when reading saved current/undo snapshots, not to relax input
+    validation. Existing row order, columns and public item order are retained.
+    """
+    introduced = {"stats": {"refresh"}, "transactions": {"items"}, "referral": {"copy"},
+                  "faq": {"new"}, "ticket": {"close", "reopen"}, "card_payment": {"rial"}}
+    base = section.split(":")[0]
+    if not isinstance(config, dict) or base not in introduced or not isinstance(config.get("rows"), list):
+        return config
+    result = copy.deepcopy(config)
+    present = {key for row in result["rows"] if isinstance(row, list) for key in row if isinstance(key, str)}
+    missing = set(dict(definition(section).slots)) - present
+    if missing and missing <= introduced[base]:
+        for key, _ in definition(section).slots:
+            if key in missing:
+                position = 0 if key == "items" else next((i for i, row in enumerate(result["rows"]) if "back" in row), len(result["rows"]))
+                result["rows"].insert(position, [key])
+    return result
 
 
 def validate(section: str, config: dict) -> dict:
@@ -150,6 +176,8 @@ def slot(section: str, button: dict) -> str | None:
                               re.fullmatch(r"(?:cat|prod|faqcat|faq):[1-9][0-9]*", str(button.get("callback_data", "")))):
         return "items"
     labels = {label: key for key, label in spec.slots if key != "items"}
+    if section.split(":")[0] == "card_payment" and button.get("text") == "کپی مبلغ":
+        return "amount"
     if button.get("text") in labels:
         return labels[button["text"]]
     if "items" in dict(spec.slots):
@@ -241,7 +269,7 @@ class LayoutEngine:
         parent = parent if isinstance(parent, dict) else {}
         config = document.get("current") or parent.get("current") or defaults(section)
         try:
-            config = validate(section, config)
+            config = validate(section, upgrade_saved_layout(section, config))
         except (TypeError, ValueError):
             config = defaults(section)
         return {"config": config, "version": document.get("version", 0), "base_version": parent.get("version", 0),

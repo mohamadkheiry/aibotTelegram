@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
-from .utils import escape, money, render_rich_text
+from .utils import duration_text, escape, money, render_rich_text
 
 
 STATUS_LABELS = {
@@ -102,7 +102,7 @@ def store_title() -> str:
 
 
 def category_title(icon: str, title: str, description: str = "") -> str:
-    prefix = f"{escape(icon)} " if icon else ""
+    prefix = f"{render_rich_text(icon)} " if icon else ""
     details = f"\n{render_rich_text(description)}" if description else ""
     return (
         f"{prefix}<b>{escape(title)}</b>{details}"
@@ -111,38 +111,31 @@ def category_title(icon: str, title: str, description: str = "") -> str:
 
 
 def product_summary(product: dict[str, Any], currency: str) -> str:
-    icon = f"{escape(product.get('icon') or '')} " if product.get("icon") else ""
+    icon = f"{render_rich_text(product.get('icon') or '')} " if product.get("icon") else ""
     description = product.get("short_description") or ""
     primary_description = f"{render_rich_text(description)}\n\n" if description else ""
-    return (
-        f"{icon}<b>{escape(product['title'])}</b>\n\n"
-        f"{primary_description}"
-        f"💵 قیمت: {money(product['price'], currency)}\n\n"
-        f"🗓 مدت اشتراک: {escape(product.get('duration') or '—')}\n"
-        f"🔒 نوع اشتراک: {render_rich_text(product.get('account_type') or '—')}\n"
-        f"🟢 فعال‌سازی: {render_rich_text(product.get('activation') or '—')}\n"
-        f"🔄 تمدید: {escape(product.get('renewable') or '—')}\n"
-        f"🛡 گارانتی: {render_rich_text(product.get('warranty') or '—')}\n"
-        "برای خرید، روی دکمه زیر بزن👇"
-    )
+    lines = [f"{icon}<b>{escape(product['title'])}</b>",
+             f"💵 قیمت: {money(product['price'], currency)}"]
+    for label, value in (("🗓 مدت اشتراک", duration_text(product.get("duration"))),
+                         ("🔒 نوع اشتراک", product.get("account_type")),
+                         ("🟢 فعال‌سازی", product.get("activation")),
+                         ("🔄 تمدید", product.get("renewable")),
+                         ("🛡 گارانتی", product.get("warranty"))):
+        if value is not None and str(value).strip():
+            lines.append(f"{label}: {render_rich_text(value)}")
+    return "\n".join(lines) + "\n\n" + primary_description + "برای خرید، روی دکمه زیر بزن👇"
 
 
 def product_details(product: dict[str, Any]) -> str:
-    features = product.get("features") or "—"
-    return (
-        f"ℹ️ <b>توضیحات تکمیلی {escape(product['title'])}</b>\n\n"
-        f"{render_rich_text(product.get('long_description') or product.get('short_description') or '—')}\n\n"
-        "✅ <b>امکانات و مزایا:</b>\n"
-        f"{escape(features)}\n\n"
-        "🐍 <b>نحوه فعال‌سازی:</b>\n"
-        f"{render_rich_text(product.get('activation_instructions') or '—')}\n\n"
-        "✅ <b>شرایط استفاده:</b>\n"
-        f"{render_rich_text(product.get('usage_terms') or '—')}\n\n"
-        "🔥 <b>گارانتی:</b>\n"
-        f"{render_rich_text(product.get('warranty') or '—')}\n\n"
-        "‼️ <b>قوانین:</b>\n"
-        f"{render_rich_text(product.get('rules') or '—')}"
-    )
+    parts = [f"ℹ️ <b>توضیحات تکمیلی {escape(product['title'])}</b>"]
+    description = product.get("long_description") or product.get("short_description")
+    if description:
+        parts.append(render_rich_text(description))
+    for key, label in (("features", "امکانات و مزایا"), ("activation_instructions", "نحوه فعال‌سازی"),
+                       ("usage_terms", "شرایط استفاده"), ("warranty", "گارانتی"), ("rules", "قوانین")):
+        if product.get(key) and str(product[key]).strip():
+            parts.append(f"<b>{label}:</b>\n{render_rich_text(product[key])}")
+    return "\n\n".join(parts)
 
 
 ASK_NAME = "👤 <b>اسمت رو وارد کن</b>\n\nبرای ثبت سفارش، نام و نام خانوادگی رو بنویس."
@@ -153,7 +146,7 @@ ASK_PHONE = (
 
 
 def order_summary(order: dict[str, Any], balance: int, currency: str) -> str:
-    icon = f"{escape(order.get('product_icon') or '')} " if order.get("product_icon") else ""
+    icon = f"{render_rich_text(order.get('product_icon') or '')} " if order.get("product_icon") else ""
     discount = int(order.get("discount_amount") or 0)
     if discount:
         pricing = (
@@ -190,7 +183,7 @@ def payment_methods(order: dict[str, Any], balance: int, currency: str) -> str:
     lines = [
         "💳 <b>روش پرداخت</b>",
         "",
-        f"{escape(order.get('product_icon') or '')} {escape(order['product_title'])}".strip(),
+        f"{render_rich_text(order.get('product_icon') or '')} {escape(order['product_title'])}".strip(),
         f"🗓مدت: {escape(order.get('product_duration') or '—')}",
         f"💵قیمت اصلی: {money(order['base_price'], currency)}",
         f"🛍تخفیف: {money(discount, currency)}",
@@ -233,18 +226,27 @@ def payment_success(order: dict[str, Any], paid_amount: int, method: str, curren
     return (
         "✅ <b>پرداخت با موفقیت تایید شد</b>\n\n"
         f"🧾 شماره سفارش: <code>{escape(order['order_no'])}</code>\n"
-        f"{escape(order.get('product_icon') or '')} {escape(order['product_title'])}".strip()
+        f"{render_rich_text(order.get('product_icon') or '')} {escape(order['product_title'])}".strip()
         + "\n"
         f"💵 مبلغ: {money(paid_amount, currency)}\n"
         f"💱روش پرداخت: {escape(method)}"
     )
 
 
+def ready_instructions(product: Mapping[str, Any]) -> str:
+    """One footer contract shared by delivery and pre-mutation size guards."""
+    parts = list(dict.fromkeys(str(product.get(key) or "").strip() for key in ("completion_text", "delivery_instructions")))
+    parts = [part for part in parts if part]
+    if len(parts) < 2:
+        return parts[0] if parts else ""
+    return "html:" + "\n\n".join(render_rich_text(part) for part in parts)
+
+
 def ready_delivery(order: dict[str, Any], content: str, instructions: str = "") -> str:
     return (
         "✅️ <b>سفارشت آماده است</b>\n\n"
         f"🧾 شماره سفارش: <code>{escape(order['order_no'])}</code>\n"
-        f"{escape(order.get('product_icon') or '')} {escape(order['product_title'])}".strip()
+        f"{render_rich_text(order.get('product_icon') or '')} {escape(order['product_title'])}".strip()
         + "\n\n"
         f"<code>{escape(content)}</code>\n\n"
         f"{render_rich_text(instructions)}\n\n"
@@ -257,7 +259,7 @@ def reserved_delivery(order: dict[str, Any]) -> str:
         "✅ <b>سفارشت ثبت و رزرو شد</b>\n\n"
         "به‌محض موجود شدن اشتراک، به‌صورت خودکار برات ارسال می‌شه.\n\n"
         f"🧾 شماره سفارش: <code>{escape(order['order_no'])}</code>\n"
-        f"{escape(order.get('product_icon') or '')} {escape(order['product_title'])}".strip()
+        f"{render_rich_text(order.get('product_icon') or '')} {escape(order['product_title'])}".strip()
         + "\n"
         "⌛️ وضعیت سفارش: در انتظار موجودی"
     )
@@ -359,6 +361,8 @@ def referral_page(
     link: str,
     currency: str,
     reward_rules: list[dict[str, Any]] | None = None,
+    *,
+    buyers: int = 0,
 ) -> str:
     rules = "\n\n".join(referral_rule(rule, currency) for rule in reward_rules or [])
     if rules:
@@ -372,7 +376,8 @@ def referral_page(
     return (
         "🪙 <b>دعوت و کسب درآمد</b>\n\n"
         f"تعداد دوستان دعوت‌شده: {invited}\n"
-        f"مجموع پاداش: {money(rewards, currency)}\n\n"
+        f"دعوت‌شده‌هایی که خرید موفق داشته‌اند: {buyers}\n"
+        f"مجموع پاداش واریزشده به کیف پول: {money(rewards, currency)}\n\n"
         "دوستانت باید ربات را برای اولین بار با لینک اختصاصی تو شروع کنند. "
         f"{explanation}\n\n"
         f"لینک دعوت:\n<code>{escape(link)}</code>"

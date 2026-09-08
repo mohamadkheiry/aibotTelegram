@@ -38,6 +38,7 @@ from .keyboards import callback_button, inline_keyboard
 from .telegram import TelegramError
 from .utils import (
     clamp_text,
+    display_datetime,
     escape,
     format_admin_text,
     is_safe_https_url,
@@ -226,10 +227,12 @@ _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{5,32}$")
 
 def _duration_days(value: str) -> int | None:
     normalized = normalize_digits(value).strip().casefold()
-    match = re.fullmatch(r"(\d+)\s*(?:روز|روزها|day|days)?", normalized)
+    match = re.fullmatch(r"(\d+)\s*(روز|روزها|days?|ماه|months?|سال|years?)?", normalized)
     if not match:
         return None
-    days = int(match.group(1))
+    unit = match.group(2) or "روز"
+    factor = 30 if unit in {"ماه", "month", "months"} else 365 if unit in {"سال", "year", "years"} else 1
+    days = int(match.group(1)) * factor
     return days if days > 0 else None
 
 
@@ -657,15 +660,11 @@ class AdminController:
                     self._answer(callback_id, "پرداخت تأیید شد.")
                     self._send(chat_id, "پرداخت تأیید شد.")
                 else:
-                    reason = "فیش پرداخت توسط مدیریت تأیید نشد."
-                    self._reject_payment_record(
-                        payment,
-                        reason,
-                        int(admin["id"]),
-                        source="admin_callback",
-                    )
-                    self._answer(callback_id, "پرداخت رد شد.")
-                    self._send(chat_id, f"پرداخت رد شد.\nدلیل: {escape(reason)}")
+                    if payment["status"] not in {"pending", "verifying"}:
+                        raise AdminInputError("این پرداخت دیگر قابل ردکردن نیست.")
+                    self.button_ui.begin("reject_payment", query, user, admin,
+                                         selected=str(payment["payment_number"]))
+                    self._answer(callback_id, "دلیل رد را بنویسید؛ هنوز پرداخت رد نشده است.")
                 return True
             self._answer(callback_id, "عملیات مدیریت شناخته نشد.", show_alert=True)
         except _ADMIN_INPUT_ERRORS as exc:
@@ -1861,10 +1860,14 @@ class AdminController:
         elif field == "renewable":
             value = _boolean_value(value)
         elif field == "features":
-            value = [item.strip() for item in value.replace("؛", ";").split(";") if item.strip()]
+            if value.lower().startswith("html:"):
+                format_admin_text(value)
+                value = [value]
+            else:
+                value = [item.strip() for item in value.replace("؛", ";").split(";") if item.strip()]
         elif field == "reminder_days":
             try:
-                value = [int(item.strip()) for item in value.replace("؛", ",").split(",") if item.strip()]
+                value = [] if value.strip().casefold() in {"off", "غیرفعال"} else [int(item.strip()) for item in value.replace("؛", ",").split(",") if item.strip()]
             except ValueError as exc:
                 raise AdminInputError("روزهای یادآوری باید عدد و با ویرگول جدا شوند.") from exc
             if any(day < 0 for day in value):
@@ -2191,7 +2194,7 @@ class AdminController:
             f"\nمبلغ: {money(int(order.get('subtotal_amount') or 0), currency)}"
             f"\nتخفیف: {money(int(order.get('discount_amount') or 0), currency)}"
             f"\nمانده پرداخت: {money(int(order.get('payable_amount') or 0), currency)}"
-            f"\nزمان ثبت: {escape(order.get('created_at') or '—')}"
+            f"\nزمان ثبت (تهران): {escape(display_datetime(order.get('created_at'), self.settings.timezone))}"
         )
         return content
 
@@ -2910,9 +2913,9 @@ class AdminController:
             f"\nموجودی: {money(balance, currency)}"
             f"\nتعداد سفارش: {order_count}"
             f"\nمجموع خرید: {money(purchase_total, currency)}"
-            f"\nتاریخ عضویت: {escape(target.get('joined_at') or '—')}"
-            f"\nاولین خرید: {escape(first_purchase_at)}"
-            f"\nآخرین خرید: {escape(last_purchase_at)}"
+            f"\nتاریخ عضویت (تهران): {escape(display_datetime(target.get('joined_at'), self.settings.timezone))}"
+            f"\nاولین خرید: {escape(display_datetime(first_purchase_at, self.settings.timezone))}"
+            f"\nآخرین خرید: {escape(display_datetime(last_purchase_at, self.settings.timezone))}"
             f"\nدعوت‌شده‌ها: {int(referral.get('invited_count') or 0)}"
             f"\nپاداش دعوت: {money(int(referral.get('reward_total') or 0), currency)}"
             f"\nتعداد تراکنش‌ها: {transaction_count:,}"
@@ -2926,7 +2929,7 @@ class AdminController:
         if transactions:
             lines.append("\n<b>آخرین تراکنش‌ها:</b>")
             lines.extend(
-                f"{escape(str(item['created_at'])[:16])} | "
+                f"{escape(display_datetime(item['created_at'], self.settings.timezone))} | "
                 f"{money(int(item['amount_signed']), currency)} | "
                 f"نوع: {escape(texts.transaction_type(item.get('entry_type'), item.get('method')))} | "
                 f"دلیل: {escape(item.get('reason') or '—')} | "
@@ -3034,7 +3037,7 @@ class AdminController:
         )
         currency = getattr(self.settings, "currency_label", "تومان")
         rows = [
-            f"{escape(str(item['created_at'])[:19])} | "
+            f"{escape(display_datetime(item['created_at'], self.settings.timezone))} | "
             f"{money(int(item['amount_signed']), currency)} | "
             f"نوع: {escape(texts.transaction_type(item.get('entry_type'), item.get('method')))} | "
             f"دلیل: {escape(item.get('reason') or '—')} | "
@@ -3081,7 +3084,7 @@ class AdminController:
             )
             rows.append(
                 f"<code>{item.get('invitee_chat_id') or '—'}</code> | {username} | "
-                f"{escape(item['status'])} | {escape(str(item['created_at'])[:10])} | "
+                f"{escape(item['status'])} | {escape(display_datetime(item['created_at'], self.settings.timezone))} | "
                 f"{int(item.get('reward_count') or 0):,} پاداش، "
                 f"{money(int(item.get('reward_total') or 0), currency)}"
             )
@@ -3130,7 +3133,7 @@ class AdminController:
                 f"پاداش <code>{item['id']}</code> | {escape(item['event_type'])} | "
                 f"{money(int(item['amount']), currency)} | زیرمجموعه {invitee} | "
                 f"سفارش {escape(item.get('order_number') or '—')} | "
-                f"{escape(str(item['created_at'])[:19])}"
+                f"{escape(display_datetime(item['created_at'], self.settings.timezone))}"
             )
         stable_id = target.get("chat_id") or target_id
         self._send_page(
@@ -3290,11 +3293,14 @@ class AdminController:
         )
         if current is None:
             raise AdminInputError("کد تخفیف پیدا نشد.")
-        active = self._admin_toggle_target(
-            message,
-            f"discount:{int(current['id'])}:active",
-            bool(current["is_active"]),
-        )
+        target = (self._button_context or {}).get("state", {}).get("discount_target")
+        if target and int(target["id"]) == int(current["id"]):
+            active = bool(target["active"])
+            update_id = self._admin_update_id(message)
+            if update_id is not None:
+                active = bool(self.db.get_or_store_admin_update_effect(update_id, f"discount:{int(current['id'])}:active", active))
+        else:
+            active = self._admin_toggle_target(message, f"discount:{int(current['id'])}:active", bool(current["is_active"]))
         method = self._public("set_discount_active")
         if method is not None:
             method(code, active)

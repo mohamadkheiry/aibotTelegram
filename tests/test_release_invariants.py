@@ -428,15 +428,15 @@ class ReleaseFinancialSafetyTests(unittest.TestCase):
                 },
             }
         )
-        self.assertIn(self.OWNER_CHAT_ID, {copy["chat_id"] for copy in self.telegram.copies})
-        self.assertNotIn(support_chat_id, {copy["chat_id"] for copy in self.telegram.copies})
+        self.assertIn(self.OWNER_CHAT_ID, {photo["chat_id"] for photo in self.telegram.photos})
+        self.assertNotIn(support_chat_id, {photo["chat_id"] for photo in self.telegram.photos})
+        self.assertEqual(self.telegram.copies, [])
         self.app._reconcile_card_receipt_alerts()
         self.app._reconcile_card_receipt_alerts()
         alerts = [
             message
-            for message in self.telegram.messages
-            if payment["payment_number"] in message["text"]
-            and "/payment_detail" in message["text"]
+            for message in self.telegram.photos
+            if payment["payment_number"] in message.get("caption", "")
         ]
         self.assertEqual(len(alerts), 1)
         self.handle_admin(f"/payment_detail {payment['payment_number']}")
@@ -451,9 +451,9 @@ class ReleaseFinancialSafetyTests(unittest.TestCase):
         self.app._reconcile_card_receipt_alerts()
         alerts = [
             message
-            for message in self.telegram.messages
-            if payment["payment_number"] in message["text"]
-            and "/payment_detail" in message["text"]
+            for message in [*self.telegram.photos, *self.telegram.documents]
+            if payment["payment_number"] in message.get("caption", "")
+            and "فیش پرداخت نیازمند بررسی" in message.get("caption", "")
         ]
         self.assertEqual(len(alerts), 2)
         self.assertEqual(len(self._outbox_keys(":receipt:")), 2)

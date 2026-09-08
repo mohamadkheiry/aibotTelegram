@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -207,6 +208,7 @@ class Database:
         product_icon: str | None,
         payload: str,
         delivery_instructions: str | None,
+        completion_text: str | None = None,
         order_number: str = "ORD-YYYYMMDD-XXXXXXXXXXXXXXXX",
     ) -> None:
         """Reject stock that cannot fit in one safe Telegram delivery."""
@@ -222,7 +224,7 @@ class Database:
                 "product_icon": product_icon or "",
             },
             str(payload),
-            str(delivery_instructions or ""),
+            texts.ready_instructions({"completion_text": completion_text, "delivery_instructions": delivery_instructions}),
         )
         if len(rendered) > cls.TELEGRAM_SAFE_MESSAGE_LENGTH:
             raise ValidationError(
@@ -1405,7 +1407,7 @@ class Database:
         No schema change: layouts are versioned settings. Replay after commit
         returns the recorded result even when a different admin has since saved.
         """
-        from .customer_layouts import defaults, definition, validate
+        from .customer_layouts import defaults, definition, upgrade_saved_layout, validate
 
         try:
             spec = definition(section)
@@ -1454,13 +1456,13 @@ class Database:
             if operation == "undo":
                 if not history:
                     raise ConflictError("چیدمان قبلی برای بازگردانی وجود ندارد.")
-                current, history = history[-1], history[:-1]
+                current, history = upgrade_saved_layout(section, history[-1]), history[:-1]
             else:
                 # Snapshot what users actually saw, including an inherited
                 # layout. Undo must not change meaning if the parent changes.
                 previous = current or parent.get("current") or defaults(section)
                 try:
-                    previous = validate(section, previous)
+                    previous = validate(section, upgrade_saved_layout(section, previous))
                 except (ValueError, TypeError):
                     previous = defaults(section)
                 history = [*history, previous][-10:]
@@ -2239,7 +2241,7 @@ class Database:
             if effective_type != "ready" and bool(effective_reserve):
                 raise ValidationError("reservations are valid only for ready products")
             if effective_type == "ready" and set(changes).intersection(
-                {"name", "icon", "delivery_instructions"}
+                {"name", "icon", "delivery_instructions", "completion_text"}
             ):
                 effective_name = str(changes.get("name", current["name"]))
                 effective_icon = changes.get("icon", current["icon"])
@@ -2255,6 +2257,7 @@ class Database:
                         product_icon=effective_icon,
                         payload=item["payload"],
                         delivery_instructions=effective_instructions,
+                        completion_text=changes.get("completion_text", current["completion_text"]),
                     )
             if "category_id" in changes:
                 self._required(
@@ -2361,6 +2364,7 @@ class Database:
                 product_icon=product["icon"],
                 payload=payload,
                 delivery_instructions=product["delivery_instructions"],
+                completion_text=product["completion_text"],
             )
             existing = connection.execute(
                 "SELECT * FROM inventory_items WHERE product_id = ? AND payload_hash = ?",
@@ -2462,7 +2466,7 @@ class Database:
                 """
                 SELECT inventory.*, product.name AS product_name,
                        product.icon AS product_icon,
-                       product.delivery_instructions
+                       product.delivery_instructions, product.completion_text
                 FROM inventory_items inventory
                 JOIN products product ON product.id = inventory.product_id
                 WHERE inventory.id = ?
@@ -2486,6 +2490,7 @@ class Database:
                 product_icon=item["product_icon"],
                 payload=str(payload),
                 delivery_instructions=item["delivery_instructions"],
+                completion_text=item["completion_text"],
             )
             connection.execute(
                 "UPDATE inventory_items SET payload = ?, payload_hash = ? WHERE id = ?",
@@ -3255,7 +3260,7 @@ class Database:
             raise OutOfStockError("available inventory belongs to an earlier paid order")
         candidate = connection.execute(
             """
-            SELECT inventory.*, product.delivery_instructions
+            SELECT inventory.*, product.delivery_instructions, product.completion_text
             FROM inventory_items inventory
             JOIN products product ON product.id = inventory.product_id
             WHERE inventory.product_id = ? AND inventory.status = 'available'
@@ -3270,6 +3275,7 @@ class Database:
             product_icon=order["product_icon_snapshot"],
             payload=candidate["payload"],
             delivery_instructions=candidate["delivery_instructions"],
+            completion_text=candidate["completion_text"],
             order_number=order["order_number"],
         )
         cursor = connection.execute(
@@ -3737,7 +3743,7 @@ class Database:
             )
 
     def list_user_transactions(
-        self, user_id: int, *, limit: int = 100, offset: int = 0
+        self, user_id: int, *, limit: int = 100, offset: int = 0, include_pending: bool = False
     ) -> list[dict[str, Any]]:
         """Return wallet movements plus card/crypto order purchases.
 
@@ -3758,7 +3764,8 @@ class Database:
                         SELECT 'wallet:' || we.id AS transaction_key,
                                we.created_at, we.amount_signed, we.entry_type,
                                we.reason, we.order_id, we.payment_id,
-                               o.order_number, p.payment_number, NULL AS method
+                               o.order_number, p.payment_number, COALESCE(p.method, 'wallet') AS method,
+                               'paid' AS status
                         FROM wallet_entries we
                         LEFT JOIN orders o ON o.id = we.order_id
                         LEFT JOIN payments p ON p.id = we.payment_id
@@ -3780,20 +3787,28 @@ class Database:
                                     ELSE 'پرداخت خرید (' || p.method || ')'
                                 END,
                                p.order_id, p.id, o.order_number,
-                               p.payment_number, p.method
+                               p.payment_number, p.method, p.status
                         FROM payments p
                         JOIN orders o ON o.id = p.order_id
                         WHERE p.user_id = ? AND p.purpose = 'order'
                           AND p.status IN ('paid', 'refunded')
+                        UNION ALL
+                        SELECT 'payment:' || p.id, p.created_at,
+                               CASE WHEN p.purpose='wallet_topup' THEN p.base_amount ELSE -p.base_amount END,
+                               CASE WHEN p.purpose='wallet_topup' THEN 'topup' ELSE 'external_purchase' END,
+                               '', p.order_id, p.id,
+                               o.order_number, p.payment_number, p.method, p.status
+                        FROM payments p LEFT JOIN orders o ON o.id=p.order_id
+                        WHERE p.user_id=? AND ?=1 AND p.status NOT IN ('paid', 'refunded')
                     ) transactions
                     ORDER BY created_at DESC, transaction_key DESC
                     LIMIT ? OFFSET ?
                     """,
-                    (user_id, user_id, bounded, start),
+                    (user_id, user_id, user_id, int(include_pending), bounded, start),
                 ).fetchall()
             )
 
-    def count_user_transactions(self, user_id: int) -> int:
+    def count_user_transactions(self, user_id: int, *, include_pending: bool = False) -> int:
         with self._read() as connection:
             return int(
                 connection.execute(
@@ -3804,11 +3819,34 @@ class Database:
                         SELECT COUNT(*) FROM payments
                         WHERE user_id = ? AND purpose = 'order'
                           AND status IN ('paid', 'refunded')
+                    ) + (
+                        SELECT COUNT(*) FROM payments
+                        WHERE user_id=? AND ?=1 AND status NOT IN ('paid', 'refunded')
                     )
                     """,
-                    (int(user_id), int(user_id)),
+                    (int(user_id), int(user_id), int(user_id), int(include_pending)),
                 ).fetchone()[0]
             )
+
+    def get_user_transaction(self, user_id: int, transaction_key: str) -> dict[str, Any] | None:
+        """Own-history detail by stable source/id; no enumeration or payloads."""
+        match = re.fullmatch(r"(wallet|payment):([1-9][0-9]{0,18})", transaction_key)
+        if not match or int(match[2]) >= 2**63:
+            return None
+        with self._read() as connection:
+            if match[1] == "wallet":
+                query = ("SELECT we.id, we.created_at, we.amount_signed, we.entry_type, we.reason, we.order_id, we.payment_id, "
+                         "o.order_number, p.payment_number, COALESCE(p.method,'wallet') method, 'paid' status "
+                         "FROM wallet_entries we LEFT JOIN orders o ON o.id=we.order_id LEFT JOIN payments p ON p.id=we.payment_id "
+                         "WHERE we.id=? AND we.user_id=?")
+            else:
+                query = ("SELECT p.id, COALESCE(p.confirmed_at,p.created_at) created_at, "
+                         "CASE WHEN p.purpose='wallet_topup' THEN p.base_amount ELSE -p.base_amount END amount_signed, "
+                         "CASE WHEN p.purpose='wallet_topup' THEN 'topup' ELSE 'external_purchase' END entry_type, "
+                         "'' reason, p.order_id, p.id payment_id, o.order_number, p.payment_number, p.method, p.status "
+                         "FROM payments p LEFT JOIN orders o ON o.id=p.order_id WHERE p.id=? AND p.user_id=?")
+            row = _row(connection.execute(query, (int(match[2]), int(user_id))).fetchone())
+            return {**row, "transaction_key": transaction_key} if row else None
 
     wallet_balance = get_wallet_balance
     list_wallet_entries = get_wallet_entries
@@ -7723,6 +7761,30 @@ class Database:
                 ).fetchone()[0]
             )
 
+    def set_user_ticket_status(self, ticket_id: int, user_id: int, status: str, *,
+                               expected_status: str, expected_updated_at: str, expected_message_count: int,
+                               idempotency_key: str, body: str, reply_markup: Mapping[str, Any]) -> dict[str, Any]:
+        """Owner-scoped close/reopen with stale-preview protection and outbox."""
+        if status not in {"open", "closed"}:
+            raise ValidationError("وضعیت تیکت معتبر نیست.")
+        with self._transaction() as connection:
+            ticket = self._required(connection, "SELECT * FROM tickets WHERE id=? AND user_id=?", (ticket_id, user_id), "ticket")
+            self._required(connection, "SELECT id FROM users WHERE id=? AND is_blocked=0", (user_id,), "user")
+            prior = connection.execute("SELECT id FROM outbound_messages WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            if prior:
+                self._queue_user_message_in_transaction(connection, user_id, body, idempotency_key, _timestamp(None), reply_markup=reply_markup)
+                return dict(ticket)
+            count = connection.execute("SELECT COUNT(*) FROM ticket_messages WHERE ticket_id=?", (ticket_id,)).fetchone()[0]
+            if ticket["status"] != expected_status or ticket["updated_at"] != expected_updated_at or count != expected_message_count:
+                raise ConflictError("تیکت بعد از نمایش تأیید تغییر کرده است؛ مکالمه را دوباره باز کنید.")
+            if status == "open" and ticket["status"] != "closed":
+                raise ConflictError("این تیکت بسته نیست.")
+            stamp = _timestamp(None)
+            connection.execute("UPDATE tickets SET status=?, closed_at=CASE WHEN ?='closed' THEN ? ELSE NULL END, updated_at=? WHERE id=? AND user_id=?",
+                               (status, status, stamp, stamp, ticket_id, user_id))
+            self._queue_user_message_in_transaction(connection, user_id, body, idempotency_key, stamp, reply_markup=reply_markup)
+            return dict(self._required(connection, "SELECT * FROM tickets WHERE id=?", (ticket_id,), "ticket"))
+
     def close_ticket(
         self,
         ticket_id: int,
@@ -8914,6 +8976,16 @@ class Database:
                 """,
                 (user_id,),
             ).fetchone()[0]
+            buyers = connection.execute(
+                """
+                SELECT COUNT(*) FROM referrals r WHERE r.inviter_user_id = ?
+                  AND EXISTS (
+                    SELECT 1 FROM orders o WHERE o.user_id = r.invitee_user_id
+                      AND o.order_origin = 'customer' AND o.subtotal_amount > 0
+                      AND o.status IN ('paid','awaiting_stock','awaiting_info','processing','completed')
+                  )
+                """, (user_id,),
+            ).fetchone()[0]
             inviter = connection.execute(
                 """
                 SELECT u.* FROM referrals r JOIN users u ON u.id = r.inviter_user_id
@@ -8924,6 +8996,7 @@ class Database:
             return {
                 **dict(stats),
                 "reward_total": int(rewards),
+                "buyer_count": int(buyers),
                 "invited": int(stats["invited_count"]),
                 "rewards": int(rewards),
                 "inviter": _row(inviter),

@@ -228,8 +228,10 @@ class UserHistoryPaginationTests(unittest.TestCase):
 
         first = self.telegram.messages[-1]
         self.assertIn("35", first["text"])
-        self.assertIn("transaction-35", first["text"])
-        self.assertNotIn("transaction-01", first["text"])
+        first_keys = [c for c in self.callbacks(first) if c.startswith("transaction:")]
+        self.assertEqual(len(first_keys), 10)
+        self.assertTrue(any(":wallet:35:" in c for c in first_keys))
+        self.assertFalse(any(":wallet:1:" in c for c in first_keys))
         self.assertIn("profile:transactions:1", self.callbacks(first))
 
         surfaces = [first]
@@ -238,7 +240,14 @@ class UserHistoryPaginationTests(unittest.TestCase):
             page += 1
             self.app.process_update(self.callback(f"profile:transactions:{page}"))
             surfaces.append(self.telegram.edits[-1])
-        combined = "\n".join(surface["text"] for surface in surfaces)
+        details = []
+        for surface in surfaces:
+            for data in self.callbacks(surface):
+                if data.startswith("transaction:"):
+                    self.app.process_update(self.callback(data))
+                    details.append(self.telegram.edits[-1]["text"])
+        self.assertEqual(len(details), 35)
+        combined = "\n".join(details)
         for index in range(1, 36):
             self.assertEqual(combined.count(f"transaction-{index:02d}"), 1)
         self.assertIn("profile:transactions:0", self.callbacks(surfaces[1]))

@@ -2,11 +2,19 @@
 
 آیکون‌ها: `button_icons.py` resolver صرفاً نمایشی ۴۵ نماد Lucide است؛ در کپی `LayoutEngine.prepare` اعمال می‌شود. manifest عمومی از env بارگذاری و اعتبارسنجی می‌شود؛ آیکون صریح و outbox اصلی دست‌نخورده‌اند. ابزارهای بازتولید/انتشار و تست‌های `test_button_icons.py` در [BUTTON_ICONS.md](BUTTON_ICONS.md) مستند شده‌اند.
 
-برای تغییر هر صفحهٔ کاربر، [CUSTOMER_LAYOUTS.md](CUSTOMER_LAYOUTS.md) الزامی است. همهٔ ۳۹ نوع صفحه باید در `customer_layouts.SECTIONS` و ساخت markupِ sectionدار پوشش داده شوند؛ AST test، صفحهٔ بی‌ثبت را رد می‌کند. default سند را حفظ کنید، slot تازه را در registry/config tests مستند کنید و raw callback/URL را از config مدیر نسازید. تست‌های layout همراه تمام تست‌های خرید/outbox اجرا شوند. `_customer_layout/_layout_slot/_layout_item` فقط metadata داخلی‌اند و باید پیش از شبکه حذف شوند؛ تغییر ترتیب ارسالی نباید outbox canonical را mutate کند.
+برای تغییر هر صفحهٔ کاربر، [CUSTOMER_LAYOUTS.md](CUSTOMER_LAYOUTS.md) الزامی است. همهٔ ۴۲ نوع صفحه باید در `customer_layouts.SECTIONS` و ساخت markupِ sectionدار پوشش داده شوند؛ AST test، صفحهٔ بی‌ثبت را رد می‌کند. default سند را حفظ کنید، slot تازه را در registry/config tests مستند کنید و raw callback/URL را از config مدیر نسازید. تست‌های layout همراه تمام تست‌های خرید/outbox اجرا شوند. `_customer_layout/_layout_slot/_layout_item` فقط metadata داخلی‌اند و باید پیش از شبکه حذف شوند؛ تغییر ترتیب ارسالی نباید outbox canonical را mutate کند.
 
 این سند مرجع فنی توسعه‌دهنده یا agentی است که باید بدون حدس‌زدن معماری، پروژه را تغییر دهد. درخواست صریح کاربر و منابع اصلی نیازمندی، قصد کسب‌وکار را تعیین می‌کنند؛ `README.md` و اسناد `docs/` شرح جاری‌اند و schema، کد و تست رفتار موجود را نشان می‌دهند. سبز بودن تست مجوز نادیده‌گرفتن نیازمندی اصلی نیست. در ممیزی تطبیق یا اصلاحِ درخواست‌شده، مغایرت تأییدشده را با تست پذیرش و تغییر هماهنگ کد/سند برطرف کنید؛ ابهام واقعی خارج از اختیار داده‌شده نیازمند تصمیم کاربر است.
 
 ## اصول راهنما
+
+قرارداد بازخورد جدید در [CLIENT_FEEDBACK_2026-09-08.md](CLIENT_FEEDBACK_2026-09-08.md) و `tests/test_client_feedback.py` است. `telegram_input_text` entityهای UTF-16 تلگرام را به HTML معتبر تبدیل می‌کند؛ متن را پیش از تبدیل strip نکنید. range متقاطع/نامعتبر و لینک ناامن نباید markup فعال شوند. `html:` قدیمی معتبر پشتیبانی می‌شود؛ عنوان دکمه با بدنه rich یکی نیست.
+
+`texts.ready_instructions` متن تکمیل/راهنمای مشترک renderer و guard دامنه است. تغییر completion_text نیز ممکن است سقف تحویل را بشکند؛ تنها طول فیلد کافی نیست. `display_datetime` فقط نمایش را به timezone تبدیل می‌کند، نه ذخیره UTC را.
+
+منوی اصلی مستقیماً inline است؛ reply قدیمی/contact با پیام پاک‌سازی کوتاه و حذف best-effort همان پیام جمع می‌شود. سازگاری outbox فقط برای شکل دقیق منوی قدیمی است، نه هر markup متفاوت. لغو دکمه‌ای با access guard بسته state را پاک می‌کند و مجوز منو نمی‌دهد.
+
+تأیید بستن/بازگشایی تیکت مشتری مالکیت، nonce، prompt_message_id، status، updated_at و تعداد پیام‌ها را می‌سنجد؛ snapshot پیش از ارسال prompt خوانده می‌شود. خروج تأیید را لغو می‌کند؛ تغییر status و notice در DB یک transaction است. جست‌وجوی انبار payload را وارد state/فهرست/لاگ نمی‌کند.
 
 برای پذیرش سرتاسری، `tests/test_spec_end_to_end.py` مسیرها را با keyboard و message ID صادرشده به هم وصل می‌کند؛ مستقیم صدا زدن handler یا ساختن callback از state جای این تست نیست. fake فقط مرز Telegram را جایگزین می‌کند و دیتابیس موقت است. `order_information` در render، callback، state و تراکنش نهایی باید snapshot نوع manual را کنترل کند؛ `processing` به‌تنهایی کافی نیست. خروج متنی از فرم نیز باید access guard را رعایت و در صورت رد، فقط state را پاک کند. عنوان فیلتر inactive و شروط combined را با معنای query همگام نگه دارید. نتایج، چهار علت مستقل و مرز تست زنده در [FULL_SPEC_AUDIT.md](FULL_SPEC_AUDIT.md) ثبت شده‌اند.
 
@@ -26,7 +34,7 @@
 - عملیات مالی، تخصیص موجودی و تغییر وضعیت باید در لایه `Database` و داخل تراکنش انجام شوند؛ handler تلگرام محل مناسبی برای SQL مالی نیست.
 - هر عملیات قابل تکرار باید کلید idempotency پایدار داشته باشد و استفاده مجدد ناسازگار از همان کلید با `ConflictError` رد شود.
 - هیچ secret واقعی، payload واقعی موجودی، شماره تماس واقعی یا داده واقعی پرداخت را در تست، مستندات، commit، exception یا log قرار ندهید. fixture کاملاً ساختگی و غیرقابل انتساب برای تست مجاز است.
-- منوی اصلی canonical از `inline_main_menu_keyboard` استفاده می‌کند: پنج ردیف، شش label بدون Unicode emoji، styleهای تعریف‌شده و URL مستقیم و اعتبارسنجی‌شده کانال. در تغییر این منو، پاک‌شدن reply keyboard قبلی، ارسال فقط یک متن اصلی، fallback کوتاه پس از خطای اتصال markup و عدم ارسال هنگام cancellation را حفظ کنید. shortcut متنی/منوی reply قدیمی و keyboard ثبت contact را به‌اشتباه حذف نکنید؛ شاهد این قرارداد `tests/test_spec_channel_audit.py` است.
+- منوی اصلی canonical از `inline_main_menu_keyboard` استفاده می‌کند: پنج ردیف، شش label بدون Unicode emoji، styleهای تعریف‌شده و URL مستقیم و اعتبارسنجی‌شده کانال. پاک‌سازی reply قدیمی و یک پیام اصلی را حفظ کنید؛ reply را با edit به inline تبدیل نکنید. cancellation transport پیام بعدی نمی‌سازد. shortcut متنی و keyboard موقت contact سازگارند؛ شاهد `tests/test_spec_channel_audit.py` است.
 
 ## نقشه مخزن
 
@@ -304,7 +312,7 @@ outbox یک claim پنج‌دقیقه‌ای قابل بازیابی دارد و
 7. اعلان حساس را قبل از ارسال در outbox ثبت کنید.
 8. تست happy path، callback malformed، callback قدیمی، entity کاربر دیگر، replay، restart و شکست بین commit و send را اضافه کنید.
 
-فقط private chat معتبر است. contact باید متعلق به همان Telegram user باشد. متن معمولی escape می‌شود؛ rich text فقط با پیشوند صریح `html:` و validator محدود Telegram پذیرفته می‌شود.
+فقط private chat معتبر است و contact باید متعلق به همان Telegram user باشد. متن معمولی escape می‌شود؛ rich text از `html:` معتبر یا تبدیل entityهای UTF-16 فرم Telegram پذیرفته می‌شود و هر دو از validator محدود می‌گذرند.
 
 ## توسعه رابط دکمه‌ای مدیریت
 

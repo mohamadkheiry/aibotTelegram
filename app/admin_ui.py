@@ -18,7 +18,7 @@ from .admin_forms import ACTIONS, GROUP_PARENTS, GROUPS, MAIN_GROUPS, Action, Fi
 from .db import ConflictError, DatabaseError
 from .keyboards import callback_button, contains_emoji, inline_keyboard
 from .telegram import TelegramError
-from .utils import escape, normalize_digits, normalize_username
+from .utils import escape, money, normalize_digits, normalize_username
 
 
 class ButtonInputError(ValueError):
@@ -153,7 +153,7 @@ class AdminButtonUI:
             if group in GROUP_PARENTS:
                 parent = GROUP_PARENTS[group]
                 rows.append([self._button("بازگشت به " + GROUPS[parent], "g:" + parent)])
-        rows.extend([[self._button("پنل مدیریت", "home")], [callback_button("منوی اصلی", "menu")]])
+        rows.append([self._button("پنل مدیریت", "home"), callback_button("منوی اصلی", "menu")])
         return rows
 
     def bot_status(self) -> tuple[str, list[list[dict]]]:
@@ -215,6 +215,9 @@ class AdminButtonUI:
                     rows.append([self._button(GROUPS[child], "g:" + child)])
             if group == "broadcast" and self.allowed(ACTIONS["message"], admin["role"]):
                 rows.insert(0, [self._button("ارسال پیام تکی", "a:message")])
+            if group == "users":
+                rows.insert(0, [self._button("جست‌وجوی کاربر", "a:user")])
+            rows = self._compact_related_rows(rows)
             title = GROUPS[group]
             if group == "settings" and admin["role"] in {"owner", "admin"}:
                 rows.insert(0, [self._button("چیدمان دکمه‌های کاربران", "l:home", style="primary")])
@@ -231,6 +234,25 @@ class AdminButtonUI:
                    rows + self.navigation(GROUP_PARENTS.get(group)) if group else rows + [[callback_button("منوی اصلی", "menu")]])
         if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins", "admin:layouts"}:
             self._retire_prompt(user, previous["data"].get("prompt_message_id"))
+
+    @staticmethod
+    def _compact_related_rows(rows: list[list[dict]]) -> list[list[dict]]:
+        pairs = {frozenset(pair) for pair in (("block", "unblock"), ("admin_enable", "admin_disable"),
+                 ("inventory_disable", "inventory_enable"), ("user_referrals", "user_rewards"))}
+
+        def action(button: dict) -> tuple[str, str]:
+            parts = button.get("callback_data", "").removeprefix("adm:ui:").split(":", 2)
+            return (parts[1], parts[2] if len(parts) == 3 else "") if len(parts) > 1 and parts[0] in {"a", "open"} else ("", "")
+
+        compact: list[list[dict]] = []
+        for row in rows:
+            if compact and len(row) == len(compact[-1]) == 1:
+                previous, current = action(compact[-1][0]), action(row[0])
+                if previous[1] == current[1] and frozenset((previous[0], current[0])) in pairs:
+                    compact[-1].extend(row)
+                    continue
+            compact.append(list(row))
+        return compact
 
     @staticmethod
     def _input_id(event: dict) -> str:
@@ -334,6 +356,21 @@ class AdminButtonUI:
             return True
         if suffix.startswith("g:"):
             self.home(user, admin, suffix[2:])
+            return True
+        if suffix.startswith("discount:"):
+            raw = suffix.split(":", 1)[1]
+            if not raw.isdigit():
+                raise ButtonInputError("شناسه تخفیف معتبر نیست.")
+            self.discount_detail(int(raw), user, admin)
+            return True
+        if suffix.startswith("discountdo:"):
+            parts = suffix.split(":")
+            if len(parts) != 3 or not parts[1].isdigit() or parts[2] not in {"toggle", "delete"}:
+                raise ButtonInputError("دکمه تخفیف معتبر نیست.")
+            item = self.controller._query_one("SELECT code FROM discounts WHERE id=?", (int(parts[1]),))
+            if item is None:
+                raise ButtonInputError("این تخفیف حذف شده است.")
+            self.begin("discount_" + parts[2], event, user, admin, selected=item["code"])
             return True
         if suffix.startswith("a:"):
             self.begin(suffix[2:], event, user, admin)
@@ -484,6 +521,14 @@ class AdminButtonUI:
             raise ButtonInputError("در این مرحله یکی از دکمه‌ها را انتخاب کنید.")
         else:
             value = self.validate(field, text)
+            rich_fields = {"icon", "description", "short_description", "long_description", "account_type",
+                           "activation", "warranty", "activation_instructions", "usage_terms", "rules",
+                           "info_request_text", "completion_text", "delivery_instructions", "features"}
+            if (field.key in {"body", "delivery", "answer", "description", "icon"}
+                    or state["action"] in {"product_set", "category_set", "faq_set"}
+                    and field.key == "value" and state["values"].get("field") in rich_fields | {"answer"}):
+                from .utils import telegram_input_text
+                value = telegram_input_text(text, event.get("entities"))
             self.set_value(state, field, value, value)
         state["revision"] += 1
         state["last_input"] = identity
@@ -523,8 +568,16 @@ class AdminButtonUI:
             raise ButtonInputError("کد را بدون فاصله یا جداکننده وارد کنید.")
         if field.kind == "reminders":
             value = value.replace("،", ",")
+            if value.lower() in {"off", "غیرفعال"}:
+                return "off"
             if not re.fullmatch(r"\d+(?:\s*,\s*\d+)*", value):
                 raise ButtonInputError("روزها باید عدد صحیح نامنفی باشند؛ نمونه: ۳،۱،۰")
+            return value
+        if field.kind == "duration":
+            if value in {"بدون انقضا", "مادام العمر"}:
+                return "بدون انقضا"
+            if not re.fullmatch(r"[1-9][0-9]*\s*(?:روز|ماه|سال|days?|months?|years?)?", value.casefold()):
+                raise ButtonInputError("مدت را با عدد مثبت و واحد بنویسید؛ نمونه: ۳ ماه یا ۳۰ روز.")
             return value
         # Do not alter digits, spacing, pipes or HTML of secret/free text.
         return text if field.kind == "secret" else text.strip()
@@ -577,6 +630,9 @@ class AdminButtonUI:
             state.update(option_total=total, option_pages=pages)
             return [(str(row["value"]), str(row["label"])) for row in rows]
         choices = [(value, label) for label, value in field.options]
+        if state.get("action") == "payment" and field.key == "method":
+            choices = [(value, label + " · " + ("فعال" if self.db.get_setting(
+                f"payment_{value}_enabled", value != "crypto") else "غیرفعال")) for value, label in choices]
         if field.key == "role" and admin["role"] != "owner":
             choices = [(value, label) for value, label in choices if value != "owner"]
         if field.kind == "date":
@@ -611,6 +667,15 @@ class AdminButtonUI:
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
+            if action.key in {"discount_toggle", "discount_delete"}:
+                item = self.controller._query_one("SELECT * FROM discounts WHERE code_key=?", (state["values"]["target"].casefold(),))
+                if item is None:
+                    raise ButtonInputError("این کد تخفیف دیگر وجود ندارد.")
+                lines.append(f"کد انتخاب‌شده: {escape(item['code'])}\nوضعیت فعلی: {'فعال' if item['is_active'] else 'غیرفعال'}")
+                if action.key == "discount_toggle":
+                    if state.get("discount_target", {}).get("id") != item["id"]:
+                        state["discount_target"] = {"id": item["id"], "active": not bool(item["is_active"])}
+                    lines.append("پس از تأیید: " + ("کد فعال می‌شود." if state["discount_target"]["active"] else "کد غیرفعال می‌شود؛ سوابق استفاده حفظ می‌شود."))
             if payment_context:
                 lines.append(payment_context)
             if action.key in {"bot_on", "bot_off"}:
@@ -639,6 +704,8 @@ class AdminButtonUI:
                 selected = field.kind.startswith("multi:") and int(value) in state.get("selected", [])
                 rows.append([self._form_button(state, ("انتخاب‌شده: " if selected else "") + label,
                                               "pick", str(index))])
+            if field.kind == "choice" and len(rows) == 2:
+                rows = [[*rows[0], *rows[1]]]
             if field.kind.startswith(("entity:", "multi:")):
                 page = state.get("page", 1)
                 nav = []
@@ -784,6 +851,12 @@ class AdminButtonUI:
     def result_rows(self, state: dict, admin: dict) -> list[list[dict]]:
         action = ACTIONS[state["action"]]
         rows = []
+        if action.key == "user":
+            rows.append([self._button("جست‌وجوی کاربر دیگر", "a:user")])
+        if action.key == "discounts":
+            items, _, _ = self.controller._management_rows(int(state.get("result_page", 1)), "SELECT * FROM discounts ORDER BY id DESC")
+            rows.extend([[self._button(label_text(item["code"]) + " · " + ("فعال" if item["is_active"] else "غیرفعال"),
+                                       f"discount:{item['id']}")] for item in items])
         if action.key in {"bot_on", "bot_off"} and self.allowed(action, admin["role"]):
             rows.extend(self.bot_status()[1])
         if state.get("return_to"):
@@ -806,7 +879,31 @@ class AdminButtonUI:
             if nav:
                 rows.append(nav)
             rows.append([self._form_button(state, "نمایش دوباره نتیجه", "list", str(page))])
-        return rows + self.navigation("catalog" if state.get("return_to") else action.group)
+        return self._compact_related_rows(rows) + self.navigation("catalog" if state.get("return_to") else action.group)
+
+    def discount_detail(self, identifier: int, user: dict, admin: dict) -> None:
+        admin = self.authorise(user, admin)
+        if not self.allowed(ACTIONS["discount_toggle"], admin["role"]):
+            raise ButtonInputError("دسترسی مدیریت تخفیف ندارید.")
+        item = self.controller._query_one("SELECT * FROM discounts WHERE id=?", (identifier,))
+        if item is None:
+            raise ButtonInputError("این تخفیف حذف شده است.")
+        from .utils import display_datetime
+        value = f"{item['value']} درصد" if item["discount_type"] == "percent" else money(item["value"])
+        text = (f"<b>کد تخفیف {escape(item['code'])}</b>\nوضعیت: {'فعال' if item['is_active'] else 'غیرفعال'}"
+                f"\nمقدار: {value}\nاستفاده: {item['used_count']} از {item.get('max_uses') or 'نامحدود'}"
+                f"\nپایان اعتبار (تهران): {display_datetime(item.get('ends_at'), self.controller.settings.timezone)}"
+                "\nغیرفعال‌کردن، استفادهٔ جدید را متوقف می‌کند و سوابق قبلی را حذف نمی‌کند."
+                "\nبرای حفظ سوابق، حذف فقط برای کدهایی مجاز است که استفاده نشده‌اند.")
+        previous = self.db.get_user_state(int(user["id"]))
+        self.db.clear_user_state(int(user["id"]))
+        self._send(user, text, [
+            [self._button("غیرفعال‌کردن این کد" if item["is_active"] else "فعال‌کردن این کد", f"discountdo:{item['id']}:toggle")],
+            [self._button("حذف این کد", f"discountdo:{item['id']}:delete", style="danger")],
+            [self._button("بازگشت به فهرست تخفیف‌ها", "a:discounts")],
+        ])
+        if previous:
+            self._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     @staticmethod
     def friendly_error(text: str) -> str:

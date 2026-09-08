@@ -98,6 +98,11 @@ class FakeTelegram:
         self.documents.append(item)
         return copy.deepcopy(item)
 
+    def delete_message(self, chat_id: int, message_id: int) -> bool:
+        self.calls.append({"method": "deleteMessage", "params": {"chat_id": chat_id, "message_id": message_id}})
+        self.messages[:] = [m for m in self.messages if (m["chat_id"], m["message_id"]) != (chat_id, message_id)]
+        return True
+
     def edit_message_reply_markup(
         self, chat_id: int, message_id: int, reply_markup: dict[str, Any] | None = None, **kwargs: Any
     ) -> dict[str, Any] | bool:

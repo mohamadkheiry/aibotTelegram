@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from . import texts
 from .config import Settings
-from .customer_layouts import LayoutEngine, LayoutTelegram, keyboard as customer_keyboard, tagged
+from .customer_layouts import LayoutEngine, LayoutTelegram, keyboard as customer_keyboard
 from .db import (
     ConflictError,
     Database,
@@ -43,8 +43,6 @@ from .keyboards import (
     inline_main_menu_keyboard,
     main_menu_keyboard,
     remove_keyboard,
-    reply_button,
-    reply_keyboard,
     url_button,
 )
 from .payment_server import ConfirmationOutcome, PaymentCallbackServer
@@ -57,6 +55,9 @@ from .telegram import (
 )
 from .utils import (
     clamp_text,
+    custom_emoji_id,
+    display_datetime,
+    duration_text,
     escape,
     extract_start_ref,
     is_safe_https_url,
@@ -526,12 +527,15 @@ class BotApplication:
                     show_alert=True,
                 )
             elif admin or self._check_memberships(user):
-                self.telegram.answer_callback_query(query["id"], "عضویت تأیید شد.")
+                self.telegram.answer_callback_query(query["id"], "عضویت تأیید شد. حالا می‌تونی از ربات استفاده کنی.", show_alert=True)
                 self._grant_start_referral_reward(user)
+                message = query.get("message") or {}
+                if (message.get("chat") or {}).get("id") == user["chat_id"]:
+                    self._delete_own_prompt(user["chat_id"], message.get("message_id"))
                 self.show_main_menu(user)
             else:
                 self.telegram.answer_callback_query(
-                    query["id"], "هنوز عضو همه کانال‌ها نیستی.", show_alert=True
+                    query["id"], "عضویت کامل نیست. هنوز در همه کانال‌ها عضو نشدی.", show_alert=True
                 )
             return
         if data == "join:page" or data.startswith("join:page:"):
@@ -546,6 +550,13 @@ class BotApplication:
             self.telegram.answer_callback_query(query["id"])
             return
         if not self._access_guard(user, admin, callback_query_id=query["id"]):
+            if data == "menu":
+                cancelled = self.db.get_user_state(user["id"])
+                self.db.clear_user_state(user["id"])
+                if cancelled and cancelled["state"] == "purchase_phone":
+                    self._remove_persistent_keyboard(user, "فرم لغو شد.")
+                if cancelled and cancelled["state"] == "ticket_status_confirm":
+                    self._delete_own_prompt(user["chat_id"], cancelled["data"].get("prompt_message_id"))
             return
 
         try:
@@ -600,7 +611,7 @@ class BotApplication:
         page, page_count = self._bounded_page(page, len(channels), page_size)
         visible_channels = channels[page * page_size : (page + 1) * page_size]
         rows: list[list[dict[str, Any]]] = []
-        for index, channel in enumerate(visible_channels, page * page_size + 1):
+        for channel in visible_channels:
             configured_url = channel.get("invite_url")
             url = (
                 configured_url
@@ -608,7 +619,7 @@ class BotApplication:
                 else self._channel_url(channel["telegram_chat_id"])
             )
             if url:
-                rows.append([{**url_button(f"عضویت در کانال {index}", url, style="primary"), "_layout_item": f"join:{channel['id']}"}])
+                rows.append([{**url_button(self._button_label(channel["title"], "عضویت در کانال"), url, style="primary"), "_layout_item": f"join:{channel['id']}"}])
         navigation = self._pagination_buttons(page, page_count, "join:page")
         if navigation:
             rows.append(navigation)
@@ -687,20 +698,39 @@ class BotApplication:
         )
 
     def _reply_main_menu(self, user: dict[str, Any]) -> dict[str, Any]:
-        return main_menu_keyboard(
+        return inline_main_menu_keyboard(
             self.settings.button_icon_ids,
+            str(self.db.get_setting("main_channel_url", "") or ""),
             include_admin=self.db.is_admin(chat_id=int(user["chat_id"])),
         )
 
     @staticmethod
     def _input_cancel_markup(section: str) -> dict[str, Any]:
-        # Replace a persistent reply menu while collecting text: otherwise a
-        # menu-button label can accidentally be saved as the customer's input.
-        return tagged(section, reply_keyboard([[reply_button("لغو و بازگشت")]],
-                                              resize_keyboard=True, one_time_keyboard=True))
+        return customer_keyboard(section, [[callback_button("لغو و بازگشت", "menu", style="danger")]])
+
+    def _delete_own_prompt(self, chat_id: int, message_id: Any) -> None:
+        if type(message_id) is not int or message_id <= 0:
+            return
+        try:
+            self.telegram.delete_message(chat_id, message_id)
+        except TelegramRequestCancelled:
+            raise
+        except TelegramError:
+            LOG.warning("Could not retire a bot prompt")
+
+    def _remove_persistent_keyboard(self, user: Mapping[str, Any], text: str = "منوی اصلی آماده است.") -> None:
+        # ReplyKeyboardRemove cannot subsequently receive an inline keyboard.
+        # Use a short, silent cleanup message and retire only our own message.
+        sent = self.telegram.send_message(user["chat_id"], text, reply_markup=remove_keyboard(), disable_notification=True)
+        if isinstance(sent, Mapping):
+            self._delete_own_prompt(int(user["chat_id"]), sent.get("message_id"))
 
     def show_main_menu(self, user: dict[str, Any]) -> None:
         previous = self.db.get_user_state(user["id"])
+        cleanup_key = f"customer_inline_keyboard_v2:{user['id']}"
+        if not self.db.get_setting(cleanup_key, False) or previous and previous["state"] == "purchase_phone":
+            self._remove_persistent_keyboard(user)
+            self.db.set_setting(cleanup_key, True)
         self.db.clear_user_state(user["id"])
         name = user.get("customer_name") or user.get("first_name") or "دوست عزیز"
         markup = inline_main_menu_keyboard(
@@ -708,28 +738,14 @@ class BotApplication:
             str(self.db.get_setting("main_channel_url", "") or ""),
             include_admin=self.db.is_admin(chat_id=int(user["chat_id"])),
         )
-        message = self.telegram.send_message(
+        self.telegram.send_message(
             user["chat_id"],
             texts.main_menu(name),
-            reply_markup=remove_keyboard(),
-        )
-        message_id = message.get("message_id") if isinstance(message, Mapping) else None
-        if isinstance(message_id, int) and not isinstance(message_id, bool) and message_id > 0:
-            try:
-                self.telegram.edit_message_reply_markup(
-                    user["chat_id"], message_id, reply_markup=markup
-                )
-                self._retire_admin_prompt(user, previous)
-                return
-            except TelegramRequestCancelled:
-                raise
-            except TelegramError:
-                LOG.warning("Could not attach main-menu buttons; sending a selection message")
-        # Keep the canonical welcome text single even when an edit fails.
-        self.telegram.send_message(
-            user["chat_id"], "یکی از گزینه‌های زیر را انتخاب کن:", reply_markup=markup
+            reply_markup=markup,
         )
         self._retire_admin_prompt(user, previous)
+        if previous and previous["state"] == "ticket_status_confirm":
+            self._delete_own_prompt(user["chat_id"], previous["data"].get("prompt_message_id"))
 
     def _retire_admin_prompt(self, user: dict[str, Any], previous: dict[str, Any] | None) -> None:
         if previous and previous["state"] in {"admin:ui", "admin:catalog", "admin:joins", "admin:layouts"} and self.admin_controller:
@@ -743,6 +759,12 @@ class BotApplication:
         update: dict[str, Any],
     ) -> bool:
         query_id = query["id"]
+        previous = self.db.get_user_state(user["id"])
+        if previous and previous["state"] == "ticket_status_confirm" and not data.startswith("ticketstatusok:"):
+            # Leaving the confirmation is cancellation, including its Back
+            # button. An old confirmation must not remain actionable.
+            self.db.clear_user_state(user["id"])
+            self._delete_own_prompt(user["chat_id"], previous["data"].get("prompt_message_id"))
         if data == "menu":
             self.telegram.answer_callback_query(query_id)
             self.show_main_menu(user)
@@ -773,8 +795,7 @@ class BotApplication:
             return True
         if data.startswith("buy:"):
             product_id = self._callback_id(data, "buy", label="شناسه محصول")
-            self.telegram.answer_callback_query(query_id)
-            self.begin_purchase(user, product_id, update_id=update.get("update_id"))
+            self.begin_purchase(user, product_id, update_id=update.get("update_id"), query=query)
             return True
         if data.startswith("order:"):
             order_id = self._callback_id(data, "order", label="شناسه سفارش")
@@ -797,6 +818,13 @@ class BotApplication:
         if data == "profile:transactions" or data.startswith("profile:transactions:"):
             page = self._callback_page(data, "profile:transactions")
             self.show_transactions(user, query=query, page=page)
+            self.telegram.answer_callback_query(query_id)
+            return True
+        if data.startswith("transaction:"):
+            parts = data.split(":")
+            if len(parts) != 4 or not parts[3].isdigit():
+                raise ValidationError("تراکنش معتبر نیست.")
+            self.show_transaction(user, ":".join(parts[1:3]), page=int(parts[3]), query=query)
             self.telegram.answer_callback_query(query_id)
             return True
         if data == "wallet":
@@ -835,10 +863,51 @@ class BotApplication:
             return True
         if data == "ticket:new":
             self.telegram.answer_callback_query(query_id)
-            self.db.set_user_state(user["id"], "ticket_subject", {})
+            self.db.set_user_state(user["id"], "ticket_body", {"derive_subject": True})
             self.telegram.send_message(
-                user["chat_id"], "موضوع تیکت را کوتاه بنویس:", reply_markup=self._input_cancel_markup("input_ticket_subject")
+                user["chat_id"], "پیامت را کامل بنویس و در صورت نیاز تصویر یا فایل را همراه توضیح بفرست؛ موضوع از ابتدای پیامت ساخته می‌شود.", reply_markup=self._input_cancel_markup("input_ticket_body")
             )
+            return True
+        if data.startswith("ticketstatus:"):
+            parts = data.split(":")
+            if len(parts) != 3 or not parts[1].isdigit() or parts[2] not in {"open", "closed"}:
+                raise ValidationError("دکمه وضعیت تیکت معتبر نیست.")
+            ticket = self.db.get_ticket(int(parts[1]))
+            if not ticket or int(ticket["user_id"]) != int(user["id"]):
+                raise NotFoundError("تیکت پیدا نشد.")
+            target = parts[2]
+            message_count = self.db.count_ticket_messages(ticket["id"])
+            token = uuid.uuid4().hex[:20]
+            title = "بستن تیکت" if target == "closed" else "باز کردن مجدد تیکت"
+            sent = self.telegram.send_message(user["chat_id"], f"<b>{title}</b>\nتیکت: {escape(ticket['ticket_number'])}\nآیا مطمئن هستی؟",
+                reply_markup=customer_keyboard("ticket_confirm", [
+                    [{**callback_button(title, f"ticketstatusok:{token}", style="danger" if target == "closed" else "success"), "_layout_slot": "confirm"}],
+                    [back_button(f"ticket:{ticket['id']}")]]))
+            self.db.set_user_state(user["id"], "ticket_status_confirm", {"ticket_id": ticket["id"], "target": target,
+                "expected_status": ticket["status"], "expected_updated_at": ticket["updated_at"],
+                "expected_message_count": message_count, "token": token,
+                "prompt_message_id": sent.get("message_id")})
+            self.telegram.answer_callback_query(query_id)
+            return True
+        if data.startswith("ticketstatusok:"):
+            state = self.db.get_user_state(user["id"])
+            token = data.split(":", 1)[1]
+            if not state or state["state"] != "ticket_status_confirm" or state["data"].get("token") != token:
+                raise ValidationError("این تأیید دیگر معتبر نیست؛ از داخل تیکت ادامه بده.")
+            current = state["data"]
+            if current.get("prompt_message_id") != (query.get("message") or {}).get("message_id"):
+                raise ValidationError("از آخرین پیام تأیید تیکت استفاده کن.")
+            target = current["target"]
+            ticket_id = int(current["ticket_id"])
+            body = "تیکت بسته شد. هر زمان لازم بود می‌تونی دوباره بازش کنی." if target == "closed" else "تیکت دوباره باز شد؛ می‌تونی پیامت را بفرستی."
+            self.db.set_user_ticket_status(ticket_id, int(user["id"]), target,
+                expected_status=current["expected_status"], expected_updated_at=current["expected_updated_at"],
+                expected_message_count=current["expected_message_count"], idempotency_key=f"ticket:{ticket_id}:user-status:{token}",
+                body=body, reply_markup=customer_keyboard("ticket_notice", [[callback_button("مشاهده تیکت", f"ticket:{ticket_id}")], [back_button("support")]]))
+            self.db.clear_user_state(user["id"])
+            self.telegram.answer_callback_query(query_id, "وضعیت تیکت ثبت شد.")
+            self._deliver_outbound_messages()
+            self._delete_own_prompt(user["chat_id"], current.get("prompt_message_id"))
             return True
         if data == "tickets:list" or data.startswith("tickets:list:"):
             page = self._callback_page(data, "tickets:list")
@@ -889,10 +958,11 @@ class BotApplication:
                 "شما" if ticket_message["sender_type"] == "user" else "پشتیبانی"
             )
             body = str(ticket_message.get("body") or "")
-            chunks = [body[index : index + 600] for index in range(0, len(body), 600)] or [""]
+            formatted = render_rich_text(body) if ticket_message["sender_type"] == "admin" else escape(body)
+            chunks = split_telegram_html(formatted, maximum=3000) or [""]
             for index, chunk in enumerate(chunks, start=1):
                 heading = f"<b>متن کامل پیام از {escape(sender)}</b>\n" if index == 1 else ""
-                self.telegram.send_message(user["chat_id"], heading + escape(chunk))
+                self.telegram.send_message(user["chat_id"], heading + chunk)
             return True
         if data.startswith("ticket:"):
             ticket_id, parsed_page = self._callback_id_page(
@@ -994,7 +1064,7 @@ class BotApplication:
         self.telegram.send_message(
             int(user["chat_id"]),
             message,
-            reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+            reply_markup=inline_main_menu_keyboard(),
         )
 
     @staticmethod
@@ -1093,8 +1163,9 @@ class BotApplication:
                     callback_button(
                         self._button_label(
                             item["name"], "دسته" if kind == "cat" else "محصول"
-                        ),
+                        )[:38] + (" · " + money(item["price_amount"], self.settings.currency_label) if kind == "prod" else ""),
                         f"{kind}:{item['id']}",
+                        icon_custom_emoji_id=custom_emoji_id(item.get("icon")),
                     )
                 ]
             )
@@ -1127,18 +1198,18 @@ class BotApplication:
             except (TypeError, ValueError):
                 features = []
         if isinstance(features, list):
-            features = "\n".join(f"• {value}" for value in features)
-        duration = product.get("duration_label")
-        if not duration and product.get("duration_days"):
-            duration = f"{product['duration_days']} روز"
+            features = ("html:" + "\n".join(f"• {render_rich_text(value)}" for value in features)
+                        if any(str(value).lower().startswith("html:") for value in features)
+                        else "\n".join(f"• {value}" for value in features))
+        duration = duration_text(product.get("duration_label"), product.get("duration_days"))
         return {
             **product,
             "title": product.get("name") or product.get("title") or "محصول",
             "price": int(product.get("price_amount") or product.get("price") or 0),
             "duration": duration,
             "renewable": "قابل تمدید" if product.get("is_renewable") else "غیرقابل تمدید",
-            "warranty": product.get("warranty_text") or product.get("warranty") or "ندارد",
-            "features": features or "—",
+            "warranty": product.get("warranty_text") or product.get("warranty") or "",
+            "features": features or "",
             "rules": product.get("rules_text") or product.get("rules"),
         }
 
@@ -1158,7 +1229,7 @@ class BotApplication:
             [callback_button("توضیحات تکمیلی", f"prodmore:{product_id}", style="primary")],
         ]
         if is_safe_https_url(product.get("rules_url")):
-            rows.append([url_button("مشاهده قوانین", product["rules_url"])])
+            rows.append([{**url_button("قوانین قبل از خرید", product["rules_url"]), "_layout_slot": "rules"}])
         rows.append([back_button(f"cat:{product['category_id']}")])
         markup = customer_keyboard(f"product:{product_id}", rows)
         content = texts.product_summary(product, self.settings.currency_label)
@@ -1185,7 +1256,7 @@ class BotApplication:
         product = self._product_view(raw)
         rows = [[callback_button("خرید", f"buy:{product_id}", style="success")]]
         if is_safe_https_url(product.get("rules_url")):
-            rows.append([url_button("مشاهده قوانین", product["rules_url"])])
+            rows.append([{**url_button("قوانین قبل از خرید", product["rules_url"]), "_layout_slot": "rules"}])
         rows.append([back_button(f"prod:{product_id}")])
         markup = customer_keyboard(f"product_details:{product_id}", rows)
         content = texts.product_details(product)
@@ -1204,10 +1275,11 @@ class BotApplication:
         text = (
             "👤 <b>حساب من</b>\n\n"
             f"نام: {escape(user.get('customer_name') or user.get('first_name') or 'ثبت نشده')}\n"
+            f"آیدی عددی: <code>{user['telegram_user_id']}</code>\n"
             f"نام کاربری: {('@' + escape(user['username'])) if user.get('username') else '—'}\n"
             f"شماره موبایل: {escape(user.get('phone') or 'ثبت نشده')}\n"
             f"موجودی کیف پول: {money(balance, self.settings.currency_label)}\n"
-            f"تاریخ عضویت: {escape(str(user.get('joined_at') or '')[:10])}"
+            f"تاریخ عضویت (تهران): {escape(display_datetime(user.get('joined_at'), self.settings.timezone))}"
         )
         markup = customer_keyboard("profile",
             [
@@ -1226,7 +1298,7 @@ class BotApplication:
         stats = self.db.user_summary(user["id"])
         referral = self.db.referral_summary(user["id"])
         recent_orders = self.db.list_orders(user_id=user["id"], limit=1)
-        last_order_at = str(recent_orders[0]["created_at"])[:16] if recent_orders else "—"
+        last_order_at = display_datetime(recent_orders[0]["created_at"], self.settings.timezone) if recent_orders else "—"
         text = (
             "📊 <b>آمار من</b>\n\n"
             f"تعداد سفارش‌ها: {stats.get('order_count', 0)}\n"
@@ -1236,7 +1308,7 @@ class BotApplication:
             f"تعداد دعوت‌شده‌ها: {referral.get('invited_count', 0)}\n"
             f"پاداش زیرمجموعه‌ها: {money(referral.get('reward_total', 0), self.settings.currency_label)}"
         )
-        markup = customer_keyboard("stats", [[back_button("profile")]])
+        markup = customer_keyboard("stats", [[callback_button("بروزرسانی", "profile:stats")], [back_button("profile")]])
         if query:
             self._edit_or_send(query, text, markup)
         else:
@@ -1258,8 +1330,9 @@ class BotApplication:
         rows = [
             [
                 callback_button(
-                    f"{item['order_number']} — {texts.STATUS_LABELS.get(item['status'], item['status'])}",
+                    self._button_label(f"سفارش {item['order_number']} · {item['product_name_snapshot']}", "مشاهده سفارش"),
                     f"order:{item['id']}",
+                    icon_custom_emoji_id=custom_emoji_id(item.get("product_icon_snapshot")),
                 )
             ]
             for item in orders
@@ -1288,15 +1361,13 @@ class BotApplication:
         query: dict[str, Any] | None = None,
         page: int = 0,
     ) -> None:
-        # Each rendered reason is capped at 240 HTML characters. Ten entries
-        # therefore stay below Telegram's 4096-character message limit; using
-        # a larger SQL page and truncating afterwards would make the omitted
-        # entries permanently unreachable when the next offset is applied.
+        # Page the database, not a truncated rendering. Full descriptions are
+        # accessible through each immutable, owner-scoped transaction key.
         page_size = 10
-        total = self.db.count_user_transactions(user["id"])
+        total = self.db.count_user_transactions(user["id"], include_pending=True)
         page, page_count = self._bounded_page(page, total, page_size)
         entries = self.db.list_user_transactions(
-            user["id"], limit=page_size, offset=page * page_size
+            user["id"], limit=page_size, offset=page * page_size, include_pending=True
         )
         lines = [
             "💳 <b>تراکنش‌های من</b>",
@@ -1304,19 +1375,15 @@ class BotApplication:
         ]
         if not entries:
             lines.append("هنوز تراکنشی ثبت نشده است.")
+        else:
+            lines.append("برای دیدن جزئیات، یکی از تراکنش‌ها را انتخاب کن. مبالغ در انتظار، هنوز به کیف پول اضافه نشده‌اند.")
+        rows: list[list[dict[str, Any]]] = []
         for entry in entries:
             sign = "+" if int(entry["amount_signed"]) > 0 else ""
-            reason = clamp_text(
-                escape(entry.get("reason") or ""),
-                240,
-            )
             kind = texts.transaction_type(entry.get("entry_type"), entry.get("method"))
-            lines.append(
-                f"{escape(str(entry['created_at'])[:16])} | {sign}{money(entry['amount_signed'], self.settings.currency_label)}\n"
-                f"نوع: {kind}\n"
-                f"{reason}"
-            )
-        rows: list[list[dict[str, Any]]] = []
+            date = display_datetime(entry["created_at"], self.settings.timezone).split(" · ")[0]
+            rows.append([callback_button(f"{date} · {kind} · {sign}{money(entry['amount_signed'], self.settings.currency_label)} · {self._transaction_status(entry['status'])}",
+                                         f"transaction:{entry['transaction_key']}:{page}")])
         navigation = self._pagination_buttons(page, page_count, "profile:transactions")
         if navigation:
             rows.append(navigation)
@@ -1327,6 +1394,33 @@ class BotApplication:
             self._edit_or_send(query, content, markup)
         else:
             self.telegram.send_message(user["chat_id"], content, reply_markup=markup)
+
+    @staticmethod
+    def _transaction_status(status: str) -> str:
+        return {"paid": "موفق", "pending": "در انتظار پرداخت", "verifying": "در انتظار بررسی", "failed": "ناموفق",
+                "expired": "منقضی", "cancelled": "لغوشده", "refunded": "بازپرداخت‌شده"}.get(status, status)
+
+    def show_transaction(self, user: dict, key: str, *, page: int, query: dict) -> None:
+        entry = self.db.get_user_transaction(int(user["id"]), key)
+        if not entry:
+            raise NotFoundError("تراکنش پیدا نشد.")
+        method = {"card": "کارت به کارت", "crypto": "پرداخت ارزی", "wallet": "کیف پول"}.get(entry["method"], entry["method"])
+        lines = ["💳 <b>جزئیات تراکنش</b>", f"شناسه: <code>{escape(key)}</code>",
+                 f"تاریخ و ساعت (تهران): {display_datetime(entry['created_at'], self.settings.timezone)}",
+                 f"مبلغ: {money(entry['amount_signed'], self.settings.currency_label)}",
+                 f"نوع: {texts.transaction_type(entry['entry_type'], entry['method'])}",
+                 f"روش پرداخت: {escape(method)}", f"وضعیت: {self._transaction_status(entry['status'])}"]
+        if entry.get("order_number"):
+            lines.append(f"شماره سفارش: <code>{escape(entry['order_number'])}</code>")
+        if entry.get("reason"):
+            lines.append("توضیحات: " + escape(entry["reason"]))
+        parts = split_telegram_html("\n".join(lines), maximum=3500)
+        for index, part in enumerate(parts):
+            markup = customer_keyboard("transaction", [[back_button(f"profile:transactions:{page}")]]) if index == len(parts) - 1 else None
+            if index == 0:
+                self._edit_or_send(query, part, markup)
+            else:
+                self.telegram.send_message(user["chat_id"], part, reply_markup=markup)
 
     def show_wallet(self, user: dict[str, Any], *, query: dict[str, Any] | None = None) -> None:
         balance = self.db.wallet_balance(user["id"])
@@ -1423,16 +1517,12 @@ class BotApplication:
                         )
                         support_button_added = True
         if not active_payments:
-            content += (
-                "\n\nبرای افزایش اعتبار، روی دکمه زیر بزن و مبلغ دلخواهت رو وارد کن."
-            )
-            rows.append(
-                [
-                    callback_button(
-                        "افزایش موجودی", "wallet:topup", style="success"
-                    )
-                ]
-            )
+            if self._card_payment_available() or self._crypto_payment_available():
+                self.db.set_user_state(user["id"], "wallet_topup_amount", {})
+                content += ("\n\nموجودی کیف پولت با شارژ یا پاداش دعوت افزایش پیدا می‌کند."
+                            "\nبرای افزایش موجودی، مبلغ دلخواهت را به تومان وارد کن.\nمثال: <code>2000000</code>")
+            else:
+                content += "\n\nدر حال حاضر روش شارژ فعالی تنظیم نشده است؛ از پشتیبانی پیگیری کن."
         rows.append([back_button("menu")])
         markup = customer_keyboard("wallet", rows)
         if query:
@@ -1478,6 +1568,7 @@ class BotApplication:
         markup = customer_keyboard("referral",
             [
                 [url_button("ارسال لینک به دوستان", share, style="primary")],
+                [copy_text_button("کپی لینک دعوت", link)],
                 [back_button("menu")],
             ]
         )
@@ -1487,6 +1578,7 @@ class BotApplication:
             link,
             self.settings.currency_label,
             current_rules,
+            buyers=stats.get("buyer_count", 0),
         )
         # Keep each ordinary rule together, so its amount and conditions are
         # readable in one message; split only a single unusually long block.
@@ -1603,7 +1695,7 @@ class BotApplication:
             f"❓ <b>{escape(faq['question'])}</b>\n\n"
             f"{render_rich_text(faq['answer'])}"
         )
-        markup = customer_keyboard(f"faq:{faq_id}", [[back_button(f"faqcat:{faq['category_id']}")]])
+        markup = customer_keyboard(f"faq:{faq_id}", [[callback_button("ثبت تیکت", "ticket:new")], [back_button(f"faqcat:{faq['category_id']}")]])
         parts = split_telegram_html(text)
         for index, part in enumerate(parts):
             part_markup = markup if index == len(parts) - 1 else None
@@ -1611,6 +1703,14 @@ class BotApplication:
                 self._edit_or_send(query, part, part_markup)
             else:
                 self.telegram.send_message(user["chat_id"], part, reply_markup=part_markup)
+
+    @staticmethod
+    def _ticket_notice_markup(ticket_id: int) -> dict:
+        return customer_keyboard("ticket_notice", [
+            [callback_button("مشاهده تیکت", f"ticket:{ticket_id}")],
+            [callback_button("ارسال پیام جدید", f"ticketreply:{ticket_id}")],
+            [back_button("support")],
+        ])
 
     def show_tickets(
         self,
@@ -1666,14 +1766,16 @@ class BotApplication:
         for message_index, item in enumerate(messages, start=1):
             sender = "شما" if item["sender_type"] == "user" else "پشتیبانی"
             body = str(item.get("body") or "")
-            parts = [body[index : index + 500] for index in range(0, len(body), 500)] or [""]
+            rendered_body = render_rich_text(body) if item["sender_type"] == "admin" else escape(body)
+            parts = split_telegram_html(rendered_body, maximum=700) or [""]
             for part_index, body_part in enumerate(parts, start=1):
                 continuation = (
                     f" ({part_index}/{len(parts)})" if len(parts) > 1 else ""
                 )
                 block = (
                     f"<b>{escape(sender)} {message_index:,}{continuation}:</b> "
-                    f"{escape(body_part)}"
+                    f"{escape(display_datetime(item.get('created_at'), self.settings.timezone))}\n"
+                    f"{body_part}"
                 )
                 has_attachment = bool(
                     part_index == len(parts) and item.get("attachment_file_id")
@@ -1704,7 +1806,8 @@ class BotApplication:
         selected_blocks = packed_pages[selected_page]
         lines = [
             f"🎫 <b>{escape(ticket['ticket_number'])} — {escape(ticket['subject'])}</b>",
-            f"وضعیت: {escape(ticket['status'])}",
+            f"وضعیت: { {'open': 'در انتظار پاسخ', 'answered': 'پاسخ داده‌شده', 'closed': 'بسته‌شده'}[ticket['status']]}",
+            f"تاریخ ثبت: {display_datetime(ticket.get('created_at'), self.settings.timezone)}",
             f"تعداد پیام‌ها: {len(messages):,}",
             f"صفحه گفتگو: {selected_page + 1:,} از {page_count:,}",
         ]
@@ -1739,6 +1842,9 @@ class BotApplication:
             rows.append(conversation_navigation)
         if ticket["status"] != "closed":
             rows.append([callback_button("ارسال پاسخ", f"ticketreply:{ticket_id}", style="primary")])
+            rows.append([callback_button("بستن تیکت", f"ticketstatus:{ticket_id}:closed", style="danger")])
+        else:
+            rows.append([callback_button("باز کردن مجدد تیکت", f"ticketstatus:{ticket_id}:open", style="success")])
         rows.append([back_button("tickets:list")])
         self._edit_or_send(query, "\n\n".join(lines), customer_keyboard("ticket", rows))
 
@@ -1757,13 +1863,8 @@ class BotApplication:
             "order_no": order.get("order_number") or order.get("order_no"),
             "product_title": order.get("product_name_snapshot") or order.get("product_title") or "محصول",
             "product_icon": order.get("product_icon_snapshot") or order.get("product_icon") or "",
-            "product_duration": order.get("duration_label_snapshot")
-            or order.get("product_duration")
-            or (
-                f"{order['duration_days_snapshot']} روز"
-                if order.get("duration_days_snapshot")
-                else "—"
-            ),
+            "product_duration": duration_text(order.get("duration_label_snapshot")
+                or order.get("product_duration"), order.get("duration_days_snapshot")) or "—",
             "base_price": subtotal,
             "discount_amount": discount,
             "final_amount": subtotal - discount,
@@ -1775,20 +1876,27 @@ class BotApplication:
         product_id: int,
         *,
         update_id: int | None = None,
+        query: dict[str, Any] | None = None,
     ) -> None:
         product = self.db.get_product(product_id)
+        def unavailable(text: str) -> None:
+            if query:
+                self.telegram.answer_callback_query(query["id"], text, show_alert=True)
+            else:
+                self.telegram.send_message(user["chat_id"], text)
         if not self._product_is_browsable(product):
-            self.telegram.send_message(user["chat_id"], "این محصول دیگر قابل خرید نیست.")
+            unavailable("این محصول دیگر قابل خرید نیست.")
             return
         if not product.get("is_available", 1):
-            self.telegram.send_message(user["chat_id"], "⛔️ این محصول فعلاً موجود نیست.")
+            unavailable("این محصول فعلاً موجود نیست.")
             return
         if product.get("product_type") == "ready":
             available = self.db.inventory_count(product_id)
             if available <= 0 and not product.get("reserve_enabled"):
-                self.telegram.send_message(user["chat_id"], "⛔️ این محصول فعلاً موجود نیست.")
+                unavailable("این محصول فعلاً موجود نیست.")
                 return
-
+        if query:
+            self.telegram.answer_callback_query(query["id"])
         state_data = {"product_id": product_id, "update_id": update_id}
         if not user.get("customer_name"):
             self.db.set_user_state(user["id"], "purchase_name", state_data)
@@ -2088,9 +2196,8 @@ class BotApplication:
             age = (utc_now() - (parse_iso(payment["created_at"]) or utc_now())).total_seconds()
             if age < self.settings.receipt_delay_seconds:
                 self.telegram.answer_callback_query(
-                    query_id, "پرداخت هنوز در حال بررسی است.", show_alert=True
+                    query_id, "پرداخت هنوز در حال بررسیه. اگر تا یک دقیقه بعد از واریز خودکار تأیید نشد، می‌تونی فیش رو برای بررسی دستی ارسال کنی.", show_alert=True
                 )
-                self.telegram.send_message(user["chat_id"], texts.EARLY_RECEIPT)
                 return True
             if payment["status"] not in {"pending", "verifying"}:
                 self.telegram.answer_callback_query(
@@ -2248,10 +2355,11 @@ class BotApplication:
             [
                 [
                     copy_text_button(
-                        "کپی مبلغ",
+                        "کپی مبلغ به تومان",
                         str(payment["payable_amount"]),
                         icon_custom_emoji_id=self.settings.button_icon_ids.get("copy"),
-                    )
+                    ),
+                    copy_text_button("کپی مبلغ به ریال", str(int(payment["payable_amount"]) * 10)),
                 ],
                 [
                     copy_text_button(
@@ -2532,11 +2640,17 @@ class BotApplication:
             "📦 <b>جزئیات سفارش</b>",
             "",
             f"شماره سفارش: <code>{escape(view['order_no'])}</code>",
-            f"محصول: {escape(view['product_title'])}",
+            f"محصول: {render_rich_text(view.get('product_icon') or '')} {escape(view['product_title'])}",
             f"مبلغ: {money(view['final_amount'], self.settings.currency_label)}",
             f"وضعیت: {escape(texts.STATUS_LABELS.get(order['status'], order['status']))}",
-            f"تاریخ: {escape(str(order['created_at'])[:16])}",
+            f"تاریخ (تهران): {escape(display_datetime(order['created_at'], self.settings.timezone))}",
         ]
+        payment = self.db.latest_order_payment(order_id)
+        method = {"card": "کارت به کارت", "crypto": "پرداخت ارزی"}.get((payment or {}).get("method"), "")
+        if order.get("wallet_captured_amount"):
+            method = "کیف پول" + (" + " + method if method else "")
+        if method:
+            lines.append("روش پرداخت: " + method)
         if order.get("admin_note"):
             lines.append(f"توضیح مدیریت: {escape(order['admin_note'])}")
         if order["status"] == "completed" and order.get("delivered_payload"):
@@ -2553,8 +2667,8 @@ class BotApplication:
                 )
             )
             product = self.db.get_product(order["product_id"])
-            if product and product.get("delivery_instructions"):
-                lines.append(render_rich_text(product["delivery_instructions"]))
+            if product and order.get("product_type_snapshot") == "ready" and self._ready_instructions(product):
+                lines.append(render_rich_text(self._ready_instructions(product)))
         rows: list[list[dict[str, Any]]] = []
         if order["status"] == "pending_payment":
             rows.append([callback_button("ادامه پرداخت", f"checkout:{order_id}", style="success")])
@@ -2705,6 +2819,7 @@ class BotApplication:
                 self._end_stale_state(user, "این محصول دیگر قابل خرید نیست.")
                 return True
             user = self.db.update_user_profile(user["id"], phone=phone)
+            self._remove_persistent_keyboard(user, "شماره موبایلت ثبت شد.")
             self._create_order_and_confirm(
                 user,
                 product_id,
@@ -2739,12 +2854,12 @@ class BotApplication:
         if name == "wallet_topup_amount":
             normalized_amount = normalize_digits(text).strip()
             if not re.fullmatch(r"[0-9][0-9,\s٬]*", normalized_amount):
-                self.telegram.send_message(user["chat_id"], "مبلغ را به‌صورت یک عدد مثبت وارد کن.")
+                self.telegram.send_message(user["chat_id"], "مبلغ واردشده معتبر نیست. یک مبلغ مثبت به تومان وارد کن.")
                 return True
             try:
                 amount = parse_amount(normalized_amount)
             except ValueError:
-                self.telegram.send_message(user["chat_id"], "مبلغ را به‌صورت یک عدد مثبت وارد کن.")
+                self.telegram.send_message(user["chat_id"], "مبلغ واردشده معتبر نیست. یک مبلغ مثبت به تومان وارد کن.")
                 return True
             minimum = int(self.db.get_setting("minimum_topup_amount", 10_000) or 10_000)
             maximum = int(self.db.get_setting("maximum_topup_amount", 100_000_000) or 100_000_000)
@@ -2793,7 +2908,7 @@ class BotApplication:
                 self.telegram.send_message(
                     user["chat_id"],
                     "مهلت این پرداخت تمام شده است؛ مبلغی واریز نکن.",
-                    reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+            reply_markup=inline_main_menu_keyboard(),
                 )
                 return True
             payment = self.db.submit_payment_receipt(
@@ -2803,7 +2918,7 @@ class BotApplication:
             self.telegram.send_message(
                 user["chat_id"],
                 "✅ فیش دریافت شد و برای بررسی دستی به مدیریت ارسال شد.",
-                reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+            reply_markup=inline_main_menu_keyboard(),
             )
             approval = inline_keyboard(
                 [
@@ -2812,11 +2927,6 @@ class BotApplication:
                 ]
             )
             self._alert_card_receipt(payment, user, reply_markup=approval)
-            self._copy_to_admins(
-                message,
-                reply_markup=approval,
-                allowed_roles={"owner", "admin"},
-            )
             return True
 
         if name == "order_information":
@@ -2891,6 +3001,10 @@ class BotApplication:
                 self.telegram.send_message(user["chat_id"], "شرح یا فایل درخواست را بفرست.")
                 return True
             subject = str(data.get("subject") or "").strip()
+            if data.get("derive_subject"):
+                subject = text.strip().split("\n", 1)[0][:120] if text.strip() else "درخواست پشتیبانی با پیوست"
+                if len(subject) < 3:
+                    subject = "درخواست پشتیبانی"
             if not 3 <= len(subject) <= 120:
                 self._end_stale_state(user, "فرآیند ثبت تیکت منقضی شده است؛ دوباره تلاش کن.")
                 return True
@@ -2905,8 +3019,10 @@ class BotApplication:
             self.db.clear_user_state(user["id"])
             self.telegram.send_message(
                 user["chat_id"],
-                f"✅ تیکت <code>{escape(ticket['ticket_number'])}</code> ثبت شد.",
-                reply_markup=main_menu_keyboard(self.settings.button_icon_ids),
+                f"✅ تیکت <code>{escape(ticket['ticket_number'])}</code> ثبت شد."
+                f"\nتاریخ ثبت: {display_datetime(ticket.get('created_at'), self.settings.timezone)}"
+                "\nوضعیت: در انتظار پاسخ\nپشتیبانی پاسخ را از طریق همین تیکت برایت می‌فرستد.",
+                reply_markup=self._ticket_notice_markup(int(ticket["id"])),
             )
             initial_messages = self.db.list_ticket_messages(
                 int(ticket["id"]), limit=1
@@ -2939,7 +3055,8 @@ class BotApplication:
                 idempotency_key=f"ticket-reply:{update.get('update_id')}",
             )
             self.db.clear_user_state(user["id"])
-            self.telegram.send_message(user["chat_id"], "✅ پاسخ شما ثبت شد.")
+            self.telegram.send_message(user["chat_id"], "✅ پیام جدید به تیکت اضافه شد.",
+                                       reply_markup=self._ticket_notice_markup(ticket_id))
             self._alert_user_ticket_message(ticket_message, ticket=ticket, user=user)
             if file_id:
                 self._copy_to_admins(message)
@@ -3174,7 +3291,7 @@ class BotApplication:
                 f"موجودی جدید: {money(balance, self.settings.currency_label)}",
                 idempotency_key=f"payment:{payment['id']}:topup-confirmed",
                 # Presentation config must not become durable idempotency data.
-                reply_markup=main_menu_keyboard(),
+            reply_markup=inline_main_menu_keyboard(),
             )
             return True
         order = self.db.get_order(payment["order_id"])
@@ -3266,6 +3383,10 @@ class BotApplication:
         if hasattr(self.db, "mark_order_rewards_processed"):
             self.db.mark_order_rewards_processed(order_id)
 
+    @staticmethod
+    def _ready_instructions(product: Mapping[str, Any]) -> str:
+        return texts.ready_instructions(product)
+
     def fulfill_order(
         self, order_id: int | Mapping[str, Any]
     ) -> dict[str, Any] | None:
@@ -3323,7 +3444,7 @@ class BotApplication:
                 texts.ready_delivery(
                     self._order_view(delivered),
                     item["payload"],
-                    product.get("delivery_instructions") or "",
+                    self._ready_instructions(product),
                 ),
                 idempotency_key=f"order:{order_id}:delivery",
             )
@@ -3599,7 +3720,7 @@ class BotApplication:
                     f"مبلغ: {money(payment['base_amount'], self.settings.currency_label)}\n"
                     f"موجودی جدید: {money(balance, self.settings.currency_label)}",
                     idempotency_key=f"payment:{int(payment['id'])}:topup-confirmed",
-                    reply_markup=main_menu_keyboard(),
+            reply_markup=inline_main_menu_keyboard(),
                 )
             elif payment.get("provider_wallet_credit"):
                 balance = self.db.wallet_balance(int(user["id"]))
@@ -3613,7 +3734,7 @@ class BotApplication:
                     idempotency_key=(
                         f"payment:{int(payment['id'])}:provider-wallet-credit"
                     ),
-                    reply_markup=main_menu_keyboard(),
+            reply_markup=inline_main_menu_keyboard(),
                 )
             elif payment.get("order_id") is not None:
                 order = self.db.get_order(int(payment["order_id"]))
@@ -3857,7 +3978,7 @@ class BotApplication:
                 texts.ready_delivery(
                     self._order_view(order),
                     item["payload"],
-                    product.get("delivery_instructions") or "",
+                    self._ready_instructions(product),
                 ),
                 idempotency_key=f"order:{order['id']}:delivery",
             )
@@ -3886,7 +4007,7 @@ class BotApplication:
                 texts.ready_delivery(
                     self._order_view(fulfilled),
                     str(item["payload"]),
-                    product.get("delivery_instructions") or "",
+                    self._ready_instructions(product),
                 ),
                 idempotency_key=f"order:{fulfilled['id']}:delivery",
             )
@@ -3910,7 +4031,7 @@ class BotApplication:
                 texts.ready_delivery(
                     self._order_view(order),
                     str(order["delivered_payload"]),
-                    product.get("delivery_instructions") or "",
+                    self._ready_instructions(product),
                 ),
                 idempotency_key=f"order:{order['id']}:delivery",
             )
@@ -4395,6 +4516,8 @@ class BotApplication:
                 ],
             ]
         )
+        approval = {**approval, "inline_keyboard": [*approval["inline_keyboard"], [callback_button(
+            "جزئیات پرداخت و فیش", f"adm:ui:open:payment_detail:{payment['payment_number']}")]]}
         attachment = (
             self.db.get_payment_receipt_attachment(int(payment["id"]))
             if hasattr(self.db, "get_payment_receipt_attachment")
@@ -4409,10 +4532,11 @@ class BotApplication:
         ).hexdigest()[:20]
         self._notify_privileged_admins_durable(
             f"📎 <b>فیش پرداخت نیازمند بررسی</b>"
-            f"\nپرداخت: <code>{escape(payment['payment_number'])}</code>"
+            f"\nشناسه پرداخت در ربات: <code>{escape(payment['payment_number'])}</code>"
             f"\nمبلغ: {money(int(payment['payable_amount']), self.settings.currency_label)}"
             f"\nکاربر: <code>{int(user['chat_id'])}</code>"
-            f"\nمشاهده فیش: <code>/payment_detail {escape(payment['payment_number'])}</code>",
+            "\nاین شناسه، شماره پیگیری بانک نیست."
+            "\nمبلغ فیش و واریز واقعی را بررسی کنید؛ برای ردکردن باید دلیل ثبت شود.",
             idempotency_key=(
                 f"payment:{int(payment['id'])}:receipt:{version}:admin"
             ),
@@ -4606,6 +4730,10 @@ class BotApplication:
             f"\nپیام: {escape(body_preview)}"
             f"{attachment_command}",
             idempotency_key=f"ticket-message:{int(ticket_message['id'])}:admin",
+            reply_markup=inline_keyboard([
+                [callback_button("مشاهده تیکت", f"adm:ui:open:ticket:{ticket['ticket_number']}")],
+                [callback_button("پاسخ به تیکت", f"adm:ui:open:ticket_reply:{ticket['ticket_number']}")],
+            ]),
         )
 
     def _alert_manual_order_info(
@@ -4732,6 +4860,25 @@ class BotApplication:
             idempotency_key=f"card-review:{int(event['id'])}:admin",
         )
 
+    def _reminders_enabled(self, order: Mapping[str, Any]) -> bool:
+        product = self.db.get_product(int(order["product_id"]))
+        return bool(product and json.loads(product.get("reminder_days_json") or "[]"))
+
+    def _reminder_body(self, order: Mapping[str, Any], *, relative: bool = False) -> str:
+        product = self.db.get_product(int(order["product_id"])) or {}
+        remaining = ""
+        end = parse_iso(order.get("subscription_ends_at"))
+        if relative and end:
+            zone = ZoneInfo(self.settings.timezone)
+            days = max(0, (end.astimezone(zone).date() - utc_now().astimezone(zone).date()).days)
+            remaining = f"{days} روز تا روز پایان این اشتراک باقی مانده.\n" if days else "اشتراک امروز به پایان می‌رسد.\n"
+        icon = render_rich_text(order.get("product_icon_snapshot") or "")
+        return ("⏰ <b>یادآوری پایان اشتراک</b>\n\n" + remaining
+                + f"شماره سفارش: <code>{escape(order['order_number'])}</code>\n"
+                + f"{icon} {escape(order['product_name_snapshot'])}\n"
+                + f"تاریخ پایان: {display_datetime(order.get('subscription_ends_at'), self.settings.timezone)} (تهران)"
+                + ("\nبرای ادامه بدون وقفه، می‌تونی اشتراکت را تمدید کنی." if product.get("is_renewable") else ""))
+
     def _deliver_due_reminders(self) -> None:
         if not hasattr(self.db, "claim_due_reminders"):
             return
@@ -4750,6 +4897,9 @@ class BotApplication:
                     reminder["id"], "missing user/order", permanent=True
                 )
                 continue
+            if not self._reminders_enabled(order):
+                self.db.mark_reminder(reminder["id"], "cancelled", error_text="product reminders disabled")
+                continue
             try:
                 subscription_ends_at = parse_iso(order.get("subscription_ends_at"))
             except (TypeError, ValueError):
@@ -4767,21 +4917,16 @@ class BotApplication:
                     error_text="subscription ended before reminder delivery",
                 )
                 continue
-            local_end = subscription_ends_at.astimezone(ZoneInfo(self.settings.timezone))
-            # Keep the durable body stable across delayed retries. Relative
-            # day counts become false after a midnight or multi-day outage.
-            remaining_text = (
-                f"امروز ساعت {local_end:%H:%M}"
-                if int(reminder["days_before"]) == 0
-                else f"در تاریخ {local_end:%Y-%m-%d} ساعت {local_end:%H:%M}"
-            )
             outbox_key = f"reminder:{reminder['id']}"
+            prior = self.db.get_outbound_message_by_idempotency_key(outbox_key)
+            body = prior["body"] if prior else self._reminder_body(order)
+            markup = (json.loads(prior["reply_markup_json"]) if prior.get("reply_markup_json") else None) if prior else customer_keyboard(
+                "reminder_notice", [[callback_button("مشاهده سفارش", f"order:{order['id']}")]])
             delivered = self._notify_user_durable(
                 user,
-                "⏰ <b>یادآوری پایان اشتراک</b>\n\n"
-                f"اشتراک {escape(order['product_name_snapshot'])} {remaining_text} پایان می‌یابد.\n"
-                f"زمان پایان: {local_end:%Y-%m-%d %H:%M} ({escape(self.settings.timezone)})",
+                body,
                 idempotency_key=outbox_key,
+                reply_markup=markup,
             )
             outbox = self.db.get_outbound_message_by_idempotency_key(outbox_key)
             if delivered or (outbox and outbox.get("status") == "sent"):
@@ -4793,7 +4938,9 @@ class BotApplication:
                         else None
                     ),
                 )
-            elif outbox and outbox.get("status") in {"failed", "cancelled"}:
+            elif outbox and outbox.get("status") == "cancelled":
+                self.db.mark_reminder(reminder["id"], "cancelled", error_text="outbound reminder cancelled")
+            elif outbox and outbox.get("status") == "failed":
                 self.db.mark_reminder_failed(
                     reminder["id"],
                     str(outbox.get("error_text") or "outbound delivery failed"),
@@ -4806,6 +4953,59 @@ class BotApplication:
             # A queued/sending outbox row owns retry from this point. Keep the
             # reminder claimed until stale-claim recovery later reconciles its
             # terminal outbox state, instead of reclaiming it in this cycle.
+
+    def _send_outbound_item(self, item: Mapping[str, Any], recipient: Mapping[str, Any], markup: dict | None) -> dict | None:
+        """Render a receipt as one durable media+caption, with the same outbox key.
+
+        No media IDs are embedded in markup/body. Re-resolve the canonical
+        attachment and its version, and revalidate the recipient's live role.
+        """
+        if markup == main_menu_keyboard() or markup == inline_main_menu_keyboard():
+            # Upgrade old queued reply-menu notices at delivery only. The
+            # canonical historical markup remains unchanged in the database.
+            markup = self._reply_main_menu(dict(recipient))
+        reminder_key = re.fullmatch(r"reminder:([1-9][0-9]*)", str(item.get("idempotency_key") or ""))
+        if reminder_key:
+            reminder = self.db.get_reminder(int(reminder_key[1]))
+            order = self.db.get_order(reminder["order_id"]) if reminder else None
+            try:
+                end = parse_iso(order.get("subscription_ends_at")) if order else None
+            except (TypeError, ValueError):
+                end = None
+            if not order or not end or end <= utc_now() or not self._reminders_enabled(order) or int(order["user_id"]) != int(recipient["id"]):
+                self.db.mark_outbound_message(int(item["id"]), "cancelled", error_text="reminder no longer valid before delivery")
+                if reminder:
+                    self.db.mark_reminder(reminder["id"], "cancelled")
+                return None
+            # Relative day count is rendered at the last moment, not persisted
+            # into a message that may retry days later.
+            return self.telegram.send_message(int(recipient["chat_id"]), self._reminder_body(order, relative=True), parse_mode="HTML",
+                reply_markup=customer_keyboard("reminder_notice", [[callback_button("مشاهده سفارش", f"order:{order['id']}")]]))
+        receipt = re.fullmatch(r"payment:([1-9][0-9]*):receipt:([a-f0-9]{20}):admin:([1-9][0-9]*)",
+                               str(item.get("idempotency_key") or ""))
+        if receipt:
+            admins = self.db.list_admins(active_only=True)
+            permitted = any(int(a["id"]) == int(receipt[3]) and a.get("chat_id") == recipient["chat_id"]
+                            and a.get("role") in {"owner", "admin"} and a.get("identity_verified_at") for a in admins)
+            payment = self.db.get_payment(int(receipt[1]))
+            attachment = self.db.get_payment_receipt_attachment(int(receipt[1])) if payment else None
+            file_id = str((attachment or {}).get("file_id") or (payment or {}).get("receipt_file_id") or "")
+            kind = str((attachment or {}).get("file_kind") or "")
+            version = hashlib.sha256(f"{kind}\0{file_id}".encode()).hexdigest()[:20]
+            if not permitted or not payment or version != receipt[2]:
+                self.db.mark_outbound_message(int(item["id"]), "cancelled", error_text="receipt superseded or recipient no longer privileged")
+                return None
+            if file_id and len(str(item["body"])) <= 1024:
+                try:
+                    send = self.telegram.send_photo if kind == "photo" else self.telegram.send_document
+                    return send(int(recipient["chat_id"]), file_id, caption=item["body"], parse_mode="HTML", reply_markup=markup)
+                except TelegramAPIError as exc:
+                    # Definite rejection only: an ambiguous timeout must remain
+                    # a retry, never create a second notification via fallback.
+                    if exc.error_code != 400:
+                        raise
+                    LOG.warning("Receipt media unavailable; sending durable review notice")
+        return self.telegram.send_message(int(recipient["chat_id"]), item["body"], parse_mode="HTML", reply_markup=markup)
 
     def _deliver_outbound_messages(self) -> None:
         if not hasattr(self.db, "claim_outbound_messages"):
@@ -4840,6 +5040,7 @@ class BotApplication:
                     not reminder or not order or end_at is None or end_at <= utc_now()
                     or int(reminder["user_id"]) != int(item["recipient_user_id"])
                     or reminder["status"] == "cancelled"
+                    or not self._reminders_enabled(order)
                 ):
                     self.db.mark_outbound_message(
                         item["id"], "cancelled", error_text="reminder no longer valid before delivery",
@@ -4856,12 +5057,9 @@ class BotApplication:
                             reply_markup = decoded
                     except (TypeError, ValueError):
                         LOG.warning("Ignoring invalid reply markup for outbound message %s", item["id"])
-                sent = self.telegram.send_message(
-                    recipient["chat_id"],
-                    item["body"],
-                    parse_mode="HTML",
-                    reply_markup=reply_markup,
-                )
+                sent = self._send_outbound_item(item, recipient, reply_markup)
+                if sent is None:
+                    continue
                 self.db.mark_outbound_message(
                     item["id"], success=True, telegram_message_id=sent.get("message_id")
                 )
@@ -4973,6 +5171,11 @@ class BotApplication:
             return True
 
         try:
+            previous = self.db.get_outbound_message_by_idempotency_key(idempotency_key)
+            if previous and previous["body"] == text.strip() and previous["recipient_user_id"] == int(user["id"]):
+                previous_markup = json.loads(previous["reply_markup_json"]) if previous.get("reply_markup_json") else None
+                if previous_markup == main_menu_keyboard() and reply_markup == inline_main_menu_keyboard():
+                    reply_markup = previous_markup
             queued = self.db.queue_outbound_message(
                 text,
                 recipient_user_id=int(user["id"]),
@@ -5002,9 +5205,9 @@ class BotApplication:
                 )
                 return False
             try:
-                sent = self.telegram.send_message(
-                    int(user["chat_id"]), text, reply_markup=reply_markup
-                )
+                sent = self._send_outbound_item(claimed, user, reply_markup)
+                if sent is None:
+                    return False
             except TelegramRequestCancelled:
                 self.db.mark_outbound_message(
                     int(queued["id"]),
@@ -5102,11 +5305,18 @@ class BotApplication:
                         int(admin["chat_id"]),
                         username=str(admin.get("username") or "") or None,
                     )
+                key = f"{idempotency_key}:{int(admin['id'])}"
+                notice_text, notice_markup = text, reply_markup
+                if idempotency_key.startswith("ticket-message:") or re.fullmatch(r"payment:\d+:receipt:[a-f0-9]{20}:admin", idempotency_key):
+                    prior = self.db.get_outbound_message_by_idempotency_key(key)
+                    if prior and int(prior["recipient_user_id"]) == int(user["id"]):
+                        notice_text = prior["body"]
+                        notice_markup = json.loads(prior["reply_markup_json"]) if prior.get("reply_markup_json") else None
                 if self._notify_user_durable(
                     user,
-                    text,
-                    idempotency_key=f"{idempotency_key}:{int(admin['id'])}",
-                    reply_markup=reply_markup,
+                    notice_text,
+                    idempotency_key=key,
+                    reply_markup=notice_markup,
                 ):
                     delivered += 1
             except DatabaseError:
