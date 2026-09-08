@@ -141,6 +141,16 @@ class FollowupDomainTests(db_fixture.DatabaseTestCase):
             self.db.complete_order(order["id"], "Cannot complete collecting input")
         self.assertEqual(json.loads(self.db.get_order(order["id"])["customer_info_json"])["text"], "original")
 
+    def test_concurrent_appends_preserve_every_message_once(self):
+        user, order = self.manual()
+        def append(index):
+            self.append(user, order, message_id=index % 8 + 1, text=f"part-{index % 8}")
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(append, range(16)))
+        info = json.loads(self.db.get_order(order["id"])["customer_info_json"])
+        self.assertEqual(len(info["messages"]), 8)
+        self.assertEqual({m["text"] for m in info["messages"]}, {f"part-{n}" for n in range(8)})
+
     def test_owner_type_status_and_bad_message_guards(self):
         user, order = self.manual()
         stranger = self.user(2)
@@ -274,6 +284,19 @@ class FollowupJourneyTests(unittest.TestCase):
         screen = copy.deepcopy(self.screen(self.CUSTOMER))
         self.click(self.OWNER, "پایان ارسال اطلاعات", screen=screen)
         self.assertEqual(self.db.get_order(order["id"])["status"], "awaiting_info")
+
+    def test_processing_order_reopened_for_input_is_not_offered_for_completion(self):
+        user, order = self.manual()
+        self.send(self.CUSTOMER, text="first-round")
+        self.click(self.CUSTOMER, "پایان ارسال اطلاعات")
+        self.app.show_order(user, order["id"])
+        self.click(self.CUSTOMER, "ارسال اطلاعات")
+        self.assertEqual(self.db.get_order(order["id"])["status"], "processing")
+        self.panel("orders")
+        self.click(self.OWNER, ACTIONS["complete"].label)
+        self.assertEqual(self.state()["options"], [])
+        with self.assertRaises(ValidationError):
+            self.db.complete_order(order["id"], "premature")
 
     def test_old_queued_admin_info_notice_is_not_rewritten_or_sent_twice(self):
         user, order = self.manual()

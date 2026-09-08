@@ -473,6 +473,7 @@ class AdminButtonTests(unittest.TestCase):
         ui = controller.button_ui
         captured = []
         self.db.create_discount("DEMO", discount_type="percent", value=10)
+        self.db.create_reward_rule("DEMO", event_type="start", amount=10)
 
         def handler(key):
             def capture(rest, message, user, admin):

@@ -4804,11 +4804,11 @@ class BotApplication:
             else ""
         )
         files = order_information.attachments(stored_information)
-        rows = [[callback_button("مشاهده اطلاعات کامل سفارش", f"adm:ui:open:order:{order['order_number']}")]]
-        if files:
-            rows.append([callback_button(f"دریافت پیوست‌ها ({len(files)})", f"adm:ui:open:order_attachment:{order['order_number']}")])
-        rows.append([callback_button("تکمیل سفارش", f"adm:ui:open:complete:{order['order_number']}", style="success")])
-        reply_markup = inline_keyboard(rows)
+        reply_markup = inline_keyboard([
+            [callback_button("مشاهده اطلاعات کامل سفارش", f"adm:ui:open:order:{order['order_number']}")],
+            *([[callback_button(f"دریافت پیوست‌ها ({len(files)})", f"adm:ui:open:order_attachment:{order['order_number']}")]] if files else []),
+            [callback_button("تکمیل سفارش", f"adm:ui:open:complete:{order['order_number']}", style="success")],
+        ])
         self._notify_privileged_admins_durable(
             f"📋 <b>اطلاعات سفارش دستی دریافت شد</b>"
             f"\nسفارش: <code>{escape(order['order_number'])}</code>"

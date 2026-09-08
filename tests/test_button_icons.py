@@ -28,6 +28,11 @@ ICONS = {key: str(100000 + index) for index, key in enumerate(ICON_SOURCES)}
 
 
 class ButtonIconTests(unittest.TestCase):
+    def test_followup_controls_reuse_semantic_icons_without_unicode_labels(self):
+        for label, expected in (("پایان ارسال اطلاعات", "check"), ("پاداش معرف این محصول", "referral"), ("سقف آیتم‌های انبار", "inventory")):
+            with self.subTest(label=label):
+                self.assertEqual(icon_key(callback_button(label, "synthetic:test")), expected)
+
     def engine(self):
         db = Mock()
         db.get_setting.side_effect = lambda key, default=None: default
