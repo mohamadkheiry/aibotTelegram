@@ -169,7 +169,8 @@ class AdminCatalog:
             if product.get("short_description"):
                 text += "\n\n" + render_rich_text(product["short_description"])
             rows = [[self.button(label, f"{route}:{product_id}")] for label, route in (
-                ("اطلاعات و ویرایش محصول", "fields"), ("انبار محصول", "stock"), ("فرمت محصول", "format"))]
+                ("اطلاعات و ویرایش محصول", "fields"), ("انبار محصول", "stock"), ("فرمت محصول", "format"),
+                ("پاداش معرف این محصول", "rewards"))]
             rows += [[self.button("نمایش / عدم نمایش محصول", f"toggle:{product_id}:visible")],
                      [self.button("موجود / ناموجود", f"toggle:{product_id}:available")],
                      [self.button("یادآوری پایان اشتراک", f"field:{product_id}:reminder_days")],
@@ -177,7 +178,8 @@ class AdminCatalog:
                      [self.button("بازگشت به دستهٔ محصول", "up")]]
         elif kind == "fields":
             text = title + "\n\nهر مشخصه را انتخاب کنید تا مقدار کامل فعلی را ببینید و ویرایش کنید."
-            rows = [[self.button(label, f"field:{product_id}:{key}")] for label, key in PRODUCT_FIELDS]
+            rows = [[self.button(label, f"field:{product_id}:{key}")] for label, key in PRODUCT_FIELDS
+                    if key != "stock_limit" or product["product_type"] == "ready"]
         elif kind == "field":
             from .admin import _PRODUCT_FIELDS
 
@@ -199,6 +201,11 @@ class AdminCatalog:
             text = title + f"\n\n<b>{escape(labels[field])}</b>\nمقدار فعلی:\n{escape(value if value is not None else 'تنظیم نشده')}"
             rows = [[self.button("ویرایش این مقدار", f"edit:{product_id}:{field}")],
                     [self.button("بازگشت به اطلاعات محصول", f"fields:{product_id}")]]
+            if field == "stock_limit":
+                text += "\n\nاین سقف فقط آیتم‌های تحویل‌نشدهٔ انبار، شامل آماده و غیرفعال، را محدود می‌کند؛ نه تعداد سفارش‌های دستی."
+                if product["product_type"] != "ready":
+                    text += "\nاین محصول دستی است و این تنظیم در آن کاربرد ندارد. مقدار تاریخی محفوظ است."
+                    rows = rows[1:]
         elif kind == "format":
             text = title + "\n\nفرمت محصول: " + ("موجود در انبار" if product["product_type"] == "ready" else "نیازمند اطلاعات کاربر")
             text += "\nموجود در انبار: تحویل خودکار اطلاعات اکانت پس از پرداخت.\nنیازمند اطلاعات: دریافت اطلاعات خریدار و انجام سفارش توسط مدیر."
@@ -209,8 +216,7 @@ class AdminCatalog:
                          [self.button("راهنمای تحویل اکانت", f"field:{product_id}:delivery_instructions")]]
             else:
                 rows += [[self.button("متن دریافت اطلاعات کاربر", f"field:{product_id}:info_request_text")],
-                         [self.button("متن تکمیل سفارش", f"field:{product_id}:completion_text")],
-                         [self.button("سقف موجودی محصول دستی", f"field:{product_id}:stock_limit")]]
+                         [self.button("متن تکمیل سفارش", f"field:{product_id}:completion_text")]]
         else:
             self.error("صفحهٔ محصول معتبر نیست.")
         if kind != "product":
@@ -242,9 +248,10 @@ class AdminCatalog:
             rows.append([self.button("پاک‌کردن جست‌وجو", f"clear:stock:{product_id}")])
         if product["product_type"] == "ready":
             rows.append([self.button("افزایش موجودی / افزودن اکانت", f"act:product:{product_id}:inventory_add")])
+            text += f"\nسقف آیتم‌های تحویل‌نشده: {product['stock_limit'] if product['stock_limit'] is not None else 'بدون محدودیت'}"
+            rows.append([self.button("سقف آیتم‌های انبار", f"field:{product_id}:stock_limit")])
         else:
-            text += "\nاین محصول دستی است؛ سقف تعداد قابل فروش را از گزینهٔ زیر تغییر دهید."
-            rows.append([self.button("تغییر سقف موجودی دستی", f"edit:{product_id}:stock_limit")])
+            text += "\nاین محصول با اطلاعات کاربر و توسط مدیر انجام می‌شود و انبار اکانت آماده ندارد. برای توقف فروش از «موجود / ناموجود» در صفحه محصول استفاده کنید."
         rows.append([self.button("بازگشت به محصول", f"product:{product_id}")])
         self._publish({"kind": "stock", "id": product_id, "page": page, "search": search, "status": status,
                        "category_context": self._category_context(product, user)}, text, rows + self.ui.navigation(), user, admin)
@@ -280,6 +287,35 @@ class AdminCatalog:
                        "stock_context": stock_context,
                        "category_context": self._category_context(product, user)}, text, rows + self.ui.navigation(), user, admin)
 
+    def rewards(self, product_id: int, user: dict, admin: dict, *, page: int = 1) -> None:
+        product = self._product(product_id)
+        items, total, pages, page = self._page("SELECT * FROM reward_rules WHERE product_id=? ORDER BY id DESC", (product_id,), page)
+        events = {"first_purchase": "اولین خرید", "product_purchase": "خرید محصول", "combined": "ترکیبی"}
+        text = (f"<b>پاداش معرف محصول {escape(product['name'])}</b>\nصفحه {page} از {pages} | قوانین: {total}\n"
+                "پاداش به دعوت‌کننده می‌رسد، نه خود خریدار. قواعد عمومی از بخش دعوت و پاداش مدیریت می‌شوند.\n"
+                "مدل فعلی مبلغ ثابت است؛ درصد و سقف هنوز فعال نشده‌اند.")
+        rows = [[self.button(f"قانون {item['id']} · {events.get(item['event_type'], item['event_type'])} · {'فعال' if item['is_active'] else 'غیرفعال'}",
+                             f"reward:{product_id}:{item['id']}")] for item in items]
+        rows += self._pager(f"rewards:{product_id}", page, pages)
+        rows += [[self.button("افزودن پاداش ثابت این محصول", f"rewardadd:{product_id}")],
+                 [self.button("بازگشت به محصول", f"product:{product_id}")]]
+        self._publish({"kind": "rewards", "id": product_id, "page": page,
+                       "category_context": self._category_context(product, user)}, text, rows + self.ui.navigation(), user, admin)
+
+    def reward(self, product_id: int, rule_id: int, user: dict, admin: dict) -> None:
+        from .texts import referral_rule
+
+        product = self._product(product_id)
+        rule = self.controller._query_one("SELECT * FROM reward_rules WHERE id=? AND product_id=?", (rule_id, product_id))
+        if rule is None:
+            self.error("این قانون به محصول انتخاب‌شده مربوط نیست یا دیگر وجود ندارد.")
+        text = (f"<b>پاداش معرف {escape(product['name'])}</b>\nقانون: {rule_id}\n"
+                f"وضعیت فعلی: {'فعال' if rule['is_active'] else 'غیرفعال'}\n\n" + referral_rule(rule, self.controller.settings.currency_label))
+        rows = [[self.button("غیرفعال‌کردن پاداش" if rule["is_active"] else "فعال‌کردن پاداش", f"rewardtoggle:{product_id}:{rule_id}")],
+                [self.button("بازگشت به پاداش‌های محصول", f"rewards:{product_id}")]]
+        self._publish({"kind": "rewards", "id": product_id, "category_context": self._category_context(product, user)},
+                      text, rows + self.ui.navigation(), user, admin)
+
     def open_context(self, context: dict, user: dict, admin: dict) -> None:
         kind, identifier = context.get("kind"), int(context.get("id") or 0)
         if kind == "category":
@@ -288,6 +324,8 @@ class AdminCatalog:
             self.stock(identifier, user, admin, page=int(context.get("page") or 1), search=str(context.get("search") or ""), status=str(context.get("status") or "all"))
         elif kind == "item":
             self.item(int(context["product_id"]), identifier, user, admin)
+        elif kind == "rewards":
+            self.rewards(identifier, user, admin, page=int(context.get("page") or 1))
         elif kind in {"product", "fields", "field", "format"}:
             self.product(identifier, user, admin, kind=kind, field=context.get("field"))
         else:
@@ -324,6 +362,8 @@ class AdminCatalog:
                 if key != "product_set" or field not in dict((key, label) for label, key in PRODUCT_FIELDS):
                     self.error("مشخصهٔ محصول معتبر نیست.")
                 preset["field"] = field
+                if field == "stock_limit" and product["product_type"] != "ready":
+                    self.error("سقف آیتم‌های انبار فقط برای محصول آماده است؛ تعداد سفارش‌های دستی را محدود نمی‌کند.")
             if flag is not None:
                 if key != "product_toggle" or flag not in {"visible", "available", "reserve"}:
                     self.error("وضعیت محصول معتبر نیست.")
@@ -366,6 +406,27 @@ class AdminCatalog:
         if len(parts) < 2 or not parts[1].isdigit():
             self.error("دکمهٔ محصولات معتبر نیست.")
         identifier = int(parts[1])
+        if route == "rewards" and len(parts) in {2, 3}:
+            if len(parts) == 3 and not parts[2].isdigit():
+                self.error("صفحه معتبر نیست.")
+            self.rewards(identifier, user, admin, page=int(parts[2]) if len(parts) == 3 else 1)
+            return True
+        if route == "rewardadd" and len(parts) == 2:
+            self._product(identifier)
+            self.ui.begin("reward_add", event, user, admin, product_scope=identifier,
+                          return_to={"kind": "rewards", "id": identifier})
+            return True
+        if route in {"reward", "rewardtoggle"} and len(parts) == 3 and parts[2].isdigit():
+            rule_id = int(parts[2])
+            self._product(identifier)
+            rule = self.controller._query_one("SELECT id FROM reward_rules WHERE id=? AND product_id=?", (rule_id, identifier))
+            if rule is None:
+                self.error("قانون پاداش متعلق به این محصول نیست.")
+            if route == "reward":
+                self.reward(identifier, rule_id, user, admin)
+            else:
+                self.ui.begin("reward_toggle", event, user, admin, selected=str(rule_id), return_to={"kind": "rewards", "id": identifier})
+            return True
         if route == "stockfilter" and len(parts) == 3:
             self.stock(identifier, user, admin, status=parts[2])
             return True

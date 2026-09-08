@@ -201,7 +201,7 @@ class AdminCatalogHierarchyTests(unittest.TestCase):
         self.click(label="بازگشت به بخش انتخاب‌شده")
         self.assertFalse(any("حذف" in b["text"] or "ویرایش" in b["text"] or "تخصیص" in b["text"] for b in self.buttons()))
 
-    def test_format_and_reservation_are_contextual_and_manual_stock_has_its_own_control(self):
+    def test_format_and_reservation_are_contextual_and_manual_has_no_inventory_limit(self):
         self.db.delete_inventory_item(self.inventory["id"])
         self.open_product()
         self.click(label="فرمت محصول")
@@ -212,10 +212,8 @@ class AdminCatalogHierarchyTests(unittest.TestCase):
         self.click(label="بازگشت به بخش انتخاب‌شده")
         self.click(label="انبار محصول")
         self.assertNotIn("افزایش موجودی / افزودن اکانت", [b["text"] for b in self.buttons()])
-        self.click(label="تغییر سقف موجودی دستی")
-        self.send_message(self.OWNER, text="10")
-        self.confirm()
-        self.assertEqual(self.db.get_product(self.product["id"])["stock_limit"], 10)
+        self.assertFalse(any("سقف" in b["text"] for b in self.buttons()))
+        self.assertIn("انبار اکانت آماده ندارد", self.prompt()["text"])
 
     def test_catalog_search_pagination_and_back_preserve_selected_category(self):
         for index in range(24):

@@ -966,7 +966,7 @@ class AdminControllerTests(unittest.TestCase):
 
         before = len(self.telegram.messages)
         self.handle(
-            f"/user_orders {target['chat_id']} {orders[7]['order_number']}"
+            f"/user_orders {target['chat_id']} order:{orders[7]['order_number']}"
         )
         exact_order = "\n".join(
             item["text"] for item in self.telegram.messages[before:]
@@ -974,7 +974,7 @@ class AdminControllerTests(unittest.TestCase):
         self.assertIn(orders[7]["order_number"], exact_order)
 
         self.handle(
-            f"/user_orders {target['chat_id']} {other_order['order_number']}"
+            f"/user_orders {target['chat_id']} order:{other_order['order_number']}"
         )
         self.assertIn("برای این کاربر پیدا نشد", self.telegram.messages[-1]["text"])
 

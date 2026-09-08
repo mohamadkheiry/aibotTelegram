@@ -19,6 +19,7 @@ from .db import ConflictError, DatabaseError
 from .keyboards import callback_button, contains_emoji, inline_keyboard
 from .telegram import TelegramError
 from .utils import escape, money, normalize_digits, normalize_username
+from . import order_information
 
 
 class ButtonInputError(ValueError):
@@ -37,8 +38,8 @@ SELECTORS = {
     "ready_product": "SELECT CAST(id AS TEXT) value, name || ' · ' || id label, name || ' ' || id search FROM products WHERE is_active=1 AND product_type='ready'",
     "user": "SELECT CAST(chat_id AS TEXT) value, COALESCE(customer_name, first_name, '') || ' @' || COALESCE(username, '') || ' · ' || chat_id label, COALESCE(username, '') || ' ' || COALESCE(customer_name, first_name, '') || ' ' || chat_id search FROM users WHERE chat_id IS NOT NULL",
     "admin": "SELECT CAST(chat_id AS TEXT) value, '@' || username || ' · ' || role || ' · ' || chat_id label, username || ' ' || chat_id search FROM admins WHERE chat_id IS NOT NULL",
-    "order": "SELECT order_number value, order_number || ' · ' || product_name_snapshot || ' · ' || status label, order_number || ' ' || product_name_snapshot search FROM orders",
-    "manual_order": "SELECT order_number value, order_number || ' · ' || product_name_snapshot || ' · ' || status label, order_number || ' ' || product_name_snapshot search FROM orders WHERE product_type_snapshot='manual' AND status='processing' AND customer_info_json IS NOT NULL",
+    "order": "SELECT o.order_number value, o.order_number || ' · ' || o.product_name_snapshot || ' · ' || o.status label, o.order_number || ' ' || o.product_name_snapshot || ' ' || COALESCE(u.username,'') || ' ' || COALESCE(u.chat_id,'') search FROM orders o JOIN users u ON u.id=o.user_id",
+    "manual_order": "SELECT order_number value, order_number || ' · ' || product_name_snapshot || ' · ' || status label, order_number || ' ' || product_name_snapshot search FROM orders WHERE product_type_snapshot='manual' AND status='processing' AND customer_info_json IS NOT NULL AND CASE WHEN json_valid(customer_info_json) THEN COALESCE(json_extract(customer_info_json,'$.collecting'),0)=0 ELSE 0 END",
     "payment": "SELECT payment_number value, payment_number || ' · ' || payable_amount || ' تومان · ' || status label, payment_number || ' ' || payable_amount search FROM payments",
     "receipt": "SELECT payment_number value, payment_number || ' · ' || payable_amount || ' تومان' label, payment_number || ' ' || payable_amount search FROM payments WHERE method='card' AND status='verifying' AND receipt_file_id IS NOT NULL",
     "join": "SELECT CAST(id AS TEXT) value, title || ' · ' || telegram_chat_id label, title || ' ' || telegram_chat_id search FROM force_join_channels",
@@ -279,7 +280,8 @@ class AdminButtonUI:
         return data
 
     def begin(self, key: str, event: dict, user: dict, admin: dict, *, selected: str | None = None,
-              preset: dict[str, str] | None = None, return_to: dict | None = None) -> None:
+              preset: dict[str, str] | None = None, return_to: dict | None = None,
+              product_scope: int | None = None) -> None:
         action = ACTIONS.get(key)
         if action is None or not self.allowed(action, admin["role"]):
             raise ButtonInputError("دسترسی اجرای این عملیات را ندارید.")
@@ -303,6 +305,12 @@ class AdminButtonUI:
             state["prompt_message_id"] = old["data"].get("prompt_message_id")
         if return_to:
             state["return_to"] = return_to
+        if product_scope is not None:
+            if key != "reward_add":
+                raise ButtonInputError("زمینه محصول فقط برای فرم پاداش مجاز است.")
+            product = self.catalog._product(product_scope)
+            state["values"].update(product=str(product_scope), _product_scope=True)
+            state["labels"]["product"] = product["name"]
         if selected is not None:
             fields = form_fields(action, {})
             if not fields or not fields[0].kind.startswith("entity:"):
@@ -625,11 +633,15 @@ class AdminButtonUI:
         if field.kind.startswith(("entity:", "multi:")):
             query, params = self._selector(field, state)
             search = state.get("search", "")
+            if field.kind in {"entity:order", "entity:manual_order"}:
+                search = normalize_digits(search).lstrip("@")
             query = f"SELECT * FROM ({query}) WHERE instr(lower(search), lower(?)) > 0 ORDER BY length(value) DESC, value DESC"
             rows, total, pages = self.controller._management_rows(int(state.get("page", 1)), query, (*params, search))
             state.update(option_total=total, option_pages=pages)
             return [(str(row["value"]), str(row["label"])) for row in rows]
         choices = [(value, label) for label, value in field.options]
+        if state.get("action") == "reward_add" and field.key == "event" and state["values"].get("_product_scope"):
+            choices = [(value, label) for value, label in choices if value != "start"]
         if state.get("action") == "payment" and field.key == "method":
             choices = [(value, label + " · " + ("فعال" if self.db.get_setting(
                 f"payment_{value}_enabled", value != "crypto") else "غیرفعال")) for value, label in choices]
@@ -667,6 +679,14 @@ class AdminButtonUI:
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
+            if action.key == "reward_toggle":
+                item = self.controller._query_one("SELECT * FROM reward_rules WHERE id=?", (state["values"]["target"],))
+                if item is None:
+                    raise ButtonInputError("این قانون پاداش دیگر وجود ندارد.")
+                if state.get("reward_target", {}).get("id") != item["id"]:
+                    state["reward_target"] = {"id": item["id"], "active": not bool(item["is_active"])}
+                lines.append(f"قانون: {item['id']} | وضعیت فعلی: {'فعال' if item['is_active'] else 'غیرفعال'}")
+                lines.append("پس از تأیید: " + ("فعال" if state["reward_target"]["active"] else "غیرفعال"))
             if action.key in {"discount_toggle", "discount_delete"}:
                 item = self.controller._query_one("SELECT * FROM discounts WHERE code_key=?", (state["values"]["target"].casefold(),))
                 if item is None:
@@ -742,6 +762,9 @@ class AdminButtonUI:
                 text += "\nانتخاب‌شده: " + escape(preview) + " | شناسه: " + escape(state["values"]["target"])
             if field.hint:
                 text += "\n" + escape(field.hint)
+        if state["values"].get("_product_scope"):
+            product = self.catalog._product(int(state["values"]["product"]))
+            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nپاداش این فرم مبلغ ثابت است؛ قواعد عمومی موجود بدون تغییر می‌مانند."
         if state["step"] > state.get("minimum_step", 0):
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
         rows.append([self._button("لغو و بازگشت", self.return_route(state) if state.get("return_to") else "g:" + action.group, style="danger")])
@@ -853,6 +876,8 @@ class AdminButtonUI:
         rows = []
         if action.key == "user":
             rows.append([self._button("جست‌وجوی کاربر دیگر", "a:user")])
+        if action.key in {"order", "orders"}:
+            rows.append([self._button("جست‌وجوی سفارش", "a:order")])
         if action.key == "discounts":
             items, _, _ = self.controller._management_rows(int(state.get("result_page", 1)), "SELECT * FROM discounts ORDER BY id DESC")
             rows.extend([[self._button(label_text(item["code"]) + " · " + ("فعال" if item["is_active"] else "غیرفعال"),
@@ -867,6 +892,16 @@ class AdminButtonUI:
             linked = ACTIONS[key]
             if self.allowed(linked, admin["role"]):
                 target = state["values"]["target"]
+                if action.key == "order":
+                    order = self.controller._require_order(target)
+                    try:
+                        info = order_information.decode(order.get("customer_info_json"))
+                    except (TypeError, ValueError):
+                        info = {}
+                    if key == "order_attachment" and not order_information.attachments(info):
+                        continue
+                    if key == "complete" and info.get("collecting"):
+                        continue
                 if self.entity_value(linked.fields[0], target, state) is not None:
                     rows.append([self._button(linked.label, f"open:{key}:{target}")])
         if "list_pages" in state and not action.mutation:

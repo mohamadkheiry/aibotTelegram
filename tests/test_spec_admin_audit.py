@@ -101,7 +101,7 @@ class SpecAdminAuditTests(unittest.TestCase):
         self.db.set_order_customer_info(order["id"], {"text": customer_text})
         for command in (
             f"/order {order['order_number']}",
-            f"/user_orders 1001 {order['order_number']}",
+            f"/user_orders 1001 order:{order['order_number']}",
         ):
             with self.subTest(command=command):
                 rendered = self.handle(command)

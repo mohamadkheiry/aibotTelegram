@@ -63,7 +63,7 @@ PRODUCT_FIELDS = (
     ("قوانین", "rules"), ("لینک قوانین", "rules_url"),
     ("متن درخواست اطلاعات", "info_request_text"), ("متن تکمیل سفارش", "completion_text"),
     ("راهنمای تحویل", "delivery_instructions"), ("روزهای یادآوری", "reminder_days"),
-    ("سقف موجودی دستی", "stock_limit"),
+    ("سقف آیتم‌های انبار", "stock_limit"),
 )
 
 
@@ -165,7 +165,7 @@ add("inventory_assign", "تخصیص مستقیم اکانت به کاربر", "i
     replace(USER, key="user"), mutation=True)
 add("orders", "فهرست و فیلتر سفارش‌ها", "orders", STATUS,
     choice("range", "بازه ثبت سفارش", (("همه تاریخ‌ها", "all"), ("انتخاب بازه", "custom"))))
-add("order", "مشاهده جزئیات سفارش", "orders", ORDER)
+add("order", "جست‌وجوی سفارش / مشاهده جزئیات", "orders", ORDER)
 add("order_attachment", "دریافت پیوست اطلاعات سفارش", "orders", ORDER)
 add("order_status", "تغییر وضعیت سفارش", "orders", ORDER,
     choice("status", "وضعیت جدید", tuple(pair for pair in ORDER_OPTIONS if pair[1] not in {
@@ -274,7 +274,7 @@ def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
             fields.append(replace(PRODUCT, default="all"))
         fields.extend((START, END))
     if action.key == "reward_add" and values.get("event"):
-        if values["event"] != "start":
+        if values["event"] != "start" and not values.get("_product_scope"):
             fields.append(RULE_PRODUCT)
         if values["event"] == "combined":
             fields.extend((
@@ -306,7 +306,8 @@ def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
             kind = {"price": "positive", "sort_order": "integer", "stock_limit": "nonnegative", "duration_days": "positive"}[name]
             resolved = replace(field, kind=kind,
                                default="none" if name in {"stock_limit", "duration_days"} else None,
-                               hint="یک عدد ترتیب وارد کنید؛ عدد کوچک‌تر زودتر نمایش داده می‌شود. نمونه: ۱۰" if name == "sort_order" else "")
+                               hint=("یک عدد ترتیب وارد کنید؛ عدد کوچک‌تر زودتر نمایش داده می‌شود. نمونه: ۱۰" if name == "sort_order" else
+                                     "حداکثر آیتم‌های تحویل‌نشدهٔ انبار (آماده و غیرفعال). این مقدار سقف سفارش‌های دستی نیست." if name == "stock_limit" else ""))
         elif name == "reminder_days":
             resolved = Field("value", "روزهای یادآوری پیش از انقضا", "reminders",
                              (("غیرفعال‌کردن یادآوری", "off"), ("روز پایان اشتراک", "0"), ("یک روز قبل", "1"),

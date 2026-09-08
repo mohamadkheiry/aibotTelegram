@@ -1,5 +1,7 @@
 # معماری فنی ربات الون اکانت
 
+`order_information.py` projection مشترک اطلاعات legacy/چندپیامی است؛ bot جمع‌آوری و دکمه پایان را orchestrate می‌کند و DB append/dedup/ownership/finalization/outbox را اتمیک نگه می‌دارد. کنترل پاداش محصول از `AdminCatalog` به همان فرم و handler مالی موجود می‌رود؛ موتور مالی دوم ساخته نمی‌شود. [جزئیات](FOLLOWUP_FEEDBACK_2026-09-08.md).
+
 اصلاحات ۲۰۲۶-۰۹-۰۸: `utils.telegram_input_text` مرز ورودی rich و `texts.ready_instructions` متن مشترک تحویل و guard دامنه است. `Database.set_user_ticket_status` نسخه مکالمه و outbox اتمیک دارد. اعلان فیش در همان outbox به شکل رسانه/caption است؛ پیش از ارسال نسخه فیش و مجوز گیرنده revalidate می‌شوند. timeout رسانه fallback دوم نمی‌سازد، ولی خطای قطعی نبود رسانه fallback متنی دارد. [گزارش و محدودیت‌ها](CLIENT_FEEDBACK_2026-09-08.md).
 
 لایهٔ `button_icons.apply_icons` در `LayoutEngine.prepare` روی کپی markup آیکون معنایی می‌افزاید؛ فقط custom emoji ID از manifest معتبر/override محیط و با حفظ آیکون صریح. سپس metadata حذف و رنگ در TelegramClient اعمال می‌شود. [قرارداد و ابزار انتشار](BUTTON_ICONS.md).

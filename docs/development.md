@@ -1,5 +1,7 @@
 # راهنمای توسعه و تحویل کار به Agentها
 
+قرارداد تازه سفارش/اطلاعات: [FOLLOWUP_FEEDBACK_2026-09-08.md](FOLLOWUP_FEEDBACK_2026-09-08.md). شماره عمومی رشته و ID داخلی عدد است؛ `order_number_sequence` در تراکنش ایجاد سفارش، و begin/append/finish در DB هستند. state چندپیامی تا پایان صریح باز است؛ legacy outbox برای renderer جدید بازنویسی نمی‌شود. تست‌های `test_followup_feedback.py` و سفر کامل manual شرط تغییر این مسیرند.
+
 آیکون‌ها: `button_icons.py` resolver صرفاً نمایشی ۴۵ نماد Lucide است؛ در کپی `LayoutEngine.prepare` اعمال می‌شود. manifest عمومی از env بارگذاری و اعتبارسنجی می‌شود؛ آیکون صریح و outbox اصلی دست‌نخورده‌اند. ابزارهای بازتولید/انتشار و تست‌های `test_button_icons.py` در [BUTTON_ICONS.md](BUTTON_ICONS.md) مستند شده‌اند.
 
 برای تغییر هر صفحهٔ کاربر، [CUSTOMER_LAYOUTS.md](CUSTOMER_LAYOUTS.md) الزامی است. همهٔ ۴۲ نوع صفحه باید در `customer_layouts.SECTIONS` و ساخت markupِ sectionدار پوشش داده شوند؛ AST test، صفحهٔ بی‌ثبت را رد می‌کند. default سند را حفظ کنید، slot تازه را در registry/config tests مستند کنید و raw callback/URL را از config مدیر نسازید. تست‌های layout همراه تمام تست‌های خرید/outbox اجرا شوند. `_customer_layout/_layout_slot/_layout_item` فقط metadata داخلی‌اند و باید پیش از شبکه حذف شوند؛ تغییر ترتیب ارسالی نباید outbox canonical را mutate کند.

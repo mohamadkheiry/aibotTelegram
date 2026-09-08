@@ -265,6 +265,18 @@ def reserved_delivery(order: dict[str, Any]) -> str:
     )
 
 
+def manual_delivery(order: Mapping[str, Any], rendered_content: str) -> str:
+    """Shared manual-delivery header; content was validated by the input boundary."""
+    icon = render_rich_text(order.get("product_icon_snapshot") or "")
+    title = escape(order["product_name_snapshot"])
+    product_label = f"{icon} {title}".strip()
+    return (
+        "✅ <b>سفارشت آماده است</b>\n\n"
+        f"🧾 شماره سفارش: <code>{escape(order['order_number'])}</code>\n"
+        f"{product_label}\n\n{rendered_content}"
+    )
+
+
 def needs_information(order: dict[str, Any], prompt: str) -> str:
     return (
         "ℹ️📋 <b>اطلاعات موردنیاز برای فعال‌سازی</b>\n\n"

@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 from .utils import is_safe_https_url, is_safe_telegram_invite_url
 from .customer_layouts import same_canonical_markup
+from . import order_information
 
 
 class DatabaseError(RuntimeError):
@@ -92,6 +93,8 @@ def _has_customer_information(value: str | None) -> bool:
     except (TypeError, ValueError, json.JSONDecodeError):
         return False
     if not isinstance(payload, Mapping):
+        return False
+    if payload.get("collecting"):
         return False
     return bool(
         str(payload.get("text") or "").strip()
@@ -2633,7 +2636,7 @@ class Database:
             # not when the payment is merely accepted.
             subscription_ends = None
             for _ in range(5):
-                order_number = f"ORD-{created:%Y%m%d}-{uuid.uuid4().hex[:10].upper()}"
+                order_number = self._allocate_order_number(connection, stamp)
                 try:
                     cursor = connection.execute(
                         """
@@ -2688,9 +2691,36 @@ class Database:
             queue_created_notice(connection, result)
             return result
 
+    @staticmethod
+    def _allocate_order_number(connection: sqlite3.Connection, stamp: str) -> str:
+        """Allocate the next customer number inside the order's write transaction.
+
+        Historical identifiers are never rewritten. The stored high-water mark
+        survives restart and prevents reuse; the numeric maximum also handles
+        imported legacy numeric identifiers without a collision or regression.
+        """
+        row = connection.execute("SELECT value_json FROM settings WHERE key='order_number_sequence'").fetchone()
+        previous = _json_load(row[0]) if row else 999
+        if type(previous) is not int or not 999 <= previous < 2**63 - 1:
+            raise ValidationError("order number sequence is invalid")
+        maximum = connection.execute(
+            "SELECT MAX(CAST(order_number AS INTEGER)) FROM orders "
+            "WHERE order_number<>'' AND order_number NOT GLOB '*[^0-9]*'"
+        ).fetchone()[0]
+        number = max(previous, int(maximum or 0)) + 1
+        if number >= 2**63:
+            raise ValidationError("order number sequence is exhausted")
+        connection.execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES('order_number_sequence',?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at",
+            (_json_dump(number), stamp),
+        )
+        return str(number)
+
     def get_order(self, order_id: int | str) -> dict[str, Any] | None:
+        """Integers are internal IDs; strings are exact public order numbers."""
         with self._read() as connection:
-            if isinstance(order_id, str) and not order_id.isdigit():
+            if isinstance(order_id, str):
                 result = connection.execute("SELECT * FROM orders WHERE order_number = ?", (order_id,)).fetchone()
             else:
                 result = connection.execute("SELECT * FROM orders WHERE id = ?", (int(order_id),)).fetchone()
@@ -3076,6 +3106,93 @@ class Database:
 
     set_order_customer_data = set_order_customer_info
 
+    @staticmethod
+    def _manual_information_order(connection: sqlite3.Connection, order_id: int, user_id: int) -> sqlite3.Row:
+        order = Database._required(connection, "SELECT * FROM orders WHERE id=?", (int(order_id),), "order")
+        if int(order["user_id"]) != int(user_id):
+            raise ValidationError("user does not own this order")
+        if order["product_type_snapshot"] != "manual":
+            raise ValidationError("only manual orders accept customer information")
+        if order["status"] not in {"awaiting_info", "processing"}:
+            raise ValidationError("order no longer accepts customer information")
+        return order
+
+    def begin_manual_information(self, order_id: int, user_id: int, collection_id: str) -> dict:
+        """Start or resume explicit multipart collection, preserving old input."""
+        if not re.fullmatch(r"[a-f0-9]{12}", collection_id):
+            raise ValidationError("invalid information collection")
+        with self._transaction() as connection:
+            order = self._manual_information_order(connection, order_id, user_id)
+            try:
+                info = order_information.decode(order["customer_info_json"])
+            except (TypeError, ValueError):
+                raise ValidationError("stored customer information requires review") from None
+            if info.get("collecting") or info.get("collection_id") == collection_id:
+                return dict(order)
+            info = order_information.aggregate(info, order_information.messages(info))
+            info.update(collecting=True, collection_id=collection_id)
+            connection.execute("UPDATE orders SET customer_info_json=?,updated_at=? WHERE id=?",
+                               (_json_dump(info), _timestamp(), order_id))
+            return dict(self._required(connection, "SELECT * FROM orders WHERE id=?", (order_id,), "order"))
+
+    def append_manual_information(self, order_id: int, user_id: int, collection_id: str, info: Mapping[str, Any]) -> dict:
+        """Append one Telegram message exactly once; never replace earlier parts."""
+        payload = {key: info.get(key) for key in ("text", "file_id", "file_kind", "telegram_message_id")}
+        message_id = payload["telegram_message_id"]
+        if type(message_id) is not int or message_id <= 0:
+            raise ValidationError("invalid information message")
+        if payload["file_id"] and payload["file_kind"] not in {"photo", "document"}:
+            raise ValidationError("unsupported information attachment")
+        if not str(payload["text"] or "").strip() and not payload["file_id"]:
+            raise ValidationError("customer information requires text or a file")
+        if not payload["file_id"]:
+            payload["file_kind"] = None
+        with self._transaction() as connection:
+            order = self._manual_information_order(connection, order_id, user_id)
+            stored = order_information.decode(order["customer_info_json"])
+            if stored.get("collection_id") != collection_id or not stored.get("collecting"):
+                raise ConflictError("information collection is no longer active")
+            items = order_information.messages(stored)
+            for item in items:
+                if item.get("telegram_message_id") == message_id:
+                    if any(item.get(key) != value for key, value in payload.items()):
+                        raise ConflictError("information message identity has different content")
+                    return dict(order)
+            items.append(payload)
+            stored = order_information.aggregate(stored, items)
+            connection.execute("UPDATE orders SET customer_info_json=?,updated_at=? WHERE id=?",
+                               (_json_dump(stored), _timestamp(), order_id))
+            return dict(self._required(connection, "SELECT * FROM orders WHERE id=?", (order_id,), "order"))
+
+    def finish_manual_information(
+        self, order_id: int, user_id: int, collection_id: str, *,
+        outbound_body: str, reply_markup: Mapping[str, Any],
+    ) -> dict:
+        """Seal input, transition and queue its acknowledgement atomically."""
+        with self._transaction() as connection:
+            order = self._manual_information_order(connection, order_id, user_id)
+            stored = order_information.decode(order["customer_info_json"])
+            if stored.get("collection_id") != collection_id:
+                raise ConflictError("information collection is no longer active")
+            if not order_information.text(stored).strip() and not order_information.attachments(stored):
+                raise ValidationError("ابتدا حداقل یک پیام یا فایل ارسال کنید.")
+            stamp = _timestamp()
+            if stored.get("collecting"):
+                stored["collecting"] = False
+                connection.execute("UPDATE orders SET customer_info_json=?,status='processing',updated_at=? WHERE id=?",
+                                   (_json_dump(stored), stamp, order_id))
+            self._queue_user_message_in_transaction(
+                connection, user_id, outbound_body, f"order:{order_id}:info-received:{collection_id}", stamp,
+                reply_markup=reply_markup,
+            )
+            # Do not erase another conversation opened concurrently or later.
+            state = connection.execute("SELECT state,data_json FROM user_states WHERE user_id=?", (user_id,)).fetchone()
+            if state and state["state"] == "order_information":
+                data = _json_load(state["data_json"], {})
+                if data.get("order_id") == order_id and data.get("collection_id") == collection_id:
+                    connection.execute("DELETE FROM user_states WHERE user_id=?", (user_id,))
+            return dict(self._required(connection, "SELECT * FROM orders WHERE id=?", (order_id,), "order"))
+
     def submit_manual_order_info(
         self,
         order_id: int,
@@ -3111,6 +3228,8 @@ class Database:
                 raise ValidationError("only manual orders accept customer information")
             if order["status"] not in {"awaiting_info", "processing"}:
                 raise ValidationError("order no longer accepts customer information")
+            if order_information.decode(order["customer_info_json"]).get("collecting"):
+                raise ConflictError("finish multipart information collection before replacing it")
             if (
                 order["status"] == "processing"
                 and str(order["customer_info_json"] or "") == encoded

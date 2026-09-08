@@ -40,7 +40,7 @@
 
 worker نگه‌داری با فاصله `JOB_INTERVAL_SECONDS` این ترتیب را اجرا می‌کند: settlement شاهد completedِ provider که پیش از crash ثبت شده، polling crypto، reconciliation هشدار review/receipt/manual-info/ticket/security، انقضای سفارش و paymentهای card همراه بازیابی notice terminal جاافتاده، reconciliation سفارش‌های paid/reward و paid-notice، بازیابی prompt سفارش‌های `awaiting_stock`/`awaiting_info`، fulfil رزرو، fulfil سفارش ready در `processing` پس از restock، recovery تحویل ready تکمیل‌شده، reminder، outbox و گزارش broadcast. deadline محلی به‌تنهایی crypto را terminal نمی‌کند. هر stage budget محدود دارد؛ queryهای missing-notice/delivery و cursor/wrap باید باعث شوند backlog بزرگ یا خطای دائمی یک ردیف، ردیف‌های قدیمی‌تر را برای همیشه starve نکند.
 
-اطلاعات سفارش manual با `submit_manual_order_info` همراه transition به `processing` در یک transaction ثبت می‌شود. اگر رکورد legacy در `awaiting_info` ولی دارای `customer_info_json` است، آن را دستی پاک یا complete نکنید؛ maintenance آن نسخه را برای alert owner/admin می‌بیند و پس از بررسی، اصلاح باید از workflow دامنه‌ای انجام شود. شکست ارسال alert نباید payload commit‌شده یا دسترسی `/order_attachment` را از بین ببرد.
+اطلاعات سفارش manual در begin/append/finish چندپیامی ثبت می‌شود؛ تا «پایان ارسال اطلاعات»، collecting باز است و complete مجاز نیست. `awaiting_info` دارای اطلاعات در این حالت طبیعی است، نه سفارش گیرکرده. بازگشت داده را حذف نمی‌کند و از صفحه سفارش ادامه می‌یابد. پس از finish، transition به processing و ACK اتمیک‌اند و alert نسخه‌دار مالک/مدیر recover می‌شود. state قدیمی بدون collection فقط مسیر سازگار `submit_manual_order_info` دارد. فایل‌های واقعی از دکمه پیوست دریافت می‌شوند؛ متن تنها فایل نیست. [runbook و هشدار rollback](FOLLOWUP_FEEDBACK_2026-09-08.md).
 
 ## سطوح رخداد
 

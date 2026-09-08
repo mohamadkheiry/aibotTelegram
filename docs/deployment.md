@@ -1,5 +1,7 @@
 # راهنمای استقرار و بازگردانی
 
+انتشار پیگیری: [FOLLOWUP_FEEDBACK_2026-09-08.md](FOLLOWUP_FEEDBACK_2026-09-08.md) بدون migration و با schema 11 است، اما rollback به نسخه تک‌پیامی بدون بررسی ایمن نیست: collecting/messages تازه نباید به مسیر جایگزینی تک‌پیامی برگردند. DB جاری، شماره‌های تاریخی و setting شمارنده حفظ شوند. توقف یک service، backup معتبر، artifact تست‌شده، check با alonebot و یک poller الزامی است؛ هیچ تغییر مالی یا reset شماره بخشی از rollout نیست.
+
 ## انتشار بازخورد ۲۰۲۶-۰۹-۰۸
 
 این تغییر migration ندارد و schema 11 باقی است. پس از تست کامل fixture روی Linux، commit تأییدشده را با Git bundle منتقل کنید. از DB جاری سرور backup آنلاین و integrity/FK check بگیرید، تنها service ربات را متوقف و صفر poller را تأیید کنید؛ سپس کد عوض شود. env، icon manifest، bot_enabled و داده تجاری دست‌نخورده‌اند. پس از `--check` همان یک service شروع شود. sent/failed قدیمی outbox برای این انتشار requeue نشوند.

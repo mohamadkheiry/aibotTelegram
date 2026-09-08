@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from . import texts
+from . import texts, order_information
 from .config import Settings
 from .customer_layouts import LayoutEngine, LayoutTelegram, keyboard as customer_keyboard
 from .db import (
@@ -2251,12 +2251,33 @@ class BotApplication:
                 self.telegram.answer_callback_query(query_id, "این سفارش اطلاعات جدید نمی‌پذیرد.")
                 return True
             self.telegram.answer_callback_query(query_id)
-            self.db.set_user_state(user["id"], "order_information", {"order_id": order_id})
-            self.telegram.send_message(
-                user["chat_id"],
-                "📤 اطلاعات موردنیاز را به‌صورت متن، تصویر یا فایل ارسال کن.",
-                reply_markup=self._input_cancel_markup("input_order_info"),
+            collection_id = hashlib.sha256(str(query_id).encode()).hexdigest()[:12]
+            order = self.db.begin_manual_information(order_id, int(user["id"]), collection_id)
+            information = order_information.decode(order["customer_info_json"])
+            if not information.get("collecting"):
+                self.show_order(user, order_id)
+                return True
+            self.db.set_user_state(user["id"], "order_information", {
+                "order_id": order_id, "collection_id": information["collection_id"],
+            })
+            self._show_information_collection(user, order)
+            return True
+        if data.startswith("orderinfodone:"):
+            match = re.fullmatch(r"orderinfodone:([1-9][0-9]*):([a-f0-9]{12})", data)
+            if not match:
+                raise ValidationError("دکمه پایان ارسال معتبر نیست.")
+            order_id, collection_id = int(match[1]), match[2]
+            order = self.db.get_order(order_id)
+            if not order or order["user_id"] != user["id"]:
+                raise NotFoundError("سفارش پیدا نشد.")
+            body = texts.information_saved(order["order_number"])
+            markup = customer_keyboard("order_notice", [[callback_button("مشاهده سفارش", f"order:{order_id}")]])
+            order = self.db.finish_manual_information(
+                order_id, int(user["id"]), collection_id, outbound_body=body, reply_markup=markup,
             )
+            self.telegram.answer_callback_query(query_id, "اطلاعات برای بررسی ثبت شد.")
+            self._notify_user_durable(user, body, idempotency_key=f"order:{order_id}:info-received:{collection_id}", reply_markup=markup)
+            self._alert_manual_order_info(order, user)
             return True
         if data.startswith("topupcard:"):
             if not self._card_payment_available():
@@ -2275,6 +2296,22 @@ class BotApplication:
             self._begin_crypto_topup(user, amount, query=query)
             return True
         return False
+
+    def _show_information_collection(self, user: dict, order: Mapping[str, Any]) -> None:
+        information = order_information.decode(order["customer_info_json"])
+        count = len(order_information.messages(information))
+        self.telegram.send_message(
+            user["chat_id"],
+            f"<b>اطلاعات سفارش {escape(order['order_number'])}</b>\n"
+            f"پیام‌های ذخیره‌شده: {count} | فایل‌ها: {len(order_information.attachments(information))}\n\n"
+            "اطلاعات را در یک یا چند پیام متنی، تصویر یا فایل بفرست. همه قسمت‌ها ذخیره می‌شوند. "
+            "وقتی تمام شد «پایان ارسال اطلاعات» را بزن تا سفارش برای بررسی ثبت شود.\n"
+            "بازگشت، اطلاعات ذخیره‌شده را حذف نمی‌کند؛ از صفحه سفارش می‌توانی ادامه بدهی.",
+            reply_markup=customer_keyboard("input_order_info", [
+                [callback_button("پایان ارسال اطلاعات", f"orderinfodone:{order['id']}:{information['collection_id']}", style="success")],
+                [callback_button("لغو و بازگشت", "menu", style="danger")],
+            ]),
+        )
 
     def _validate_topup_amount(self, amount: int) -> None:
         minimum = int(self.db.get_setting("minimum_topup_amount", 10_000) or 10_000)
@@ -2951,6 +2988,10 @@ class BotApplication:
                 "telegram_message_id": message.get("message_id"),
                 "updated_at": utc_now().isoformat(timespec="seconds"),
             }
+            if data.get("collection_id"):
+                order = self.db.append_manual_information(order_id, int(user["id"]), str(data["collection_id"]), payload)
+                self._show_information_collection(user, order)
+                return True
             order = self.db.submit_manual_order_info(
                 order_id,
                 int(user["id"]),
@@ -4748,6 +4789,10 @@ class BotApplication:
             )
         except (TypeError, ValueError):
             stored_information = {}
+        if not isinstance(stored_information, dict):
+            stored_information = {}
+        if stored_information.get("collecting"):
+            return
         stored_text = (
             str(stored_information.get("text") or "")
             if isinstance(stored_information, dict)
@@ -4758,22 +4803,17 @@ class BotApplication:
             if stored_text
             else ""
         )
-        reply_markup = inline_keyboard(
-            [
-                [
-                    callback_button(
-                        "تکمیل سفارش",
-                        f"adm:complete:{int(order['id'])}",
-                        style="success",
-                    )
-                ]
-            ]
-        )
+        files = order_information.attachments(stored_information)
+        rows = [[callback_button("مشاهده اطلاعات کامل سفارش", f"adm:ui:open:order:{order['order_number']}")]]
+        if files:
+            rows.append([callback_button(f"دریافت پیوست‌ها ({len(files)})", f"adm:ui:open:order_attachment:{order['order_number']}")])
+        rows.append([callback_button("تکمیل سفارش", f"adm:ui:open:complete:{order['order_number']}", style="success")])
+        reply_markup = inline_keyboard(rows)
         self._notify_privileged_admins_durable(
             f"📋 <b>اطلاعات سفارش دستی دریافت شد</b>"
             f"\nسفارش: <code>{escape(order['order_number'])}</code>"
             f"\nکاربر: <code>{int(user['chat_id'])}</code>{text_preview}"
-            f"\nمشاهده پیوست: <code>/order_attachment {escape(order['order_number'])}</code>",
+            f"\nپیوست: {str(len(files)) + ' فایل' if files else 'ندارد؛ اطلاعات متنی است'}",
             idempotency_key=(
                 f"order:{int(order['id'])}:customer-info:{version}:admin"
             ),
@@ -5307,7 +5347,9 @@ class BotApplication:
                     )
                 key = f"{idempotency_key}:{int(admin['id'])}"
                 notice_text, notice_markup = text, reply_markup
-                if idempotency_key.startswith("ticket-message:") or re.fullmatch(r"payment:\d+:receipt:[a-f0-9]{20}:admin", idempotency_key):
+                if (idempotency_key.startswith("ticket-message:")
+                        or re.fullmatch(r"payment:\d+:receipt:[a-f0-9]{20}:admin", idempotency_key)
+                        or re.fullmatch(r"order:\d+:customer-info:[a-f0-9]{20}:admin", idempotency_key)):
                     prior = self.db.get_outbound_message_by_idempotency_key(key)
                     if prior and int(prior["recipient_user_id"]) == int(user["id"]):
                         notice_text = prior["body"]

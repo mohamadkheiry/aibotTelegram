@@ -1,5 +1,7 @@
 # مدل داده و invariantهای پایگاه داده
 
+افزوده بدون migration (schema 11): setting `order_number_sequence` high-water mark شماره‌های مشتری از 1000 است؛ شماره تاریخی ثابت می‌ماند. `orders.customer_info_json` اکنون `messages[]/collecting/collection_id` دارد؛ text تجمیعی و نخستین file_id سازگاری خواندن را حفظ می‌کنند. پایان مجموعه و ACK در یک transaction ثبت می‌شوند؛ collecting مانع complete است. [قرارداد و rollback](FOLLOWUP_FEEDBACK_2026-09-08.md).
+
 بازخورد ۲۰۲۶-۰۹-۰۸ migration ندارد. `set_user_ticket_status` با مالکیت، وضعیت/زمان/تعداد پیام مورد انتظار و outbox اتمیک کار می‌کند. projection مشتری `list_user_transactions(include_pending=True)` پرداخت باز/ناموفق را نیز نشان می‌دهد ولی WalletEntry یا اعتبار مالی تازه نمی‌سازد؛ default گزارش مالی مدیریت تغییر نکرده است. `get_user_transaction` نوع منبع و مالکیت را کنترل می‌کند. `referral_summary.buyer_count` دعوت‌شده خریدار تجاری را یکتا می‌شمارد، نه تعداد سفارش یا تخصیص مدیریتی. upgrade خواندنی layout فقط slotهای تازه را اضافه می‌کند؛ نسخه/history/CAS محفوظ‌اند.
 
 چیدمان مشتری بدون migration و در schema 11 ذخیره می‌شود: `settings` با کلید `customer_layout:SECTION`، سند current/version/history (حداکثر ۱۰ نسخه)/updated_by/updated_at؛ `user_states` با state جدید `admin:layouts`، draft و actor/chat/token/revision/phase/نسخهٔ مبنا. ذخیره و effect `customer-layout` در همان `processed_admin_updates` اتمیک‌اند. config هیچ اطلاعات شخصی سفارش/تیکت یا action payload ندارد. `customer_layouts_enabled` کلید عملیاتی پیش‌فرض true برای خاموش‌کردن صرفاً reflow است. [طرح و invariant دقیق](CUSTOMER_LAYOUTS.md).

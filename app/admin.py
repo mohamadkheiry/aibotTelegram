@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from . import texts
+from . import texts, order_information
 from .admin_help import ADMIN_HELP_PARTS, SUPPORT_HELP, pipe_parts, split_command
 from .db import (
     ConflictError,
@@ -621,11 +621,7 @@ class AdminController:
                     (product or {}).get("completion_text")
                     or "اشتراک شما با موفقیت فعال شد."
                 )
-                notification = (
-                    "سفارش شما تکمیل شد."
-                    f"\nشماره سفارش: <code>{escape(order['order_number'])}</code>"
-                    f"\n\n{render_rich_text(completion)}"
-                )
+                notification = self._manual_completion_notice(order, render_rich_text(completion))
                 notification_key = f"order:{order['id']}:manual-completion-notice"
                 updated = self.db.complete_order(
                     int(order["id"]),
@@ -2157,25 +2153,17 @@ class AdminController:
             raise AdminInputError("فرمت اطلاعات پیوست معتبر نیست.") from None
         if not isinstance(info, Mapping):
             raise AdminInputError("فرمت اطلاعات پیوست معتبر نیست.")
-        file_id = str(info.get("file_id") or "").strip()
-        file_kind = str(info.get("file_kind") or "").strip().lower()
-        if not file_id:
-            raise AdminInputError("این سفارش پیوستی ندارد.")
-        if file_kind == "photo" and hasattr(self.telegram, "send_photo"):
-            self.telegram.send_photo(
-                chat_id,
-                file_id,
-                caption=f"پیوست سفارش <code>{escape(order['order_number'])}</code>",
-            )
-        else:
-            self.telegram.send_document(
-                chat_id,
-                file_id,
-                caption=f"پیوست سفارش <code>{escape(order['order_number'])}</code>",
-            )
+        files = order_information.attachments(info)
+        if not files:
+            raise AdminInputError("این سفارش فایل پیوست ندارد؛ اطلاعات متنی را از «مشاهده جزئیات سفارش» ببینید.")
+        for index, attachment in enumerate(files, start=1):
+            sender = self.telegram.send_photo if attachment["file_kind"] == "photo" else self.telegram.send_document
+            sender(chat_id, attachment["file_id"],
+                   caption=f"پیوست {index} از {len(files)} | سفارش <code>{escape(order['order_number'])}</code>",
+                   protect_content=True)
 
     def _require_order(self, order_number: str) -> dict[str, Any]:
-        value = order_number.strip()
+        value = normalize_digits(order_number.strip())
         if not value:
             raise AdminInputError("شماره سفارش الزامی است.")
         order = self.db.get_order_by_number(value)
@@ -2218,8 +2206,10 @@ class AdminController:
                             f"\nسفارش: <code>{escape(order['order_number'])}</code>"
                             f"\n{escape(body[index:index + 600])}",
                         )
-                if info.get("file_kind"):
-                    self._send(chat_id, f"پیوست: {escape(info['file_kind'])}")
+                files = order_information.attachments(info)
+                self._send(chat_id, f"فایل پیوست: {len(files)}" if files else "فایل پیوست ندارد؛ اطلاعات سفارش متنی است.")
+                if info.get("collecting"):
+                    self._send(chat_id, "کاربر هنوز در حال ارسال اطلاعات است؛ تکمیل سفارش تا «پایان ارسال اطلاعات» ممکن نیست.")
 
     def _order_status(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 1)
@@ -2267,6 +2257,17 @@ class AdminController:
             f"وضعیت سفارش به <code>{escape(updated['status'])}</code> تغییر کرد.",
         )
 
+    def _manual_completion_notice(self, order: Mapping[str, Any], rendered_delivery: str) -> str:
+        # A started admin update may be replayed after a deployment. Its already
+        # committed outbox body is canonical, even if the renderer has changed.
+        # complete_order still verifies recipient/key and immutable payload.
+        if order["status"] == "completed":
+            previous = self.db.get_outbound_message_by_idempotency_key(
+                f"order:{order['id']}:manual-completion-notice")
+            if previous is not None:
+                return str(previous["body"])
+        return texts.manual_delivery(order, rendered_delivery)
+
     def _complete(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 2)
         if len(parts) != 2:
@@ -2275,11 +2276,7 @@ class AdminController:
         order = self._require_order(parts[0])
         if order.get("product_type_snapshot") != "manual":
             raise AdminInputError("تکمیل دستی فقط برای سفارش محصول manual مجاز است.")
-        notification = (
-            "سفارش شما تکمیل شد."
-            f"\nشماره سفارش: <code>{escape(order['order_number'])}</code>"
-            f"\n\n{rendered_delivery}"
-        )
+        notification = self._manual_completion_notice(order, rendered_delivery)
         self._require_safe_notification_length(notification)
         notification_key = f"order:{order['id']}:manual-completion-notice"
         method = self._public("complete_order")
@@ -2683,8 +2680,9 @@ class AdminController:
         value = identifier.strip()
         if not value:
             raise AdminInputError("شناسه کاربر الزامی است.")
-        if value.upper().startswith(("ORD-", "ADM-")):
-            order = self.db.get_order_by_number(value)
+        if value.upper().startswith(("ORD-", "ADM-")) or value.lower().startswith("order:"):
+            number = value.split(":", 1)[1] if value.lower().startswith("order:") else value
+            order = self.db.get_order_by_number(normalize_digits(number))
             result = self.db.get_user(int(order["user_id"])) if order else None
         elif value.startswith("@"):
             username = normalize_username(value)
@@ -2958,12 +2956,13 @@ class AdminController:
         tokens = rest.split()
         if not tokens or len(tokens) > 3:
             raise AdminInputError(
-                "نمونه: /user_orders CHAT_ID|@username [STATUS|all] [PAGE|ORDER_NUMBER]"
+                "نمونه: /user_orders CHAT_ID|@username [STATUS|all] [PAGE] یا /user_orders CHAT_ID order:1000"
             )
         target = self._find_user(tokens[0])
         tail = tokens[1:]
-        if len(tail) == 1 and tail[0].upper().startswith(("ORD-", "ADM-")):
-            order = self.db.get_order_by_number(tail[0])
+        if len(tail) == 1 and (tail[0].upper().startswith(("ORD-", "ADM-")) or tail[0].lower().startswith("order:")):
+            number = tail[0].split(":", 1)[1] if tail[0].lower().startswith("order:") else tail[0]
+            order = self.db.get_order_by_number(normalize_digits(number))
             if order is None or int(order["user_id"]) != int(target["id"]):
                 raise AdminInputError("سفارش موردنظر برای این کاربر پیدا نشد.")
             self._send_order_details(self._chat_id(message, user), order)
@@ -2974,7 +2973,7 @@ class AdminController:
             page = _page_number(tail.pop())
         if len(tail) > 1:
             raise AdminInputError(
-                "نمونه: /user_orders CHAT_ID|@username [STATUS|all] [PAGE|ORDER_NUMBER]"
+                "نمونه: /user_orders CHAT_ID|@username [STATUS|all] [PAGE] یا /user_orders CHAT_ID order:1000"
             )
         status = tail[0].lower() if tail else None
         if status == "all":
@@ -3010,7 +3009,7 @@ class AdminController:
             empty_text="سفارشی برای این کاربر پیدا نشد.",
             tail=(
                 "جست‌وجوی سفارش همین کاربر: "
-                f"<code>/user_orders {stable_id} ORDER_NUMBER</code>",
+                f"<code>/user_orders {stable_id} order:ORDER_NUMBER</code>",
                 "جزئیات مستقیم: <code>/order ORDER_NUMBER</code>",
             ),
         )
@@ -4223,17 +4222,17 @@ class AdminController:
 
     def _reward_toggle(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         rule_id = _as_int(rest, "شناسه قاعده")
-        rules = self.db.list_reward_rules(active_only=False)
-        current = next(
-            (item for item in rules if int(item["id"]) == int(rule_id)), None
-        )
+        current = self._query_one("SELECT * FROM reward_rules WHERE id=?", (rule_id,))
         if current is None:
             raise AdminInputError("قاعده پاداش پیدا نشد.")
-        active = self._admin_toggle_target(
-            message,
-            f"reward:{rule_id}:active",
-            bool(current["is_active"]),
-        )
+        target = (self._button_context or {}).get("state", {}).get("reward_target")
+        if target and int(target["id"]) == rule_id:
+            active = bool(target["active"])
+            update_id = self._admin_update_id(message)
+            if update_id is not None:
+                active = bool(self.db.get_or_store_admin_update_effect(update_id, f"reward:{rule_id}:active", active))
+        else:
+            active = self._admin_toggle_target(message, f"reward:{rule_id}:active", bool(current["is_active"]))
         method = self._public("set_reward_rule_active")
         if method is not None:
             item = method(rule_id, active)

@@ -83,6 +83,7 @@ for _key, _title in (("name", "نام خریدار"), ("discount", "کد تخف�
                      ("receipt", "ارسال فیش"), ("order_info", "اطلاعات سفارش دستی"),
                      ("ticket_body", "متن تیکت"), ("ticket_reply", "پاسخ تیکت")):
     _section("input_" + _key, "فرم " + _title, "input", "cancel=لغو و بازگشت")
+_section("input_order_info", "فرم اطلاعات سفارش دستی", "input", "finish=پایان ارسال اطلاعات|cancel=لغو و بازگشت")
 _section("input_contact", "فرم ارسال شماره موبایل", "input", "contact=ارسال شماره موبایل|cancel=لغو و بازگشت")
 _section("discount_error", "خطای کد تخفیف", "input", "back=بازگشت")
 _section("order_notice", "اعلان ثبت اطلاعات، رزرو و تأمین سفارش", "notice", "order=مشاهده سفارش")
@@ -114,7 +115,7 @@ def upgrade_saved_layout(section: str, config: dict) -> dict:
     validation. Existing row order, columns and public item order are retained.
     """
     introduced = {"stats": {"refresh"}, "transactions": {"items"}, "referral": {"copy"},
-                  "faq": {"new"}, "ticket": {"close", "reopen"}, "card_payment": {"rial"}}
+                  "faq": {"new"}, "ticket": {"close", "reopen"}, "card_payment": {"rial"}, "input_order_info": {"finish"}}
     base = section.split(":")[0]
     if not isinstance(config, dict) or base not in introduced or not isinstance(config.get("rows"), list):
         return config
@@ -124,7 +125,7 @@ def upgrade_saved_layout(section: str, config: dict) -> dict:
     if missing and missing <= introduced[base]:
         for key, _ in definition(section).slots:
             if key in missing:
-                position = 0 if key == "items" else next((i for i, row in enumerate(result["rows"]) if "back" in row), len(result["rows"]))
+                position = 0 if key == "items" else next((i for i, row in enumerate(result["rows"]) if "back" in row or key == "finish" and "cancel" in row), len(result["rows"]))
                 result["rows"].insert(position, [key])
     return result
 

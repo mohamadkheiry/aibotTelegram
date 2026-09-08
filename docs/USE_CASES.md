@@ -444,17 +444,17 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 **جریان اصلی:**
 
 1. سامانه پس از آماده‌شدن dependency اعلان موفقیت، Order را `awaiting_info` و prompt محصول را ارسال می‌کند.
-2. کاربر «ارسال اطلاعات» را می‌زند و متن، photo یا document می‌فرستد.
-3. repository مالکیت، manualبودن و status را دوباره بررسی و customer_info و transition به `processing` را در یک transaction ذخیره می‌کند.
+2. کاربر «ارسال اطلاعات» را می‌زند و یک یا چند متن، photo یا document می‌فرستد؛ تعداد قسمت‌ها و دکمه پایان را می‌بیند.
+3. repository مالکیت، manualبودن، status و collection را دوباره بررسی و هر پیام را یک بار append می‌کند. «پایان ارسال اطلاعات» مجموعه غیرخالی را همراه transition به `processing`، outbox تأیید و پاک‌کردن state همان مجموعه اتمیک ثبت می‌کند. پیش از پایان، complete مجاز نیست؛ بازگشت و restart داده‌ها را حذف نمی‌کنند.
 4. alert پایدارِ نسخه‌دار بر پایه hash کامل `customer_info_json` برای owner/admin ساخته می‌شود؛ maintenance نسخه commit‌شده فاقد alert را پس از restart دوباره پیدا می‌کند.
-5. owner/admin فعال‌سازی را انجام و `/complete ORDER | delivery text` می‌فرستد.
+5. owner/admin تمام متن‌ها و فقط پیوست‌های واقعی را می‌بیند؛ فعال‌سازی را انجام و با دکمه تکمیل/تأیید متن تحویل را ثبت می‌کند. فرمان `/complete ORDER | delivery text` صرفاً سازگاری است.
 6. متن نهایی همراه سربرگ سفارش پیش از mutation با سقف ۳۹۰۰ سنجیده می‌شود.
 7. Order completed؛ completed_at/subscription_ends_at/reminder ثبت و متن تحویل به کاربر ارسال می‌شود.
 
-**جریان‌های جایگزین/خطا:** ورودی خالی، actor غیرمالک، نوع غیرmanual یا status نهایی رد می‌شود؛ state قدیمی entity بسته را تغییر نمی‌دهد؛ replay همان payload در `processing` no-op و replacement واقعی نسخه/alert تازه دارد؛ crash نمی‌تواند payload تازه را در `awaiting_info` رها کند و ردیف legacy دارای payload برای alert recovery دیده می‌شود؛ manager/support با `/request_info` سفارش manual را به awaiting_info برمی‌گرداند و prompt اصلاح می‌فرستد؛ support نمی‌تواند پیوست manual را بازفرستد یا complete کند؛ تکمیل order ready، سفارش manual خارج `processing`، سفارش بدون اطلاعات معتبر مشتری یا پیام نهایی بلند رد می‌شود؛ رد طول پیش از mutation است؛ replay همان متن تحویل idempotent است و متن متفاوت delivery قبلی را بازنویسی نمی‌کند.
+**جریان‌های جایگزین/خطا:** ورودی/پایان خالی، actor غیرمالک، نوع غیرmanual یا status نهایی رد می‌شود. replay همان message ID و محتوا no-op و محتوای متناقض conflict است. collecting در awaiting_info طبیعی است؛ crash آن را از بین نمی‌برد و پایان، انتقال و ACK را اتمیک می‌کند. اصلاح append و alert نهایی نسخه تازه می‌سازد؛ متن قبلی حذف نمی‌شود. manager/support با درخواست اصلاح به awaiting_info برمی‌گردند؛ support پیوست manual یا complete را اجرا نمی‌کند. ready، manual خارج processing، اطلاعات ناتمام/نامعتبر یا تحویل بیش از ۳۹۰۰ پیش از mutation رد می‌شود. replay همان تحویل/اعلان canonical idempotent است و payload متفاوت جایگزین نمی‌شود.
 
 **قواعد:** BR-FUL-05..10، BR-ID-08، BR-ORD-10.<br>
-**پیاده‌سازی:** `fulfill_order`, state `order_information` در `app/bot.py`; `_request_info`, `_complete` در `app/admin.py`; `submit_manual_order_info`, `complete_order` در `app/db.py`.<br>
+**پیاده‌سازی:** `fulfill_order`, state `order_information` در `app/bot.py`; projection در `app/order_information.py`; `_request_info`, `_complete` در `app/admin.py`; `begin_manual_information`, `append_manual_information`, `finish_manual_information`, `complete_order` در `app/db.py`. `submit_manual_order_info` فقط سازگاری state قدیمی است. اصلاح تازه append می‌شود، نه جایگزینی متن‌های قبل؛ [تست‌های چندپیامی و replay](../tests/test_followup_feedback.py).<br>
 **تست:** `test_manual_information_submission_atomically_enters_processing`، `test_support_cannot_change_or_complete_orders_but_owner_can`، `test_stale_states_are_cleared_and_closed_entities_are_not_mutated`، `test_ready_orders_reject_manual_completion_and_information_requests`، `test_manual_completion_commits_its_delivery_notice_before_network_send`، `test_long_delivery_is_rejected_before_inventory_or_order_mutation`، `test_receipt_and_manual_attachment_are_recoverable_from_committed_state`.
 
 ### UC-14 — مشاهده حساب، سفارش‌ها و تراکنش‌ها
