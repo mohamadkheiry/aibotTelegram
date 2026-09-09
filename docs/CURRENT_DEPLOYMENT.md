@@ -1,5 +1,21 @@
 # مقصد انتشار جاری
 
+## انتشار پیگیری — ۲۰۲۶-۰۹-۰۹، ساعت ۰۹:۴۹ تهران
+
+کد **`34084f698065c5590180bd20e5e07e896eb17f2f`** روی **`192.168.10.111`** در `/opt/alone-account-bot` برای **`@ElevenaccountsTestbot`** منتشر شد. این بخش وضعیت جاری است؛ بخش‌های پایین تاریخی‌اند. schema همچنان ۱۱ است.
+
+- [هشت گروه اصلاح رابط MR-01 و MR-03..09](PENDING_FEEDBACK_2026-09-09.md) شامل FAQ درختی، جست‌وجو، نمایش/اعلان تیکت، بازگشایی و دکمه کوتاه تراکنش. مجموع گزارش‌شده با دورهای قبل ۳۹ گروه اصلاح/بهبود است، نه ادعای صفر باگ. MR-02 بازتولید نشده؛ قواعد مالی و cashback فاز دوم کامل‌شده نیستند.
+- artifact دقیق در checkout خصوصی Linux: **۵۶۳ تست در ۶۹٫۴۱۶ ثانیه، بدون failure/error/skip**؛ ۱۷ تست جدید. Ruff، compile، hygiene/secret scan، اسناد و pip check موفق. اجرای کامل اولیه ۱۹ failure و ۱ error داشت: ۱۵ failure و ۱ error از نبود `.git` در استخراج tar برای hygiene، دو fixture بدون FAQ واقعی، انتظار عنوان قدیمی تراکنش و یک ایراد پیام فهرست FAQ خالی. QA نهایی از bundle واقعی clone شد؛ ایراد نمایش اصلاح و تست‌های قرارداد جدید تکمیل شدند. آن اجرای اولیه شاهد پذیرش نیست.
+- SHA-256 آرشیو نهایی `a57e1ee27870a685b238e83bb632b37d03c34e632b649276acb3c9ef1ca85c83` و bundle خصوصی `388128e16eb18a02d0385e998269e52fb2a63d6d1958e70f15cc2ed7660afc39` است؛ hash مقصد و Git bundle verify موفق. فایل‌های Python و schema نصب‌شده با checkout تست‌شده برابرند. push عمومی تازه به علت تصمیم محرمانگیِ باز انجام نشد.
+- backup آنلاین `/srv/backups/alone-account-bot/feedback-20260909-061526/before-release.sqlite3` با SHA-256 `497363cedeac04b29536c807d5349b9129231145aa4ea9f8b29e72a71a2451b8`؛ backup نهایی پس از توقف در `/srv/backups/alone-account-bot/feedback-20260909-061814/before-release.sqlite3` با SHA-256 `0b1a0b242985c84efd540024a4a5eba61564eada701d17c91ff70935370ec344`. هر دو integrity=ok، FK=0 و restore ایزوله با مقایسه همه ردیف‌ها و schema تأیید شدند.
+- unit قبل از checkout inactive/dead و PID صفر بود. فقط app source برای alonebot group-readable شد؛ env/data/manifest تغییر نکردند. `--migrate-only` و `--check` با حساب سرویس موفق بودند. fingerprint کل DB پس از preflight با manifest بکاپ توقف برابر بود: `d58f77f7e7c727dc072e860854f4a01f899770a8951cb73f5a1a7ceef5ae6a37`.
+- سرویس از **۰۹:۴۹:۰۲** active/running، enabled، یک PID `2742938` و NRestarts=0 است. getMe هویت درست، webhook خالی، pending=0، integrity=ok، FK=0، bot_enabled=true، colored و ۴۵ آیکون را تأیید کردند؛ offset `157802930` بود. پس از start هشدار/error تازه‌ای در journal unit دیده نشد. هیچ poller Windows/getUpdates دستی، reboot یا تغییری در پروژه‌های دیگر انجام نشد.
+- آزمون‌های mutation روی fixture و Telegram ساختگی‌اند؛ خرید، پرداخت، تیکت یا نقش production برای تست تغییر نکرد. این دور ادعای تست پرداخت بانکی زنده یا بازبینی پیکسلی همه کلاینت‌ها ندارد.
+- ۱۸ outbox failed و ۱۱۰ sent در بکاپ پیش از start و health بعد از start یکسان بودند؛ این failureهای تاریخی برای انتشار تازه requeue/پاک نشدند و خطای تازه این release شمرده نمی‌شوند.
+- تبدیل بیرونی هر سه صوت کامل شد و نیازمندی‌ها استخراج شدند. هنوز پیام سوال‌ها یا اطلاعیه تازه‌ای از حساب شخصی برای کارفرما ارسال نشده؛ متن دقیق منتظر تأیید اقدام در ابزار Windows است. پنج acknowledgment قبلی نباید تکرار شوند.
+
+Rollback فقط کد به **`f4ece52ca572b8ac5aa442de5c331692eb26babc`**، با توقف همین unit و حفظ DB جاری، کنترل دسترسی، `--check` و start یک poller است. snapshot تاریخی را روی سفارش‌های تازه restore نکنید. commitهای صرفاً مستنداتی پس از این SHA نیازمند restart نیستند.
+
 ## انتشار پیگیری — ۲۰۲۶-۰۹-۰۸، ساعت ۱۸:۳۴ تهران
 
 کد **`7c7287604584bce169248039c49191ba2261a549`** روی **`192.168.10.111`** در `/opt/alone-account-bot` برای **`@ElevenaccountsTestbot`** منتشر شد. این بخش جایگزین SHA عملیاتی بخش‌های تاریخی پایین است؛ schema همچنان ۱۱ است.
