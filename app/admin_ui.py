@@ -45,7 +45,7 @@ SELECTORS = {
     "join": "SELECT CAST(id AS TEXT) value, title || ' · ' || telegram_chat_id label, title || ' ' || telegram_chat_id search FROM force_join_channels",
     "inventory": "SELECT CAST(i.id AS TEXT) value, p.name || ' · آیتم ' || i.id || ' · ' || i.status label, p.name || ' ' || i.id search FROM inventory_items i JOIN products p ON p.id=i.product_id",
     "discount": "SELECT code value, code || ' · ' || value || ' · ' || discount_type label, code search FROM discounts",
-    "ticket": "SELECT ticket_number value, ticket_number || ' · ' || subject || ' · ' || status label, ticket_number || ' ' || subject search FROM tickets",
+    "ticket": "SELECT t.ticket_number value, t.ticket_number || ' · ' || CASE WHEN u.username IS NOT NULL THEN '@' || u.username ELSE COALESCE(u.customer_name,u.first_name,'بدون نام') END || ' · ' || COALESCE(u.chat_id,'') || ' · ' || t.subject || ' · ' || t.status label, t.ticket_number || ' ' || t.subject || ' ' || COALESCE(u.username,'') || ' ' || COALESCE(u.customer_name,u.first_name,'') || ' ' || COALESCE(u.chat_id,'') search FROM tickets t JOIN users u ON u.id=t.user_id",
     "ticket_attachment": "SELECT CAST(m.id AS TEXT) value, 'پیوست ' || m.id || ' · ' || m.attachment_kind || ' · ' || m.created_at label, CAST(m.id AS TEXT) search FROM ticket_messages m JOIN tickets t ON t.id=m.ticket_id WHERE m.attachment_file_id IS NOT NULL AND t.ticket_number=?",
     "faq_category": "SELECT CAST(id AS TEXT) value, name || ' · ' || id label, name || ' ' || id search FROM faq_categories",
     "faq": "SELECT CAST(id AS TEXT) value, question || ' · ' || id label, question || ' ' || id search FROM faqs",
@@ -365,6 +365,35 @@ class AdminButtonUI:
         if suffix.startswith("g:"):
             self.home(user, admin, suffix[2:])
             return True
+        if suffix.startswith(("faqcat:", "faqback:", "faqitem:")):
+            kind, raw = suffix.split(":", 1)
+            if not raw.isascii() or not raw.isdigit():
+                raise ButtonInputError("شناسه پرسش یا دسته معتبر نیست.")
+            if not self.allowed(ACTIONS["faqs"], admin["role"]):
+                raise ButtonInputError("دسترسی مدیریت پرسش‌ها ندارید.")
+            if kind == "faqitem":
+                self.faq_detail(int(raw), user, admin)
+            elif self.db.get_faq_category(int(raw)):
+                self.begin("faqs", event, user, admin, selected=raw)
+            else:
+                self.begin("faq_categories", event, user, admin)
+            return True
+        if suffix.startswith("faqdo:"):
+            parts = suffix.split(":")
+            allowed = {"faq_add", "faq_set", "faq_toggle", "faq_delete",
+                       "faq_category_set", "faq_category_toggle", "faq_category_delete"}
+            if len(parts) != 3 or parts[1] not in allowed or not parts[2].isascii() or not parts[2].isdigit():
+                raise ButtonInputError("دکمه پرسش معتبر نیست.")
+            key, identifier = parts[1], int(parts[2])
+            if not self.allowed(ACTIONS[key], admin["role"]):
+                raise ButtonInputError("دسترسی مدیریت پرسش‌ها ندارید.")
+            item = self.db.get_faq(identifier) if key in {"faq_set", "faq_toggle", "faq_delete"} else None
+            if key in {"faq_set", "faq_toggle", "faq_delete"} and item is None:
+                raise ButtonInputError("این پرسش حذف شده است.")
+            category_id = item["category_id"] if item else identifier
+            self.begin(key, event, user, admin, selected=str(identifier),
+                       return_to={"scope": "faq", "category_id": category_id or 0})
+            return True
         if suffix.startswith("discount:"):
             raw = suffix.split(":", 1)[1]
             if not raw.isdigit():
@@ -515,6 +544,11 @@ class AdminButtonUI:
                 self.render(state, user, admin)
             return True
         if state["status"] != "editing":
+            if state["status"] == "done" and state["action"] == "faqs" and isinstance(event.get("text"), str):
+                state.update(result_search=normalize_digits(event["text"].strip())[:120], result_page=1,
+                             last_input=identity)
+                self.execute(state, event, user, admin)
+                return True
             self.render(state, user, admin)
             return True
         field = self.current_field(state)
@@ -617,7 +651,10 @@ class AdminButtonUI:
     def _selector(self, field: Field, state: dict) -> tuple[str, tuple]:
         kind = field.kind.split(":", 1)[1]
         params: tuple = (state["values"]["target"],) if kind == "ticket_attachment" else ()
-        return SELECTORS[kind], params
+        query = SELECTORS[kind]
+        if kind == "ticket" and state.get("action") == "ticket_reply":
+            query += " WHERE t.status!='closed'"
+        return query, params
 
     def entity_value(self, field: Field, value: str, state: dict) -> tuple[str, str] | None:
         query, params = self._selector(field, state)
@@ -633,6 +670,9 @@ class AdminButtonUI:
         if field.kind.startswith(("entity:", "multi:")):
             query, params = self._selector(field, state)
             search = state.get("search", "")
+            if state.get("action") == "message" and field.kind == "entity:user" and not search:
+                state.update(option_total=0, option_pages=1)
+                return []
             if field.kind in {"entity:order", "entity:manual_order"}:
                 search = normalize_digits(search).lstrip("@")
             query = f"SELECT * FROM ({query}) WHERE instr(lower(search), lower(?)) > 0 ORDER BY length(value) DESC, value DESC"
@@ -679,6 +719,18 @@ class AdminButtonUI:
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
+            if action.key in {"faq_toggle", "faq_category_toggle"}:
+                identifier = int(state["values"]["target"])
+                category = action.key == "faq_category_toggle"
+                item = self.db.get_faq_category(identifier) if category else self.db.get_faq(identifier)
+                if item is None:
+                    raise ButtonInputError("پرسش یا دسته دیگر وجود ندارد.")
+                effect_key = f"{'faq-category' if category else 'faq'}:{identifier}:active"
+                if state.get("faq_target", {}).get("effect_key") != effect_key:
+                    state["faq_target"] = {"effect_key": effect_key, "active": not bool(item["is_active"])}
+                lines.append("انتخاب‌شده: " + escape(item["name" if category else "question"]))
+                lines.append("وضعیت فعلی: " + ("فعال" if item["is_active"] else "غیرفعال"))
+                lines.append("پس از تأیید: " + ("فعال" if state["faq_target"]["active"] else "غیرفعال"))
             if action.key == "reward_toggle":
                 item = self.controller._query_one("SELECT * FROM reward_rules WHERE id=?", (state["values"]["target"],))
                 if item is None:
@@ -741,6 +793,10 @@ class AdminButtonUI:
                     info += ("\nدسته‌ای برای انتخاب نیست؛ برای دیدن کل فهرست «همه / بدون محدودیت» را بزنید."
                              if field.default == "all" else
                              "\nموردی یافت نشد؛ عبارت جست‌وجو را تغییر دهید یا به بخش قبل برگردید.")
+                if action.key == "message" and field.kind == "entity:user" and not state.get("search"):
+                    info = "\nابتدا نام، یوزرنیم یا چت‌آی‌دی گیرنده را بفرستید؛ سپس فقط نتیجه‌های جست‌وجو نمایش داده می‌شوند."
+                if action.key == "ticket_reply" and field.kind == "entity:ticket":
+                    info += "\nتیکت بسته در این فهرست نیست؛ برای پاسخ، ابتدا از جزئیات تیکت وضعیت را به باز تغییر دهید."
             else:
                 info = "\nاز دکمه‌ها انتخاب کنید." if field.kind == "choice" else "\nمقدار را در یک پیام بفرستید."
             if field.kind.startswith("multi:"):
@@ -869,19 +925,56 @@ class AdminButtonUI:
 
     @staticmethod
     def return_route(state: dict) -> str:
+        if state.get("return_to", {}).get("scope") == "faq":
+            return "faqback:" + str(state["return_to"].get("category_id") or 0)
         return "j:back" if state.get("return_to", {}).get("scope") == "joins" else "c:back"
 
     def result_rows(self, state: dict, admin: dict) -> list[list[dict]]:
         action = ACTIONS[state["action"]]
         rows = []
-        if action.key == "user":
-            rows.append([self._button("جست‌وجوی کاربر دیگر", "a:user")])
+        if action.key in {"user", "users"}:
+            rows.append([self._button("جست‌وجوی کاربر دیگر" if action.key == "user" else "جست‌وجوی کاربر", "a:user")])
         if action.key in {"order", "orders"}:
             rows.append([self._button("جست‌وجوی سفارش", "a:order")])
+        if action.key in {"ticket", "tickets"}:
+            rows.append([self._button("جست‌وجوی تیکت", "a:ticket")])
+        if action.key == "tickets":
+            status = state["values"].get("status")
+            items = self.db.list_tickets(status=None if status == "all" else status,
+                                         limit=20, offset=(int(state.get("result_page", 1)) - 1) * 20)
+            for item in items:
+                owner = self.db.get_user(int(item["user_id"])) or {}
+                identity = "@" + owner["username"] if owner.get("username") else str(owner.get("chat_id") or "بدون شناسه")
+                rows.append([self._button(item["ticket_number"] + " · " + identity, f"open:ticket:{item['ticket_number']}")])
         if action.key == "discounts":
             items, _, _ = self.controller._management_rows(int(state.get("result_page", 1)), "SELECT * FROM discounts ORDER BY id DESC")
             rows.extend([[self._button(label_text(item["code"]) + " · " + ("فعال" if item["is_active"] else "غیرفعال"),
                                        f"discount:{item['id']}")] for item in items])
+        if action.key == "faq_categories":
+            items, _, _ = self.controller._management_rows(int(state.get("result_page", 1)),
+                                                          "SELECT * FROM faq_categories ORDER BY sort_order,id")
+            rows.extend([[self._button(label_text(item["name"], 40) + " · " + ("فعال" if item["is_active"] else "غیرفعال"),
+                                       f"faqcat:{item['id']}")] for item in items])
+            rows.append([self._button("جست‌وجوی دسته پرسش‌ها", "a:faqs")])
+            rows.append([self._button("افزودن دسته پرسش‌ها", "a:faq_category_add")])
+        if action.key == "faqs":
+            raw_category = state["values"].get("target", "all")
+            category_id = int(raw_category) if str(raw_category).isdigit() else None
+            query, params = self.controller._faq_listing_query(category_id, state.get("result_search", ""))
+            items, _, _ = self.controller._management_rows(int(state.get("result_page", 1)), query, params)
+            rows.extend([[self._button(label_text(item["question"], 40) + " · " + ("فعال" if item["is_active"] else "غیرفعال"),
+                                       f"faqitem:{item['id']}")] for item in items])
+            if category_id is not None:
+                category = self.db.get_faq_category(category_id)
+                if category:
+                    rows.extend([
+                        [self._button("افزودن پرسش در این دسته", f"faqdo:faq_add:{category_id}")],
+                        [self._button("ویرایش مشخصات این دسته", f"faqdo:faq_category_set:{category_id}")],
+                        [self._button("غیرفعال‌کردن این دسته" if category["is_active"] else "فعال‌کردن این دسته", f"faqdo:faq_category_toggle:{category_id}")],
+                        [self._button("حذف این دسته", f"faqdo:faq_category_delete:{category_id}", style="danger")],
+                        [self._button("نمایش همه پرسش‌های این دسته", f"faqcat:{category_id}")],
+                    ])
+            rows.append([self._button("بازگشت به دسته‌های پرسش‌ها", "a:faq_categories")])
         if action.key in {"bot_on", "bot_off"} and self.allowed(action, admin["role"]):
             rows.extend(self.bot_status()[1])
         if state.get("return_to"):
@@ -892,6 +985,10 @@ class AdminButtonUI:
             linked = ACTIONS[key]
             if self.allowed(linked, admin["role"]):
                 target = state["values"]["target"]
+                if action.key == "ticket":
+                    ticket = self.controller._require_ticket(target)
+                    if ticket["status"] == "closed" and key in {"ticket_reply", "ticket_close"}:
+                        continue
                 if action.key == "order":
                     order = self.controller._require_order(target)
                     try:
@@ -914,7 +1011,35 @@ class AdminButtonUI:
             if nav:
                 rows.append(nav)
             rows.append([self._form_button(state, "نمایش دوباره نتیجه", "list", str(page))])
-        return self._compact_related_rows(rows) + self.navigation("catalog" if state.get("return_to") else action.group)
+        return self._compact_related_rows(rows) + self.navigation(
+            "faq" if state.get("return_to", {}).get("scope") == "faq" else
+            "catalog" if state.get("return_to") else action.group)
+
+    def faq_detail(self, identifier: int, user: dict, admin: dict) -> None:
+        from .utils import render_rich_text, split_telegram_html
+        admin = self.authorise(user, admin)
+        if not self.allowed(ACTIONS["faqs"], admin["role"]):
+            raise ButtonInputError("دسترسی مدیریت پرسش‌ها ندارید.")
+        item = self.db.get_faq(identifier)
+        if item is None:
+            raise ButtonInputError("این پرسش حذف شده است.")
+        category = self.db.get_faq_category(item["category_id"]) if item.get("category_id") else None
+        text = (f"<b>پرسش {identifier}</b>\nدسته: {escape((category or {}).get('name') or 'بدون دسته')}"
+                f"\nوضعیت: {'فعال' if item['is_active'] else 'غیرفعال'}\nترتیب نمایش: {item['sort_order']}"
+                f"\n\n<b>{escape(item['question'])}</b>\n{render_rich_text(item['answer'])}")
+        rows = [
+            [self._button("ویرایش پرسش و پاسخ", f"faqdo:faq_set:{identifier}")],
+            [self._button("غیرفعال‌کردن این پرسش" if item["is_active"] else "فعال‌کردن این پرسش", f"faqdo:faq_toggle:{identifier}")],
+            [self._button("حذف این پرسش", f"faqdo:faq_delete:{identifier}", style="danger")],
+            [self._button("بازگشت به پرسش‌های دسته", f"faqback:{item.get('category_id') or 0}")],
+        ]
+        previous = self.db.get_user_state(int(user["id"]))
+        self.db.clear_user_state(int(user["id"]))
+        chunks = split_telegram_html(text, maximum=1900)
+        for index, chunk in enumerate(chunks):
+            self._send(user, chunk, rows if index == len(chunks) - 1 else None)
+        if previous:
+            self._retire_prompt(user, previous["data"].get("prompt_message_id"))
 
     def discount_detail(self, identifier: int, user: dict, admin: dict) -> None:
         admin = self.authorise(user, admin)
@@ -943,6 +1068,7 @@ class AdminButtonUI:
     @staticmethod
     def friendly_error(text: str) -> str:
         format_errors = {
+            "closed ticket cannot receive messages": "این تیکت بسته شده است. ابتدا از جزئیات تیکت، وضعیت را به باز تغییر دهید؛ سپس پاسخ را ثبت کنید.",
             "reservations are valid only for ready products": "رزرو فقط برای فرمت موجود در انبار است؛ پیش از تغییر به فرمت دستی، رزرو را غیرفعال کنید.",
             "remove ready-product inventory before changing type to manual": "محصول هنوز آیتم انبار دارد. برای حفظ سوابق تحویل، آن‌ها خودکار حذف نمی‌شوند؛ برای فرمت دستی محصول جدا بسازید یا فقط موجودی تحویل‌نشده را مدیریت کنید.",
             "resolve all live ready-product orders before changing type": "این محصول سفارش آمادهٔ باز دارد؛ ابتدا سفارش‌ها را تعیین تکلیف کنید، سپس فرمت را تغییر دهید.",

@@ -89,7 +89,7 @@ _section("discount_error", "خطای کد تخفیف", "input", "back=بازگش
 _section("order_notice", "اعلان ثبت اطلاعات، رزرو و تأمین سفارش", "notice", "order=مشاهده سفارش")
 _section("info_notice", "اعلان درخواست اطلاعات سفارش", "notice", "info=ارسال اطلاعات")
 _section("wallet_notice", "اعلان نتیجه پرداخت کیف پول", "notice", "wallet=کیف پول")
-_section("ticket_notice", "اعلان ثبت یا پاسخ تیکت", "notice", "view=مشاهده تیکت|reply=ارسال پیام جدید|back=بازگشت")
+_section("ticket_notice", "اعلان ثبت یا پاسخ تیکت", "notice", "view=مشاهده تیکت|reply=ارسال پیام جدید|close=بستن تیکت|reopen=باز کردن مجدد تیکت|back=بازگشت")
 _section("reminder_notice", "یادآوری پایان اشتراک", "notice", "order=مشاهده سفارش")
 
 
@@ -115,7 +115,8 @@ def upgrade_saved_layout(section: str, config: dict) -> dict:
     validation. Existing row order, columns and public item order are retained.
     """
     introduced = {"stats": {"refresh"}, "transactions": {"items"}, "referral": {"copy"},
-                  "faq": {"new"}, "ticket": {"close", "reopen"}, "card_payment": {"rial"}, "input_order_info": {"finish"}}
+                  "faq": {"new"}, "ticket": {"close", "reopen"}, "ticket_notice": {"close", "reopen"},
+                  "card_payment": {"rial"}, "input_order_info": {"finish"}}
     base = section.split(":")[0]
     if not isinstance(config, dict) or base not in introduced or not isinstance(config.get("rows"), list):
         return config

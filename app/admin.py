@@ -49,6 +49,7 @@ from .utils import (
     normalize_username,
     parse_amount,
     render_rich_text,
+    split_telegram_html,
 )
 
 
@@ -1099,7 +1100,15 @@ class AdminController:
         if claimed is None:
             return False
         try:
-            result = self._notify(int(target["chat_id"]), text)
+            # Send the frozen canonical payload, including keyboard, on both
+            # immediate and worker retry paths. Legacy two-argument callbacks
+            # remain compatible for notices without a keyboard.
+            markup = json.loads(claimed["reply_markup_json"]) if claimed.get("reply_markup_json") else None
+            if markup is not None:
+                result = self.telegram.send_message(int(target["chat_id"]), claimed["body"],
+                                                    parse_mode="HTML", reply_markup=markup)
+            else:
+                result = self._notify(int(target["chat_id"]), claimed["body"])
         except Exception:
             self.db.mark_outbound_message(
                 int(queued["id"]),
@@ -3353,9 +3362,11 @@ class AdminController:
         )
         rows = []
         for item in tickets:
+            owner = self.db.get_user(int(item["user_id"])) or {}
+            identity = self._ticket_owner_identity(owner)
             rows.append(
                 f"<code>{escape(item['ticket_number'])}</code> | "
-                f"{escape(item['subject'])} | {escape(item['status'])} | کاربر {item['user_id']}"
+                f"{escape(item['subject'])} | {escape(item['status'])}\n{identity}"
             )
         command_prefix = "/tickets"
         if tokens:
@@ -3372,21 +3383,34 @@ class AdminController:
             tail=("جزئیات تیکت: <code>/ticket TICKET_NUMBER</code>",),
         )
 
+    @staticmethod
+    def _ticket_owner_identity(owner: Mapping[str, Any]) -> str:
+        name = owner.get("customer_name") or owner.get("first_name") or "بدون نام"
+        username = "@" + str(owner["username"]) if owner.get("username") else "بدون یوزرنیم"
+        return f"کاربر: {escape(name)} | {escape(username)} | چت‌آی‌دی: <code>{escape(owner.get('chat_id') or '—')}</code>"
+
     def _ticket(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
+        from .ticket_ui import quote_body
         ticket = self._require_ticket(rest)
         entries = self.db.list_ticket_messages(int(ticket["id"]))
+        owner = self.db.get_user(int(ticket["user_id"])) or {}
         blocks = [
             "<b>جزئیات تیکت</b>"
             f"\nشماره: <code>{escape(ticket['ticket_number'])}</code>"
             f"\nموضوع: {escape(ticket['subject'])}"
             f"\nوضعیت: <code>{escape(ticket['status'])}</code>"
+            f"\n{self._ticket_owner_identity(owner)}"
             f"\nتعداد پیام‌ها: {len(entries):,}"
         ]
-        for entry in entries:
-            sender = "مدیریت" if entry["sender_type"] == "admin" else "کاربر"
+        for number, entry in enumerate(entries, start=1):
+            sender = "پشتیبانی" if entry["sender_type"] == "admin" else "کاربر"
             body = str(entry["body"] or "")
-            for index in range(0, max(1, len(body)), 600):
-                blocks.append(f"<b>{sender}</b>: {escape(body[index:index + 600])}")
+            rendered = render_rich_text(body) if entry["sender_type"] == "admin" else escape(body)
+            parts = split_telegram_html(rendered, maximum=700) or [""]
+            for index, part in enumerate(parts, start=1):
+                continuation = f" ({index}/{len(parts)})" if len(parts) > 1 else ""
+                blocks.append(f"<b>{sender} {number}{continuation}</b> · "
+                              f"{display_datetime(entry.get('created_at'), self.settings.timezone)}\n{quote_body(part)}")
             if entry.get("attachment_file_id"):
                 blocks.append(
                     f"پیوست {int(entry['id'])} ذخیره شده است؛ از دکمه دریافت پیوست استفاده کنید."
@@ -3394,7 +3418,9 @@ class AdminController:
                     "پیوست ذخیره شده است؛ دریافت امن: "
                     f"<code>/ticket_attachment {int(entry['id'])}</code>"
                 )
-        self._send_blocks(self._chat_id(message, user), blocks)
+        # Every body block is <=700 code points; this also bounds non-BMP
+        # conversations conservatively below Telegram's UTF-16 limit.
+        self._send_blocks(self._chat_id(message, user), blocks, maximum=1900)
 
     def _ticket_attachment(
         self,
@@ -3448,20 +3474,26 @@ class AdminController:
         return ticket
 
     def _ticket_reply(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
+        from .ticket_ui import notice_markup
         parts = self._command_parts(rest, 2)
         if len(parts) != 2:
             raise AdminInputError("نمونه: /ticket_reply TICKET_NUMBER | پاسخ")
         ticket = self._require_ticket(parts[0])
-        notice = (
-            "پاسخ جدیدی برای تیکت شما ثبت شد."
-            f"\nشماره تیکت: <code>{escape(ticket['ticket_number'])}</code>"
-            f"\n\n{escape(parts[1])}"
-        )
-        self._require_safe_notification_length(notice)
         notice_key = (
             f"ticket:{ticket['id']}:admin-notice:"
             f"{admin['id']}:{message.get('message_id', 'unknown')}"
         )
+        canonical = self.db.get_outbound_message_by_idempotency_key(notice_key)
+        markup = notice_markup(int(ticket["id"]))
+        notice = (
+            "پاسخ جدیدی برای تیکت شما ثبت شد."
+            f"\nشماره تیکت: <code>{escape(ticket['ticket_number'])}</code>"
+            f"\n\n{render_rich_text(parts[1])}"
+        )
+        if canonical:
+            notice = canonical["body"]
+            markup = json.loads(canonical["reply_markup_json"]) if canonical.get("reply_markup_json") else None
+        self._require_safe_notification_length(notice)
         self.db.add_ticket_message(
             int(ticket["id"]),
             parts[1],
@@ -3473,6 +3505,7 @@ class AdminController:
             ),
             outbound_body=notice,
             outbound_idempotency_key=notice_key,
+            outbound_reply_markup=markup,
         )
         target = self.db.get_user(int(ticket["user_id"]))
         delivered = self._deliver_prequeued_notification(
@@ -3578,16 +3611,22 @@ class AdminController:
         category = self.db.get_faq_category(category_id)
         if category is None:
             raise AdminInputError("دسته سوالات پیدا نشد.")
-        active = self._admin_toggle_target(
-            message,
-            f"faq-category:{category_id}:active",
-            bool(category["is_active"]),
-        )
+        active = self._faq_toggle_target(message, f"faq-category:{category_id}:active", category)
         updated = self.db.set_faq_category_active(category_id, active)
         self._send(
             self._chat_id(message, user),
             f"دسته سوالات {'فعال' if updated['is_active'] else 'غیرفعال'} شد.",
         )
+
+    def _faq_toggle_target(self, message: Mapping[str, Any], effect_key: str, item: Mapping[str, Any]) -> bool:
+        target = (self._button_context or {}).get("state", {}).get("faq_target")
+        if target and target.get("effect_key") == effect_key:
+            active = bool(target["active"])
+            update_id = self._admin_update_id(message)
+            if update_id is not None:
+                active = bool(self.db.get_or_store_admin_update_effect(update_id, effect_key, active))
+            return active
+        return self._admin_toggle_target(message, effect_key, bool(item["is_active"]))
 
     def _faq_category_set(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 3)
@@ -3640,13 +3679,10 @@ class AdminController:
         if category_id is not None and self.db.get_faq_category(category_id) is None:
             raise AdminInputError("دسته سوالات پیدا نشد.")
         page = _page_number(tokens[1]) if len(tokens) == 2 else 1
-        query = "SELECT * FROM faqs"
-        parameters: tuple[Any, ...] = ()
-        if category_id is not None:
-            query += " WHERE category_id = ?"
-            parameters = (category_id,)
+        search = self._button_context["state"].get("result_search", "") if self._button_context else ""
+        query, parameters = self._faq_listing_query(category_id, search)
         items, total, pages = self._management_rows(
-            page, query + " ORDER BY sort_order, id", parameters
+            page, query, parameters
         )
         lines = []
         for item in items:
@@ -3654,12 +3690,36 @@ class AdminController:
                 f"<code>{item['id']}</code> | دسته {item.get('category_id') or '—'} | "
                 f"{escape(item['question'])} | {'فعال' if item['is_active'] else 'غیرفعال'}"
             )
+        category = self.db.get_faq_category(category_id) if category_id else None
+        title = "سوالات متداول" if not category else "پرسش‌های " + category["name"]
+        tail = []
+        if category:
+            tail.append("وضعیت دسته: " + ("فعال" if category["is_active"] else "غیرفعال"))
+        if self._button_context:
+            tail.append("برای جست‌وجوی پرسش، عبارت را در همین بخش بفرستید؛ سپس نتیجه را با دکمه انتخاب کنید.")
+            if search:
+                tail.append("جست‌وجو: " + escape(search))
+            # _send_page omits command-oriented tails in button mode.
+            lines.extend(tail)
         self._send_page(
-            self._chat_id(message, user), title="سوالات متداول", rows=lines,
+            self._chat_id(message, user), title=title, rows=lines,
             total=total, page=page, pages=pages,
             command_prefix=f"/faqs {category_id if category_id is not None else 'all'}",
             empty_text="سوالی ثبت نشده است.",
+            tail=tuple(tail),
         )
+
+    @staticmethod
+    def _faq_listing_query(category_id: int | None, search: str = "") -> tuple[str, tuple]:
+        clauses, parameters = [], []
+        if category_id is not None:
+            clauses.append("category_id=?")
+            parameters.append(category_id)
+        if search:
+            clauses.append("instr(lower(question || ' ' || id), lower(?)) > 0")
+            parameters.append(search)
+        return ("SELECT * FROM faqs" + (" WHERE " + " AND ".join(clauses) if clauses else "")
+                + " ORDER BY sort_order,id", tuple(parameters))
 
     def _faq_add(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 3)
@@ -3681,11 +3741,7 @@ class AdminController:
         item = self.db.get_faq(faq_id)
         if item is None:
             raise AdminInputError("سؤال متداول پیدا نشد.")
-        active = self._admin_toggle_target(
-            message,
-            f"faq:{faq_id}:active",
-            bool(item["is_active"]),
-        )
+        active = self._faq_toggle_target(message, f"faq:{faq_id}:active", item)
         method = self._public("set_faq_active")
         if method is not None:
             method(faq_id, active)

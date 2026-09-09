@@ -215,7 +215,7 @@ for key, label in (("discount_toggle", "تغییر وضعیت تخفیف"), ("di
     add(key, label, "discounts", entity("discount", "انتخاب تخفیف"), mutation=True)
 add("tickets", "فهرست و فیلتر تیکت‌ها", "tickets",
     choice("status", "وضعیت تیکت", (("همه وضعیت‌ها", "all"), *TICKET_OPTIONS)))
-add("ticket", "مشاهده مکالمه کامل تیکت", "tickets", TICKET)
+add("ticket", "جست‌وجوی تیکت / مشاهده مکالمه", "tickets", TICKET)
 add("ticket_attachment", "دریافت پیوست تیکت", "tickets", TICKET,
     entity("ticket_attachment", "انتخاب پیوست", "attachment"))
 add("ticket_reply", "پاسخ به تیکت", "tickets", TICKET, BODY, mutation=True, pipe=True)

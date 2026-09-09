@@ -900,11 +900,19 @@ class BotApplication:
             target = current["target"]
             ticket_id = int(current["ticket_id"])
             body = "تیکت بسته شد. هر زمان لازم بود می‌تونی دوباره بازش کنی." if target == "closed" else "تیکت دوباره باز شد؛ می‌تونی پیامت را بفرستی."
+            from .ticket_ui import notice_markup
+            notice_key = f"ticket:{ticket_id}:user-status:{token}"
+            canonical = self.db.get_outbound_message_by_idempotency_key(notice_key)
+            markup = notice_markup(ticket_id, closed=target == "closed")
+            if canonical:
+                body = canonical["body"]
+                markup = json.loads(canonical["reply_markup_json"]) if canonical.get("reply_markup_json") else None
             self.db.set_user_ticket_status(ticket_id, int(user["id"]), target,
                 expected_status=current["expected_status"], expected_updated_at=current["expected_updated_at"],
-                expected_message_count=current["expected_message_count"], idempotency_key=f"ticket:{ticket_id}:user-status:{token}",
-                body=body, reply_markup=customer_keyboard("ticket_notice", [[callback_button("مشاهده تیکت", f"ticket:{ticket_id}")], [back_button("support")]]))
-            self.db.clear_user_state(user["id"])
+                expected_message_count=current["expected_message_count"], idempotency_key=notice_key,
+                body=body, reply_markup=markup, resume_reply=target == "open")
+            if target == "closed":
+                self.db.clear_user_state(user["id"])
             self.telegram.answer_callback_query(query_id, "وضعیت تیکت ثبت شد.")
             self._deliver_outbound_messages()
             self._delete_own_prompt(user["chat_id"], current.get("prompt_message_id"))
@@ -1380,10 +1388,13 @@ class BotApplication:
         rows: list[list[dict[str, Any]]] = []
         for entry in entries:
             sign = "+" if int(entry["amount_signed"]) > 0 else ""
-            kind = texts.transaction_type(entry.get("entry_type"), entry.get("method"))
-            date = display_datetime(entry["created_at"], self.settings.timezone).split(" · ")[0]
-            rows.append([callback_button(f"{date} · {kind} · {sign}{money(entry['amount_signed'], self.settings.currency_label)} · {self._transaction_status(entry['status'])}",
-                                         f"transaction:{entry['transaction_key']}:{page}")])
+            icon_key = {"external_purchase": "buy", "wallet_hold": "buy", "topup": "wallet",
+                        "wallet_refund": "refresh", "order_refund": "refresh", "admin_adjustment": "pencil",
+                        "referral_reward": "referral"}.get(entry.get("entry_type"), "receipt")
+            status = "در انتظار" if entry["status"] in {"pending", "verifying"} else self._transaction_status(entry["status"])
+            rows.append([callback_button(f"{sign}{money(entry['amount_signed'], self.settings.currency_label)} — {status}",
+                                         f"transaction:{entry['transaction_key']}:{page}",
+                                         icon_custom_emoji_id=self.settings.button_icon_ids.get(icon_key))])
         navigation = self._pagination_buttons(page, page_count, "profile:transactions")
         if navigation:
             rows.append(navigation)
@@ -1706,11 +1717,8 @@ class BotApplication:
 
     @staticmethod
     def _ticket_notice_markup(ticket_id: int) -> dict:
-        return customer_keyboard("ticket_notice", [
-            [callback_button("مشاهده تیکت", f"ticket:{ticket_id}")],
-            [callback_button("ارسال پیام جدید", f"ticketreply:{ticket_id}")],
-            [back_button("support")],
-        ])
+        from .ticket_ui import notice_markup
+        return notice_markup(ticket_id)
 
     def show_tickets(
         self,
@@ -1758,6 +1766,7 @@ class BotApplication:
         query: dict[str, Any],
         page: int | None = None,
     ) -> None:
+        from .ticket_ui import quote_body
         ticket = self.db.get_ticket(ticket_id)
         if not ticket or ticket["user_id"] != user["id"]:
             raise NotFoundError("تیکت پیدا نشد.")
@@ -1775,7 +1784,7 @@ class BotApplication:
                 block = (
                     f"<b>{escape(sender)} {message_index:,}{continuation}:</b> "
                     f"{escape(display_datetime(item.get('created_at'), self.settings.timezone))}\n"
-                    f"{body_part}"
+                    f"{quote_body(body_part)}"
                 )
                 has_attachment = bool(
                     part_index == len(parts) and item.get("attachment_file_id")
@@ -1787,16 +1796,17 @@ class BotApplication:
         packed_pages: list[list[tuple[str, dict[str, Any], bool]]] = [[]]
         packed_length = 0
         for block in blocks:
+            block_length = len(block[0].encode("utf-16-le")) // 2
             separator_length = 2 if packed_pages[-1] else 0
             if (
                 packed_pages[-1]
-                and packed_length + separator_length + len(block[0]) > 3_000
+                and packed_length + separator_length + block_length > 3_000
             ):
                 packed_pages.append([])
                 packed_length = 0
                 separator_length = 0
             packed_pages[-1].append(block)
-            packed_length += separator_length + len(block[0])
+            packed_length += separator_length + block_length
 
         page_count = len(packed_pages)
         selected_page = page_count - 1 if page is None else int(page)

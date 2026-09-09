@@ -1,5 +1,7 @@
 # راهنمای استقرار و بازگردانی
 
+پیگیری [۲۰۲۶-۰۹-۰۹](PENDING_FEEDBACK_2026-09-09.md) نیز schema 11 و بدون انتقال داده/تغییر مالی است. افزوده `app/ticket_ui.py` باید برای alonebot خواندنی باشد. قبل از start، fingerprint کل DB را با backup توقف مقایسه کنید؛ raw outbox قدیمی و چیدمان مدیر نباید برای دکمه‌های تازه بازنویسی شوند. rollback کد به `f4ece52ca572b8ac5aa442de5c331692eb26babc` با DB جاری، توقف unit و check است. SHA و نتایج عملیاتی نهایی در CURRENT_DEPLOYMENT ثبت می‌شوند.
+
 انتشار پیگیری: [FOLLOWUP_FEEDBACK_2026-09-08.md](FOLLOWUP_FEEDBACK_2026-09-08.md) بدون migration و با schema 11 است، اما rollback به نسخه تک‌پیامی بدون بررسی ایمن نیست: collecting/messages تازه نباید به مسیر جایگزینی تک‌پیامی برگردند. DB جاری، شماره‌های تاریخی و setting شمارنده حفظ شوند. توقف یک service، backup معتبر، artifact تست‌شده، check با alonebot و یک poller الزامی است؛ هیچ تغییر مالی یا reset شماره بخشی از rollout نیست.
 
 ## انتشار بازخورد ۲۰۲۶-۰۹-۰۸

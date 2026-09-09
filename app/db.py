@@ -7628,6 +7628,7 @@ class Database:
         attachment_kind: str | None = None,
         outbound_body: str | None = None,
         outbound_idempotency_key: str | None = None,
+        outbound_reply_markup: Mapping[str, Any] | None = None,
         now: datetime | str | None = None,
     ) -> dict[str, Any]:
         if sender_type not in {"user", "admin"}:
@@ -7646,6 +7647,8 @@ class Database:
             raise ValidationError(
                 "ticket message outbox body and idempotency key are required together"
             )
+        if outbound_reply_markup is not None and outbound_body is None:
+            raise ValidationError("ticket message markup requires an outbound notification")
         if outbound_body is not None and len(str(outbound_body).strip()) > (
             self.TELEGRAM_SAFE_MESSAGE_LENGTH
         ):
@@ -7685,6 +7688,7 @@ class Database:
                         outbound_body,
                         str(outbound_idempotency_key),
                         stamp,
+                        reply_markup=outbound_reply_markup,
                     )
                 return dict(existing)
             ticket = self._required(connection, "SELECT * FROM tickets WHERE id = ?", (ticket_id,), "ticket")
@@ -7729,6 +7733,7 @@ class Database:
                     outbound_body,
                     str(outbound_idempotency_key),
                     stamp,
+                    reply_markup=outbound_reply_markup,
                 )
             return dict(
                 self._required(connection, "SELECT * FROM ticket_messages WHERE id = ?", (cursor.lastrowid,), "ticket message")
@@ -7882,7 +7887,8 @@ class Database:
 
     def set_user_ticket_status(self, ticket_id: int, user_id: int, status: str, *,
                                expected_status: str, expected_updated_at: str, expected_message_count: int,
-                               idempotency_key: str, body: str, reply_markup: Mapping[str, Any]) -> dict[str, Any]:
+                               idempotency_key: str, body: str, reply_markup: Mapping[str, Any] | None,
+                               resume_reply: bool = False) -> dict[str, Any]:
         """Owner-scoped close/reopen with stale-preview protection and outbox."""
         if status not in {"open", "closed"}:
             raise ValidationError("وضعیت تیکت معتبر نیست.")
@@ -7902,6 +7908,15 @@ class Database:
             connection.execute("UPDATE tickets SET status=?, closed_at=CASE WHEN ?='closed' THEN ? ELSE NULL END, updated_at=? WHERE id=? AND user_id=?",
                                (status, status, stamp, stamp, ticket_id, user_id))
             self._queue_user_message_in_transaction(connection, user_id, body, idempotency_key, stamp, reply_markup=reply_markup)
+            if resume_reply and status == "open":
+                # The first text after reopening must survive a process restart.
+                # A replay takes the prior branch above and never overwrites a
+                # later conversation state with this historical input prompt.
+                connection.execute(
+                    "INSERT INTO user_states(user_id,state,data_json,updated_at) VALUES (?,?,?,?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET state=excluded.state, data_json=excluded.data_json, updated_at=excluded.updated_at",
+                    (user_id, "ticket_reply", _json_dump({"ticket_id": ticket_id}), stamp),
+                )
             return dict(self._required(connection, "SELECT * FROM tickets WHERE id=?", (ticket_id,), "ticket"))
 
     def close_ticket(

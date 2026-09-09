@@ -1,5 +1,7 @@
 # معماری فنی ربات الون اکانت
 
+افزوده [پیگیری ۲۰۲۶-۰۹-۰۹](PENDING_FEEDBACK_2026-09-09.md): `ticket_ui.notice_markup` builder مشترک اعلان پاسخ/وضعیت است؛ controller فقط canonical outbox را ارسال می‌کند. `set_user_ticket_status(resume_reply=True)` بازگشایی و state دریافت اولین متن را در همان transaction ثبت می‌کند. FAQ درختی و جست‌وجوی نخست مخاطب از `AdminButtonUI` و فرم/journal موجود عبور می‌کنند؛ موتور مالی جدیدی اضافه نشده است.
+
 `order_information.py` projection مشترک اطلاعات legacy/چندپیامی است؛ bot جمع‌آوری و دکمه پایان را orchestrate می‌کند و DB append/dedup/ownership/finalization/outbox را اتمیک نگه می‌دارد. کنترل پاداش محصول از `AdminCatalog` به همان فرم و handler مالی موجود می‌رود؛ موتور مالی دوم ساخته نمی‌شود. [جزئیات](FOLLOWUP_FEEDBACK_2026-09-08.md).
 
 اصلاحات ۲۰۲۶-۰۹-۰۸: `utils.telegram_input_text` مرز ورودی rich و `texts.ready_instructions` متن مشترک تحویل و guard دامنه است. `Database.set_user_ticket_status` نسخه مکالمه و outbox اتمیک دارد. اعلان فیش در همان outbox به شکل رسانه/caption است؛ پیش از ارسال نسخه فیش و مجوز گیرنده revalidate می‌شوند. timeout رسانه fallback دوم نمی‌سازد، ولی خطای قطعی نبود رسانه fallback متنی دارد. [گزارش و محدودیت‌ها](CLIENT_FEEDBACK_2026-09-08.md).

@@ -714,11 +714,11 @@ flowchart TD
     F["ساخت موضوع کوتاه از نخستین خط؛ سازگاری state قدیمی"]
     G["ایجاد idempotent ticket و پیام اول"]
     H["وضعیت open و alert پایدار با دکمه مشاهده/پاسخ؛ cursor recovery"]
-    I["مشاهده گفت‌وگوی صفحه‌بندی‌شده"]
+    I["گفت‌وگوی صفحه‌بندی‌شده؛ نقش، زمان و نقل‌قول؛ هویت مشتری فقط برای مدیر"]
     J{"تیکت بسته است؟"}
     K["ارسال پاسخ کاربر؛ وضعیت open"]
     L["پاسخ مدیر یا پشتیبان؛ وضعیت answered"]
-    M["commit پاسخ/status و notice کاربر در یک transaction؛ ارسال از outbox"]
+    M["commit پاسخ/status و notice با دکمه پاسخ/بستن؛ ارسال و retry از outbox canonical"]
     N{"اقدام بعدی"}
     O["بستن تیکت؛ وضعیت closed و closed_at"]
     P["بازگشایی مدیریتی با وضعیت open یا answered"]
@@ -740,7 +740,10 @@ flowchart TD
     Choice -->|"لغو یا خروج"| Cancel["حذف prompt و پاک‌سازی state"] --> I
     Choice -->|"بله"| Guard{"مالکیت و نسخه status/time/message-count معتبر؟"}
     Guard -->|"خیر / پیام تازه"| I
-    Guard -->|"بله"| Atomic["status + notice در یک transaction؛ بدون پاسخ به تیکت بسته"] --> I
+    Guard -->|"بله"| Atomic["status + notice در یک transaction؛ هنگام بازگشایی state پایدار ticket_reply"]
+    Atomic --> Reopened{"بازگشایی بود؟"}
+    Reopened -->|"بله؛ اولین متن حتی پس از restart"| K
+    Reopened -->|"خیر؛ تیکت بسته"| I
     O -.->|"فرمان مدیر"| P --> I
     I -.->|"owner/admin/support"| R --> I
 

@@ -54,6 +54,9 @@ class AdminButtonTests(unittest.TestCase):
 
     def pick(self, value, actor=None):
         state = self.state(actor)
+        if state["action"] == "message" and state["step"] == 0 and not state["options"]:
+            self.send_message(actor or self.OWNER, text=str(value))
+            state = self.state(actor)
         options = state["options"]
         selected = next((i for i, pair in enumerate(options) if pair[0] == str(value)), None)
         self.assertIsNotNone(selected, (state["action"], options, value))

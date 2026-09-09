@@ -1,5 +1,7 @@
 # مدل داده و invariantهای پایگاه داده
 
+پیگیری ۲۰۲۶-۰۹-۰۹ schema را تغییر نمی‌دهد (نسخه ۱۱). `add_ticket_message(outbound_reply_markup=...)` متن و دکمه اعلان را همراه پیام commit می‌کند؛ payload متناقض همان کلید conflict و rollback است. `set_user_ticket_status(resume_reply=True)` فقط در نخستین بازگشایی، `user_states.ticket_reply` را با status و outbox ثبت می‌کند؛ replay نباید state بعدی را بازنویسی کند. [شاهد و محدوده](PENDING_FEEDBACK_2026-09-09.md).
+
 افزوده بدون migration (schema 11): setting `order_number_sequence` high-water mark شماره‌های مشتری از 1000 است؛ شماره تاریخی ثابت می‌ماند. `orders.customer_info_json` اکنون `messages[]/collecting/collection_id` دارد؛ text تجمیعی و نخستین file_id سازگاری خواندن را حفظ می‌کنند. پایان مجموعه و ACK در یک transaction ثبت می‌شوند؛ collecting مانع complete است. [قرارداد و rollback](FOLLOWUP_FEEDBACK_2026-09-08.md).
 
 بازخورد ۲۰۲۶-۰۹-۰۸ migration ندارد. `set_user_ticket_status` با مالکیت، وضعیت/زمان/تعداد پیام مورد انتظار و outbox اتمیک کار می‌کند. projection مشتری `list_user_transactions(include_pending=True)` پرداخت باز/ناموفق را نیز نشان می‌دهد ولی WalletEntry یا اعتبار مالی تازه نمی‌سازد؛ default گزارش مالی مدیریت تغییر نکرده است. `get_user_transaction` نوع منبع و مالکیت را کنترل می‌کند. `referral_summary.buyer_count` دعوت‌شده خریدار تجاری را یکتا می‌شمارد، نه تعداد سفارش یا تخصیص مدیریتی. upgrade خواندنی layout فقط slotهای تازه را اضافه می‌کند؛ نسخه/history/CAS محفوظ‌اند.

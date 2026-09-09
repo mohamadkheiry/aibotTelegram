@@ -169,13 +169,16 @@ class CustomerLayoutTests(unittest.TestCase):
     def test_all_customer_keyboard_construction_sites_are_explicitly_registered(self):
         root = Path(__file__).resolve().parents[1]
         tree = ast.parse((root / "app/bot.py").read_text(encoding="utf-8"))
+        # Customer and administrator ticket replies share the same tagged
+        # builder; include its construction site in the exhaustive registry.
+        tree.body.extend(ast.parse((root / "app/ticket_ui.py").read_text(encoding="utf-8")).body)
         known = set()
         admin_only = []
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
-            if name in {"customer_keyboard", "_input_cancel_markup"}:
+            if name in {"customer_keyboard", "_input_cancel_markup", "keyboard"}:
                 self.assertTrue(node.args, node.lineno)
                 argument = node.args[0]
                 if isinstance(argument, ast.Name):
