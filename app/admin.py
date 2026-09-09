@@ -3696,6 +3696,8 @@ class AdminController:
         if category:
             tail.append("وضعیت دسته: " + ("فعال" if category["is_active"] else "غیرفعال"))
         if self._button_context:
+            if not lines:
+                lines.append("سوالی ثبت نشده است.")
             tail.append("برای جست‌وجوی پرسش، عبارت را در همین بخش بفرستید؛ سپس نتیجه را با دکمه انتخاب کنید.")
             if search:
                 tail.append("جست‌وجو: " + escape(search))

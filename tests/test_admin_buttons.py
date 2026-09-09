@@ -477,6 +477,8 @@ class AdminButtonTests(unittest.TestCase):
         captured = []
         self.db.create_discount("DEMO", discount_type="percent", value=10)
         self.db.create_reward_rule("DEMO", event_type="start", amount=10)
+        category = self.db.create_faq_category("دسته ساختگی تأیید وضعیت")
+        self.db.create_faq("پرسش ساختگی", "پاسخ ساختگی", category_id=category["id"])
 
         def handler(key):
             def capture(rest, message, user, admin):

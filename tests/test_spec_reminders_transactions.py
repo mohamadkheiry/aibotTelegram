@@ -123,7 +123,7 @@ class ReminderAndTransactionSpecificationTests(unittest.TestCase):
         self.assertEqual(self.db.get_reminder(reminder["id"])["status"], "cancelled")
 
     def test_transaction_type_is_visible_even_when_a_custom_reason_exists(self) -> None:
-        """PDF 1 page 1 requires date, amount and type for every transaction."""
+        """Keep PDF date/type in details; accepted MR-01 makes buttons compact."""
         for index, kind in enumerate(("admin_adjustment", "referral_reward", "topup", "manual_credit")):
             self.db.adjust_wallet(
                 self.user["id"], 500, entry_type=kind, reason="یادداشت اختصاصی",
@@ -135,15 +135,20 @@ class ReminderAndTransactionSpecificationTests(unittest.TestCase):
                    if b.get("callback_data", "").startswith("transaction:")]
         self.assertEqual(len(buttons), 4)
         text = "\n".join(b["text"] for b in buttons)
-        for label in ("اصلاح موجودی توسط مدیر", "پاداش دعوت", "شارژ کیف پول", "افزایش اعتبار"):
-            self.assertIn(label, text)
-        self.assertEqual(text.count("2026-01-10"), 4)
+        self.assertEqual(text.count("500"), 4)
+        self.assertNotIn("2026-01-10", text)
         self.assertLessEqual(len(text), 4096)
+        details = []
         for b in buttons:
             key = ":".join(b["callback_data"].split(":")[1:3])
             self.app.show_transaction(self.user, key, page=0, query={"message": {
                 "message_id": screen["message_id"], "chat": {"id": self.user["chat_id"]}}})
             self.assertIn("یادداشت اختصاصی", self.telegram.edits[-1]["text"])
+            details.append(self.telegram.edits[-1]["text"])
+        detail_text = "\n".join(details)
+        for label in ("اصلاح موجودی توسط مدیر", "پاداش دعوت", "شارژ کیف پول", "افزایش اعتبار"):
+            self.assertIn(label, detail_text)
+        self.assertEqual(detail_text.count("2026-01-10"), 4)
 
 
 if __name__ == "__main__":
