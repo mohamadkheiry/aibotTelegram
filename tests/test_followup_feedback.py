@@ -196,6 +196,18 @@ class FollowupDomainTests(db_fixture.DatabaseTestCase):
         self.assertEqual(old["rows"], [["cancel"]])
         customer_layouts.validate("input_order_info", updated)
 
+    def test_old_saved_checkout_layouts_gain_cancel_before_back(self):
+        summary = {"rows": [["pay"], ["discount"], ["back"]], "columns": 1, "item_order": [], "reverse": False}
+        methods = {"rows": [["wallet"], ["card"], ["crypto"], ["back"]], "columns": 1, "item_order": [], "reverse": False}
+        self.assertEqual(
+            customer_layouts.upgrade_saved_layout("order_summary", summary)["rows"],
+            [["pay"], ["discount"], ["cancel"], ["back"]],
+        )
+        self.assertEqual(
+            customer_layouts.upgrade_saved_layout("payment_methods", methods)["rows"],
+            [["wallet"], ["card"], ["crypto"], ["cancel"], ["back"]],
+        )
+
 
 class FollowupJourneyTests(unittest.TestCase):
     OWNER = journey_fixture.SourceEndToEndTests.OWNER
@@ -370,9 +382,10 @@ class FollowupCatalogTests(unittest.TestCase):
         general = self.db.create_reward_rule("general", event_type="start", amount=50)
         self.open_product()
         self.click(label="پاداش معرف این محصول")
-        self.click(label="افزودن پاداش ثابت این محصول")
+        self.click(label="افزودن پاداش این محصول")
         self.assertNotIn("شروع ربات", [b["text"] for b in self.buttons()])
         self.click(label="خرید محصول")
+        self.click(label="مبلغ ثابت")
         self.send_message(self.OWNER, text="1234")
         self.click(ending=":default:0")
         self.click(ending=":default:0")
@@ -412,6 +425,28 @@ class FollowupCatalogTests(unittest.TestCase):
         self.send_callback(self.OWNER, f"adm:ui:c:rewardtoggle:{self.product['id']}:{rule['id']}")
         self.assertTrue(self.db.list_reward_rules()[0]["is_active"])
         self.assertTrue(any("متعلق به این محصول نیست" in m["text"] for m in self.telegram.messages))
+
+    def test_product_percentage_reward_collects_rate_and_optional_cap(self):
+        self.open_product()
+        self.click(label="پاداش معرف این محصول")
+        self.click(label="افزودن پاداش این محصول")
+        self.click(label="خرید محصول")
+        self.click(label="درصد از قیمت کامل محصول")
+        self.send_message(self.OWNER, text="7")
+        self.send_message(self.OWNER, text="1000")
+        self.click(ending=":default:0")
+        self.click(ending=":default:0")
+        self.click(label="تأیید و اجرا")
+
+        rule = next(
+            item
+            for item in self.db.list_reward_rules()
+            if item["product_id"] == self.product["id"]
+        )
+        self.assertEqual(rule["event_type"], "product_purchase")
+        self.assertEqual(rule["amount_mode"], "percent")
+        self.assertEqual(rule["amount"], 7)
+        self.assertEqual(rule["maximum_amount"], 1000)
 
     def test_ready_stock_limit_is_in_inventory_and_manual_legacy_link_cannot_edit_it(self):
         self.open_product()

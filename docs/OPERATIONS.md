@@ -112,7 +112,7 @@ docker inspect --format '{{.State.Status}} {{.RestartCount}}' "$(docker compose 
 
 ### بررسی config و Bot API
 
-`--check` دیتابیس را initialize/migrate تا schema 11 می‌کند، owner bootstrap را با root marker و private chat/user ID پایدار روی همان DB ایجاد/اعتبارسنجی می‌کند و سپس به `getMe` وصل می‌شود. drift username همان chat پس از verify conflict نیست؛ owner غیرفعال‌شده دوباره فعال نمی‌شود و انتقال marker فقط به owner فعال و verifyشده ممکن است. تعارض identity legacy یا configured chat ID نامعتبر پیش از تماس Telegram fail closed است. آن را فقط بعد از backup و با identity نهایی release برای preflight کنترل‌شده استفاده کنید، نه probe پرتکرار monitoring:
+`--check` دیتابیس را initialize/migrate تا schema 12 می‌کند، owner bootstrap را با root marker و private chat/user ID پایدار روی همان DB ایجاد/اعتبارسنجی می‌کند و سپس به `getMe` وصل می‌شود. drift username همان chat پس از verify conflict نیست؛ owner غیرفعال‌شده دوباره فعال نمی‌شود و انتقال marker فقط به owner فعال و verifyشده ممکن است. تعارض identity legacy یا configured chat ID نامعتبر پیش از تماس Telegram fail closed است. آن را فقط بعد از backup و با identity نهایی release برای preflight کنترل‌شده استفاده کنید، نه probe پرتکرار monitoring:
 
 ```bash
 cd /opt/alone-account-bot
@@ -194,7 +194,7 @@ PRAGMA foreign_key_check;
 
 `quick_check` باید `ok` و `foreign_key_check` باید بدون ردیف باشد. خروجی‌های دارای username، phone، receipt، raw payload یا inventory payload را در ابزار monitoring جمع نکنید.
 
-برای این release مقدار `schema_version` باید `11` باشد. اختلاف نسخه را با اجرای migration پشتیبانی‌شده روی backup/fixture حل کنید؛ `schema_meta` را دستی تغییر ندهید.
+برای این release مقدار `schema_version` باید `12` باشد. اختلاف نسخه را با اجرای migration پشتیبانی‌شده روی backup/fixture حل کنید؛ `schema_meta` را دستی تغییر ندهید.
 
 ## وضعیت طبیعی queue و recovery
 

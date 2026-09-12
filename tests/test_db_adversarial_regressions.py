@@ -172,12 +172,17 @@ class DatabaseAdversarialRegressionTests(unittest.TestCase):
                 connection.execute(
                     "SELECT value FROM schema_meta WHERE key='schema_version'"
                 ).fetchone()[0],
-                "11",
+                "12",
             )
             order_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(orders)")
             }
             self.assertIn("order_origin", order_columns)
+            reward_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(reward_rules)")
+            }
+            self.assertIn("amount_mode", reward_columns)
+            self.assertIn("maximum_amount", reward_columns)
             category_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(categories)")
             }
@@ -306,7 +311,7 @@ class DatabaseAdversarialRegressionTests(unittest.TestCase):
                 connection.execute(
                     "SELECT value FROM schema_meta WHERE key='schema_version'"
                 ).fetchone()[0],
-                "11",
+                "12",
             )
             columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(admins)")
@@ -665,6 +670,8 @@ class DatabaseAdversarialRegressionTests(unittest.TestCase):
         self.db.hold_wallet_funds(
             order["id"], idempotency_key="late-window-hold", now=BASE
         )
+        self.db.add_inventory_item(product["id"], "synthetic late-window payload", now=BASE)
+        self.db.assign_inventory(order["id"], now=BASE)
         self.db.grant_purchase_rewards(order["id"], now=BASE + timedelta(days=2))
         self.assertEqual(self.db.wallet_balance(inviter["id"]), 25)
 

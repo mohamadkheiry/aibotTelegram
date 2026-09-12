@@ -293,11 +293,11 @@ class AdminCatalog:
         events = {"first_purchase": "اولین خرید", "product_purchase": "خرید محصول", "combined": "ترکیبی"}
         text = (f"<b>پاداش معرف محصول {escape(product['name'])}</b>\nصفحه {page} از {pages} | قوانین: {total}\n"
                 "پاداش به دعوت‌کننده می‌رسد، نه خود خریدار. قواعد عمومی از بخش دعوت و پاداش مدیریت می‌شوند.\n"
-                "مدل فعلی مبلغ ثابت است؛ درصد و سقف هنوز فعال نشده‌اند.")
+                "مبلغ ثابت یا درصد از قیمت کامل محصول، با سقف اختیاری، قابل تنظیم است.")
         rows = [[self.button(f"قانون {item['id']} · {events.get(item['event_type'], item['event_type'])} · {'فعال' if item['is_active'] else 'غیرفعال'}",
                              f"reward:{product_id}:{item['id']}")] for item in items]
         rows += self._pager(f"rewards:{product_id}", page, pages)
-        rows += [[self.button("افزودن پاداش ثابت این محصول", f"rewardadd:{product_id}")],
+        rows += [[self.button("افزودن پاداش این محصول", f"rewardadd:{product_id}")],
                  [self.button("بازگشت به محصول", f"product:{product_id}")]]
         self._publish({"kind": "rewards", "id": product_id, "page": page,
                        "category_context": self._category_context(product, user)}, text, rows + self.ui.navigation(), user, admin)

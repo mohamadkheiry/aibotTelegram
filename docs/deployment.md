@@ -1,6 +1,14 @@
 # راهنمای استقرار و بازگردانی
 
-پیگیری [۲۰۲۶-۰۹-۰۹](PENDING_FEEDBACK_2026-09-09.md) نیز schema 11 و بدون انتقال داده/تغییر مالی است. افزوده `app/ticket_ui.py` باید برای alonebot خواندنی باشد. قبل از start، fingerprint کل DB را با backup توقف مقایسه کنید؛ raw outbox قدیمی و چیدمان مدیر نباید برای دکمه‌های تازه بازنویسی شوند. rollback کد به `f4ece52ca572b8ac5aa442de5c331692eb26babc` با DB جاری، توقف unit و check است. SHA و نتایج عملیاتی نهایی در CURRENT_DEPLOYMENT ثبت می‌شوند.
+## انتشار مالی و لغو سفارش — ۲۰۲۶-۰۹-۱۲
+
+این نسخه migration افزایشی تا schema 12 دارد: `reward_rules.amount_mode` با default `fixed` و `maximum_amount` nullable افزوده می‌شوند و index پردازش پاداش فقط سفارش‌های `completed` را انتخاب می‌کند. پیش از rollout از DB جاری سرور backup آنلاین و پس از توقف تنها unit، backup نهایی بگیرید؛ integrity/FK و restore ایزوله را تأیید کنید. سپس commit تست‌شده را نصب، دسترسی خواندن حساب `alonebot` را کنترل، `python -m app.main --migrate-only` و `--check` را با همان env/user اجرا و فقط `alone-account-bot.service` را شروع کنید. env، token، manifest آیکون، رنگ `colored`، تنظیمات تجاری، offset و outbox تاریخی بازنویسی نشوند.
+
+Smoke بدون تراکنش واقعی: هویت `@ElevenaccountsTestbot`، یک poller، schema 12، ۴۳ layout، فرم پاداش ثابت/درصدی و نمایش صفحه تأیید لغو را بررسی کنید و در تأیید لغو واقعی کلیک نکنید. mutation مالی فقط روی fixture انجام می‌شود. [تصمیم‌ها و سؤال‌های باز](FINANCIAL_DECISIONS_2026-09-12.md).
+
+Rollback کور به schema 11 ایمن نیست: کد قدیمی ستون `amount` قانون درصدی را مبلغ ثابت تفسیر می‌کند. پیش از rollback کد، همهٔ ruleهای `amount_mode=percent` را با API مدیریتی غیرفعال کنید یا سازگاری خواندن schema 12 را backport کنید؛ DB جاری را نگه دارید و snapshot قدیمی را روی سفارش‌های تازه restore نکنید. callbackهای `cancelorder*` در کد قدیمی فقط stale می‌شوند و نباید با SQL replay/تبدیل شوند. نتیجه دقیق rollout در [CURRENT_DEPLOYMENT.md](CURRENT_DEPLOYMENT.md) ثبت می‌شود.
+
+پیگیری تاریخی [۲۰۲۶-۰۹-۰۹](PENDING_FEEDBACK_2026-09-09.md) schema 11 و بدون انتقال داده/تغییر مالی بود. افزوده `app/ticket_ui.py` باید برای alonebot خواندنی باشد. قبل از start، fingerprint کل DB را با backup توقف مقایسه کنید؛ raw outbox قدیمی و چیدمان مدیر نباید برای دکمه‌های تازه بازنویسی شوند. rollback آن انتشار به `f4ece52ca572b8ac5aa442de5c331692eb26babc` با DB جاری، توقف unit و check بود؛ برای نسخه جاری هشدار schema 12 بالا مقدم است.
 
 انتشار پیگیری: [FOLLOWUP_FEEDBACK_2026-09-08.md](FOLLOWUP_FEEDBACK_2026-09-08.md) بدون migration و با schema 11 است، اما rollback به نسخه تک‌پیامی بدون بررسی ایمن نیست: collecting/messages تازه نباید به مسیر جایگزینی تک‌پیامی برگردند. DB جاری، شماره‌های تاریخی و setting شمارنده حفظ شوند. توقف یک service، backup معتبر، artifact تست‌شده، check با alonebot و یک poller الزامی است؛ هیچ تغییر مالی یا reset شماره بخشی از rollout نیست.
 

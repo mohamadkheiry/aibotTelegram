@@ -58,6 +58,7 @@ class PurchaseSpecificationAuditTests(unittest.TestCase):
             [
                 f"checkout:{order['id']}",
                 f"discount:{order['id']}",
+                f"cancelorder:{order['id']}",
                 f"prod:{self.product['id']}",
             ],
         )

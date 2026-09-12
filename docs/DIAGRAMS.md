@@ -773,7 +773,8 @@ flowchart TD
 
     H["خرید تجاری invitee: origin=customer و subtotal مثبت"]
     HX["تخصیص مدیر/سفارش داخلی صفرمبلغ: بدون purchase reward و بدون مصرف first_purchase"]
-    I["ارزیابی first_purchase و product_purchase"]
+    HD["تحویل ready یا تکمیل/فعال‌سازی manual؛ status=completed"]
+    I["ارزیابی first_purchase و product_purchase با زمان خرید؛ درصد از subtotal قبل تخفیف و رو به پایین"]
     J["ارزیابی combined با همه شرط‌ها"]
     K{"rule، بازه و شرط‌های خرید منطبق است؟"}
     L["ساخت reward_event و wallet_entry یکتا"]
@@ -793,8 +794,8 @@ flowchart TD
 
     D -.-> H
     HX -.-> Q
-    H --> I --> K
-    H --> J --> K
+    H --> HD --> I --> K
+    HD --> J --> K
     K -->|"خیر"| P
     K -->|"بله"| L --> M --> P --> Q
 
@@ -1037,9 +1038,7 @@ flowchart TD
     M4{"order_success_notice_ready؟"}
     M5["queued/sending: defer همه شاخه‌های fulfillment"]
     M6["sent یا terminal failed/cancelled: اجازه ادامه"]
-    D0["گرفتن snapshot سفارش‌های موفق با reward_processed_at تهی"]
-    E{"وضعیت سفارش paid است؟"}
-    F["اجرای after_order_paid"]
+    D0["گرفتن snapshot سفارش‌های completed با reward_processed_at تهی"]
     G["اجرای reconcile_purchase_rewards"]
     H["grant_purchase_rewards با event و ledger یکتا"]
     I["صف‌کردن notice هر پاداش با idempotency key ثابت"]
@@ -1067,9 +1066,7 @@ flowchart TD
     C -->|"pending یا network failure"| D
     D --> D1 --> E0 --> E1 --> M2 --> M3 --> M4
     M4 -->|"خیر"| M5 --> Q2
-    M4 -->|"بله"| M6 --> D0 --> E
-    E -->|"بله"| F --> H
-    E -->|"خیر؛ ولی وضعیت موفق"| G --> H
+    M4 -->|"بله"| M6 --> D0 --> G --> H
     H --> I --> J
     J -->|"خیر"| K --> M0
     J -->|"بله"| L --> M0
@@ -1188,7 +1185,7 @@ flowchart TB
 
 ## ۱۹. ویرایش و انتشار چیدمان کاربر
 
-چیدمان ۳۹ نوع صفحه با پیش‌نویس، پیش‌نمایش امن، انتشار تأییدشده و واگرد کنترل می‌شود. شرط نمایش و عملیات دکمه ثابت است. [قرارداد کامل](CUSTOMER_LAYOUTS.md).
+چیدمان ۴۳ نوع صفحه با پیش‌نویس، پیش‌نمایش امن، انتشار تأییدشده و واگرد کنترل می‌شود. شرط نمایش و عملیات دکمه ثابت است. [قرارداد کامل](CUSTOMER_LAYOUTS.md).
 
 [منبع Mermaid](diagrams/19-customer-layouts.mmd) · [خروجی SVG](diagrams/rendered/19-customer-layouts.svg)
 

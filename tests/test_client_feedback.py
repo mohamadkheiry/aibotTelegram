@@ -224,6 +224,44 @@ class ClientJourneyFeedbackTests(unittest.TestCase):
         self.send(self.CUSTOMER, photo=[{"file_id": "synthetic-client-receipt"}])
         return user, self.db.get_payment(payment["id"])
 
+    def test_explicit_order_cancel_confirms_and_releases_discount(self):
+        user = self.customer()
+        discount = self.db.create_discount(
+            "CANCEL10", discount_type="percent", value=10, max_uses=1
+        )
+        order = self.db.create_order(user["id"], self.product["id"])
+        self.db.apply_discount(order["id"], "CANCEL10")
+        self.app.show_order_summary(user, order["id"])
+
+        self.click(self.CUSTOMER, "لغو سفارش")
+        self.assertIn(order["order_number"], self.screen(self.CUSTOMER)["text"])
+        self.assertEqual(self.db.get_order(order["id"])["status"], "pending_payment")
+        self.click(self.CUSTOMER, "بازگشت")
+        self.assertEqual(self.db.get_order(order["id"])["status"], "pending_payment")
+        self.click(self.CUSTOMER, "لغو سفارش")
+        self.click(self.CUSTOMER, "تأیید لغو سفارش")
+
+        self.assertEqual(self.db.get_order(order["id"])["status"], "cancelled")
+        self.assertEqual(
+            next(row for row in self.db.list_discounts() if row["id"] == discount["id"])["used_count"],
+            0,
+        )
+
+    def test_order_cancel_is_not_offered_after_external_payment_intent_exists(self):
+        user = self.customer()
+        order = self.db.create_order(user["id"], self.product["id"])
+        self.db.create_order_payment(
+            order["id"],
+            "card",
+            idempotency_key="awaiting-confirmation-cancel-guard",
+        )
+
+        self.app.show_order_summary(user, order["id"])
+
+        labels = [button["text"] for button in self.buttons(self.CUSTOMER)]
+        self.assertNotIn("لغو سفارش", labels)
+        self.assertIn("در انتظار تأیید", self.screen(self.CUSTOMER)["text"])
+
     def test_receipt_is_one_caption_with_buttons_and_rejection_requires_reason(self):
         user, payment = self.receipt()
         self.assertEqual(payment["status"], "verifying")

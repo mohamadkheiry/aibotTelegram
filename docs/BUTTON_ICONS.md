@@ -79,6 +79,6 @@ rotation توکن همان bot ID با انتقال به bot ID متفاوت ی�
 
 ## تست و rollback
 
-`tests/test_button_icons.py` پوشش ۳۹ نوع صفحه، ۹ بخش مدیریت، حفظ payload/label/آیکون صریح، contact، چیدمان، حالت theme، multipart/raw/edit، manifest، source/hash/license و انتشار مجدد idempotent را بررسی می‌کند. دو regression رنگ، حفظ رنگ‌های منوی اصلی در هر شش مسیر inline و رنگ‌های reply/contact در حالت colored صریح و پیش‌فرض را کنترل می‌کنند؛ دکمهٔ «لغو و بازگشت» در contact همچنان رنگ پیش‌فرض تعیین‌شدهٔ خود را دارد. suite کامل خرید و outbox نیز باید سبز بماند.
+`tests/test_button_icons.py` پوشش ۴۳ نوع صفحه، ۹ بخش مدیریت، حفظ payload/label/آیکون صریح، contact، چیدمان، حالت theme، multipart/raw/edit، manifest، source/hash/license و انتشار مجدد idempotent را بررسی می‌کند. دو regression رنگ، حفظ رنگ‌های منوی اصلی در هر شش مسیر inline و رنگ‌های reply/contact در حالت colored صریح و پیش‌فرض را کنترل می‌کنند؛ دکمهٔ «لغو و بازگشت» در contact همچنان رنگ پیش‌فرض تعیین‌شدهٔ خود را دارد. suite کامل خرید و outbox نیز باید سبز بماند.
 
 Rollback ظاهر: manifest و overrideهای آیکون را از env کنار بگذارید؛ برای برگشت رنگ‌های مرجع `BUTTON_COLOR_MODE=colored` و سپس restart تک‌نمونه‌ای. DB و کاتالوگ پاک یا restore نمی‌شوند. rollback انتقال ربات نیازمند توقف مقصد و بازگردانی env/DB مختص مبدأ است؛ دو bot ID نباید از یک DB runtime استفاده کنند.

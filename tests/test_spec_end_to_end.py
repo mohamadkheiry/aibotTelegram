@@ -392,6 +392,7 @@ class SourceEndToEndTests(unittest.TestCase):
         self.panel("rewards")
         self.click(self.OWNER, ACTIONS["reward_add"].label)
         self.click(self.OWNER, "شرط‌های ترکیبی")
+        self.click(self.OWNER, "مبلغ ثابت")
         self.send(self.OWNER, text="1000")
         self.click(self.OWNER, ending=":default:0")
         self.click(self.OWNER, ending=":default:0")

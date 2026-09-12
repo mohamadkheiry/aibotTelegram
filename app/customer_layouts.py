@@ -72,8 +72,9 @@ _section("tickets", "فهرست تیکت‌های من", "support", "items=دک�
 _section("ticket", "گفت‌وگوی تیکت و پیوست‌ها", "support", "items=دریافت پیوست|prev=قدیمی‌تر|next=جدیدتر|reply=ارسال پاسخ|close=بستن تیکت|reopen=باز کردن مجدد تیکت|back=بازگشت",
          rows=(("items",), ("prev", "next"), ("reply",), ("close",), ("reopen",), ("back",)))
 _section("ticket_confirm", "تأیید وضعیت تیکت", "support", "confirm=تأیید تغییر وضعیت|back=بازگشت")
-_section("order_summary", "خلاصه و تأیید سفارش", "purchase", "pay=پرداخت|discount=ثبت کد تخفیف|back=بازگشت")
-_section("payment_methods", "انتخاب روش پرداخت سفارش", "purchase", "wallet=کیف پول|card=کارت به کارت|crypto=پرداخت ارزی|back=بازگشت")
+_section("order_summary", "خلاصه و تأیید سفارش", "purchase", "pay=پرداخت|discount=ثبت کد تخفیف|cancel=لغو سفارش|back=بازگشت")
+_section("payment_methods", "انتخاب روش پرداخت سفارش", "purchase", "wallet=کیف پول|card=کارت به کارت|crypto=پرداخت ارزی|cancel=لغو سفارش|back=بازگشت")
+_section("order_cancel_confirm", "تأیید لغو سفارش", "purchase", "confirm=تأیید لغو سفارش|back=بازگشت")
 _section("topup_methods", "انتخاب روش شارژ کیف پول", "purchase", "card=کارت به کارت|crypto=پرداخت ارزی|back=بازگشت")
 _section("card_payment", "پرداخت کارت‌به‌کارت", "purchase", "amount=کپی مبلغ به تومان|rial=کپی مبلغ به ریال|card=کپی شماره کارت|receipt=ارسال فیش واریز|cancel=لغو پرداخت", rows=(("amount", "rial"), ("card",), ("receipt",), ("cancel",)))
 _section("crypto_payment", "پرداخت ارزی", "purchase", "invoice=رفتن به صفحه پرداخت|back=بازگشت")
@@ -116,7 +117,8 @@ def upgrade_saved_layout(section: str, config: dict) -> dict:
     """
     introduced = {"stats": {"refresh"}, "transactions": {"items"}, "referral": {"copy"},
                   "faq": {"new"}, "ticket": {"close", "reopen"}, "ticket_notice": {"close", "reopen"},
-                  "card_payment": {"rial"}, "input_order_info": {"finish"}}
+                  "card_payment": {"rial"}, "input_order_info": {"finish"},
+                  "order_summary": {"cancel"}, "payment_methods": {"cancel"}}
     base = section.split(":")[0]
     if not isinstance(config, dict) or base not in introduced or not isinstance(config.get("rows"), list):
         return config

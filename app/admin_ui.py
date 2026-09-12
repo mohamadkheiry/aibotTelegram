@@ -49,7 +49,7 @@ SELECTORS = {
     "ticket_attachment": "SELECT CAST(m.id AS TEXT) value, 'پیوست ' || m.id || ' · ' || m.attachment_kind || ' · ' || m.created_at label, CAST(m.id AS TEXT) search FROM ticket_messages m JOIN tickets t ON t.id=m.ticket_id WHERE m.attachment_file_id IS NOT NULL AND t.ticket_number=?",
     "faq_category": "SELECT CAST(id AS TEXT) value, name || ' · ' || id label, name || ' ' || id search FROM faq_categories",
     "faq": "SELECT CAST(id AS TEXT) value, question || ' · ' || id label, question || ' ' || id search FROM faqs",
-    "reward": "SELECT CAST(id AS TEXT) value, 'قانون ' || id || ' · ' || event_type || ' · ' || amount label, id || ' ' || event_type search FROM reward_rules",
+    "reward": "SELECT CAST(id AS TEXT) value, 'قانون ' || id || ' · ' || event_type || ' · ' || CASE WHEN amount_mode='percent' THEN amount || '%' ELSE amount || ' تومان' END label, id || ' ' || event_type search FROM reward_rules",
     "card_review": "SELECT CAST(e.id AS TEXT) value, 'رخداد ' || e.id || ' · ' || e.amount || ' تومان · ' || e.reference label, e.id || ' ' || e.reference search FROM card_payment_events e WHERE e.status='review' AND NOT EXISTS (SELECT 1 FROM card_payment_event_resolutions r WHERE r.event_id=e.id)",
     "crypto_review": "SELECT CAST(e.id AS TEXT) value, 'رخداد ' || e.id || ' · ' || p.payment_number || ' · ' || e.provider_status label, e.id || ' ' || p.payment_number search FROM provider_payment_events e JOIN payments p ON p.id=e.payment_id WHERE e.disposition='review' AND NOT EXISTS (SELECT 1 FROM provider_payment_event_resolutions r WHERE r.event_id=e.id)",
 }
@@ -820,7 +820,7 @@ class AdminButtonUI:
                 text += "\n" + escape(field.hint)
         if state["values"].get("_product_scope"):
             product = self.catalog._product(int(state["values"]["product"]))
-            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nپاداش این فرم مبلغ ثابت است؛ قواعد عمومی موجود بدون تغییر می‌مانند."
+            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nپاداش ثابت یا درصدی این محصول قابل تنظیم است؛ قواعد عمومی موجود بدون تغییر می‌مانند."
         if state["step"] > state.get("minimum_step", 0):
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
         rows.append([self._button("لغو و بازگشت", self.return_route(state) if state.get("return_to") else "g:" + action.group, style="danger")])

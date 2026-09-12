@@ -604,6 +604,9 @@ CREATE TABLE IF NOT EXISTS reward_rules (
     event_type TEXT NOT NULL CHECK (event_type IN ('start', 'first_purchase', 'product_purchase', 'combined')),
     product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
     amount INTEGER NOT NULL CHECK (amount > 0),
+    amount_mode TEXT NOT NULL DEFAULT 'fixed'
+        CHECK (amount_mode IN ('fixed', 'percent')),
+    maximum_amount INTEGER CHECK (maximum_amount IS NULL OR maximum_amount > 0),
     conditions_json TEXT NOT NULL DEFAULT '{}',
     starts_at TEXT,
     ends_at TEXT,

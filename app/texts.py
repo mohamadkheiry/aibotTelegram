@@ -329,8 +329,16 @@ def referral_rule(rule: dict[str, Any], currency: str) -> str:
         "combined": "هر خرید موفق دوست دعوت‌شده با برقرار بودن هم‌زمان همه شرایط زیر",
     }
     event = str(rule.get("event_type") or "")
+    if str(rule.get("amount_mode") or "fixed") == "percent":
+        reward_value = f"<b>{int(rule['amount'])}٪ از قیمت کامل محصول</b>"
+        if rule.get("maximum_amount") is not None:
+            reward_value += "؛ حداکثر " + money(
+                int(rule["maximum_amount"]), currency
+            )
+    else:
+        reward_value = f"<b>{money(int(rule['amount']), currency)}</b>"
     lines = [
-        f"• <b>{money(int(rule['amount']), currency)}</b> — "
+        f"• {reward_value} — "
         f"{event_descriptions.get(event, 'طبق شرایط این پاداش')}",
     ]
     if rule.get("product_names"):
@@ -379,7 +387,7 @@ def referral_page(
     rules = "\n\n".join(referral_rule(rule, currency) for rule in reward_rules or [])
     if rules:
         explanation = (
-            "پاداش‌های فعال به کیف پول تو اضافه می‌شوند. زمان رویداد دعوت یا خرید، "
+            "پاداش خرید بعد از تحویل یا فعال‌شدن سفارش به کیف پول اضافه می‌شود. زمان خرید، "
             "مبنای بررسی بازه اعتبار است؛ اگر چند قانون برقرار باشد، پاداش‌هایشان جمع می‌شوند.\n\n"
             "<b>نحوه دریافت پاداش‌ها:</b>\n" + rules
         )

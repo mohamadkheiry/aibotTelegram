@@ -3035,9 +3035,15 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             )
             for index in range(3)
         ]
+        with self.db._transaction() as connection:
+            connection.execute(
+                "UPDATE orders SET status='completed', completed_at=updated_at "
+                "WHERE id IN (?,?,?)",
+                tuple(int(order["id"]) for order in orders),
+            )
         attempted: list[int] = []
         first_batch_ids = {int(order["id"]) for order in orders[:2]}
-        original_after_paid = self.app._after_order_paid
+        original_reconcile = self.app._reconcile_purchase_rewards
 
         def reconcile_or_fail(order_id: int) -> None:
             attempted.append(order_id)
@@ -3046,7 +3052,7 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             self.db.mark_order_rewards_processed(order_id)
 
         self.app.MAINTENANCE_REWARD_RECONCILE_LIMIT = 2
-        self.app._after_order_paid = reconcile_or_fail  # type: ignore[method-assign]
+        self.app._reconcile_purchase_rewards = reconcile_or_fail  # type: ignore[method-assign]
         try:
             with self.assertLogs("app.bot", level="ERROR"):
                 self.app._reconcile_paid_orders()
@@ -3054,7 +3060,7 @@ class BotApplicationIntegrationTests(unittest.TestCase):
 
             self.app._reconcile_paid_orders()
         finally:
-            self.app._after_order_paid = original_after_paid  # type: ignore[method-assign]
+            self.app._reconcile_purchase_rewards = original_reconcile  # type: ignore[method-assign]
 
         self.assertEqual(attempted, [order["id"] for order in orders])
         self.assertIsNotNone(
@@ -3284,8 +3290,14 @@ class BotApplicationIntegrationTests(unittest.TestCase):
             )
             for index in range(3)
         ]
-        for order in [ready_order, *manual_orders]:
-            self.db.mark_order_rewards_processed(order["id"])
+        # Simulate legacy markers written by the previous release before
+        # fulfilment. They must not prevent the independent delivery recovery.
+        with self.db._transaction() as connection:
+            connection.execute(
+                "UPDATE orders SET reward_processed_at=updated_at "
+                "WHERE id IN (?,?,?,?)",
+                tuple(int(order["id"]) for order in [ready_order, *manual_orders]),
+            )
 
         restarted = BotApplication(
             self.settings, self.db, self.telegram  # type: ignore[arg-type]

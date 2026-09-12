@@ -13,7 +13,8 @@ flowchart TD
 
     H["خرید تجاری invitee: origin=customer و subtotal مثبت"]
     HX["تخصیص مدیر/سفارش داخلی صفرمبلغ: بدون purchase reward و بدون مصرف first_purchase"]
-    I["ارزیابی first_purchase و product_purchase"]
+    HD["تحویل ready یا تکمیل/فعال‌سازی manual؛ status=completed"]
+    I["ارزیابی first_purchase و product_purchase با زمان خرید؛ درصد از subtotal قبل تخفیف و رو به پایین"]
     J["ارزیابی combined با همه شرط‌ها"]
     K{"rule، بازه و شرط‌های خرید منطبق است؟"}
     L["ساخت reward_event و wallet_entry یکتا"]
@@ -33,8 +34,8 @@ flowchart TD
 
     D -.-> H
     HX -.-> Q
-    H --> I --> K
-    H --> J --> K
+    H --> HD --> I --> K
+    HD --> J --> K
     K -->|"خیر"| P
     K -->|"بله"| L --> M --> P --> Q
 

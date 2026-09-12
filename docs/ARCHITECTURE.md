@@ -1,5 +1,7 @@
 # معماری فنی ربات الون اکانت
 
+افزوده ۲۰۲۶-۰۹-۱۲: schema 12 مبلغ ثابت/درصدی و سقف اختیاری قانون پاداش را نگه می‌دارد؛ orchestration پاداش خرید فقط پس از fulfillment و `completed` اجرا می‌شود. لغو سفارش پیش از payment intent از callback دو مرحله‌ای به `Database.cancel_user_order` می‌رود و آزادسازی مالی داخل همان transaction است. سه layout سفارش، از جمله تأیید لغو، در registry ۴۳بخشی ثبت‌اند. [قرارداد مالی](FINANCIAL_DECISIONS_2026-09-12.md).
+
 افزوده [پیگیری ۲۰۲۶-۰۹-۰۹](PENDING_FEEDBACK_2026-09-09.md): `ticket_ui.notice_markup` builder مشترک اعلان پاسخ/وضعیت است؛ controller فقط canonical outbox را ارسال می‌کند. `set_user_ticket_status(resume_reply=True)` بازگشایی و state دریافت اولین متن را در همان transaction ثبت می‌کند. FAQ درختی و جست‌وجوی نخست مخاطب از `AdminButtonUI` و فرم/journal موجود عبور می‌کنند؛ موتور مالی جدیدی اضافه نشده است.
 
 `order_information.py` projection مشترک اطلاعات legacy/چندپیامی است؛ bot جمع‌آوری و دکمه پایان را orchestrate می‌کند و DB append/dedup/ownership/finalization/outbox را اتمیک نگه می‌دارد. کنترل پاداش محصول از `AdminCatalog` به همان فرم و handler مالی موجود می‌رود؛ موتور مالی دوم ساخته نمی‌شود. [جزئیات](FOLLOWUP_FEEDBACK_2026-09-08.md).
@@ -72,7 +74,7 @@
 
 ## چرخه آغاز و توقف
 
-مسیر preflight یعنی `python -m app.main --check`، config را می‌خواند، schema را تا نسخه ۱۱ initialize/migrate می‌کند، owner bootstrap را روی همان DB ایجاد یا با root marker/هویت پایدار تطبیق می‌دهد و سپس `getMe` را اجرا می‌کند. username پس از verify metadata است؛ تعارض legacy/configured chat ID یا انتقال به مقصد verifyنشده پیش از تماس Telegram fail closed می‌شود و restart owner غیرفعال‌شده را بازفعال نمی‌کند. بنابراین `--check` یک probe صرفاً read-only نیست.
+مسیر preflight یعنی `python -m app.main --check`، config را می‌خواند، schema را تا نسخه ۱۲ initialize/migrate می‌کند، owner bootstrap را روی همان DB ایجاد یا با root marker/هویت پایدار تطبیق می‌دهد و سپس `getMe` را اجرا می‌کند. username پس از verify metadata است؛ تعارض legacy/configured chat ID یا انتقال به مقصد verifyنشده پیش از تماس Telegram fail closed می‌شود و restart owner غیرفعال‌شده را بازفعال نمی‌کند. بنابراین `--check` یک probe صرفاً read-only نیست.
 
 1. `load_settings` فایل env یا محیط را می‌خواند و مسیر data را می‌سازد.
 2. `Database.initialize` schema پایه و migrationهای idempotent را اعمال می‌کند.
@@ -125,7 +127,7 @@ SQLite با `foreign_keys=ON`، WAL، `busy_timeout` و transactionهای `BEGIN
 - مبلغ کیف پول source of truth جمع `wallet_entries.amount_signed` است؛ فیلدهای snapshot فقط برای audit و نمایش‌اند.
 - تخفیف فعال هر سفارش یکتا است و در لغو/انقضا release می‌شود.
 - transition مالی terminal قابل بازگشت خودکار نیست؛ `paid/completed/refunded` setter عمومی سفارش ندارند و فقط workflow تخصصی پرداخت یا fulfillment دو وضعیت نخست را ثبت می‌کند. workflow ورود به `refunded` در نسخه فعلی وجود ندارد. setter عمومی Order در حضور external payment `pending/verifying`، مقصد `cancelled|expired|rejected` را نیز رد می‌کند؛ receipt card و crypto evidence مسیر تخصصی خود را دارند. Payment در `paid` terminal است و `set_payment_status(refunded)` عمداً تا افزودن workflow مالی اثبات‌شده رد می‌شود.
-- سفارش پرداخت‌شده از دو مسیر مستقل reward و fulfillment قابل reconciliation است. `reward_processed_at` فقط completion پاداش است؛ selector صفحه‌بندی‌شدهٔ status=`paid` حتی پس از ثبت این marker، تحویل ready یا transition/prompt محصول manual را ادامه می‌دهد.
+- سفارش پرداخت‌شده از دو مسیر مستقل reward و fulfillment قابل reconciliation است. fulfillment وضعیت‌های میانی را تا تحویل/فعال‌سازی پیش می‌برد؛ reward فقط Order `completed` را انتخاب می‌کند. `reward_processed_at` فقط completion پاداش است و selector صفحه‌بندی‌شدهٔ status=`paid` حتی برای markerهای legacy، تحویل ready یا transition/prompt محصول manual را ادامه می‌دهد.
 - fulfillment خرید تجاری به اعلان canonical موفقیت وابسته است. `order_success_notice_ready` در نبود outbox یا statusهای `queued/sending` بسته و در `sent|failed|cancelled` باز است؛ در نتیجه اعلان در حالت قابل‌تحویل مقدم می‌ماند ولی شکست terminal Telegram paid Order را برای همیشه strand نمی‌کند.
 - هر Order در مجموع card/crypto فقط یک external intent فعال و هر user در مجموع این دو روش فقط یک topup تازه فعال دارد؛ replay فقط با method/amount/terms یکسان معتبر است و intent متفاوت conflict می‌شود. جایگزینی ضمنی رخ نمی‌دهد. query نمایشی کیف پول تمام topupهای فعال را برمی‌گرداند تا اگر داده legacy دو روش فعال داشت، هیچ intent قابل‌پرداختی پنهان نشود؛ این حالت فقط compatibility است. مبلغ تطبیقی یکتا فقط در card استفاده می‌شود.
 - شاهد provider پیش از settlement به‌صورت immutable و hash‌شده commit می‌شود. رخداد completedِ اعمال‌نشده یک recovery queue دیتابیس‌محور است؛ پاسخ مبهم/partial/ناسازگار در review می‌ماند و هیچ اثر مالی مستقیم ندارد.
@@ -154,7 +156,7 @@ checkout صفرمبلغ کاربر با `create_order(defer_free_confirmation=Tr
 3. reconciliation اعلان reviewهای provider/card، نتیجه تصمیم‌های دستی آن‌ها، فیش کارت، اطلاعات سفارش manual، no-stock سفارش ready، تمام `reward_event`های فاقد notice، پیام‌های کاربر در تیکت و رخدادهای امنیتی card؛
 4. انقضای سفارش‌های unpaid؛
 5. انقضای paymentهای card بدون فیش و خارج مهلت اولیه؛ crypto با deadline محلی sweep نمی‌شود؛
-6. بازیابی اعلان canonical پرداخت‌های بیرونی `paid` و اعلان موفقیت wallet-only/تخفیف کامل/خرید رایگان تأییدشده کاربر فاقد outbox متناظر؛ سپس reconciliation پاداش سفارش‌های موفق با `reward_processed_at IS NULL` و selector مستقل fulfillment سفارش‌های status=`paid`؛
+6. بازیابی اعلان canonical پرداخت‌های بیرونی `paid` و اعلان موفقیت wallet-only/تخفیف کامل/خرید رایگان تأییدشده کاربر فاقد outbox متناظر؛ سپس reconciliation پاداش سفارش‌های `completed` با `reward_processed_at IS NULL` و selector مستقل fulfillment سفارش‌های status=`paid`؛
 7. بازیابی prompt سفارش‌های `awaiting_stock` و `awaiting_info`؛
 8. تحویل FIFO رزروها پس از شارژ inventory؛
 9. fulfil سفارش‌های ready در `processing` پس از restock؛

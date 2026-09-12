@@ -45,7 +45,7 @@
 | FAQ دسته‌دار، سؤال/پاسخ کامل، تیکت و مکالمه، فایل، نقش پشتیبان، وضعیت بسته/باز | [admin](../tests/test_admin.py)، [ممیزی مشتری](../tests/test_spec_customer_audit.py)، [bot](../tests/test_bot.py)، سفر ۳ |
 | دعوت، آمار و شرایط قابل‌مشاهده، چهار نوع پاداش، window و شروط، ثبت یک‌باره مانده/اعلان | [ممیزی مشتری](../tests/test_spec_customer_audit.py)، [DB](../tests/test_db.py)، [release invariants](../tests/test_release_invariants.py)، [دکمه‌ها](../tests/test_admin_buttons.py)، E2E-04 |
 | پیام فردی/گروهی و مخاطب فیلترشده، preview شمارش و تأیید، گزارش سفارش/کاربر/مالی و CSV | [admin](../tests/test_admin.py)، [دکمه‌ها](../tests/test_admin_buttons.py)، [release invariants](../tests/test_release_invariants.py)، سفر ۱ |
-| چیدمان همهٔ ۳۹ نوع صفحه، تغییر ردیف/ستون/ترتیب، preview/publish، undo/reset، رکورد موردی، conflict | [چیدمان مشتری](../tests/test_customer_layouts.py)، [ویرایشگر مدیر](../tests/test_admin_layouts.py)، ماتریس [CUSTOMER_LAYOUTS.md](CUSTOMER_LAYOUTS.md) |
+| چیدمان همهٔ ۴۳ نوع صفحه، تغییر ردیف/ستون/ترتیب، preview/publish، undo/reset، رکورد موردی، conflict | [چیدمان مشتری](../tests/test_customer_layouts.py)، [ویرایشگر مدیر](../tests/test_admin_layouts.py)، ماتریس [CUSTOMER_LAYOUTS.md](CUSTOMER_LAYOUTS.md) |
 | بکاپ، getUpdates تک‌نمونه، lifecycle و retry، پاکی مخزن، ویدیو و مستندات/نمودارها | [main](../tests/test_main.py)، [config](../tests/test_config_utils.py)، [telegram](../tests/test_telegram.py)، [hygiene](../tests/test_repository_hygiene.py)، [documentation](../tests/test_documentation.py)، workflow CI |
 
 ## نتیجهٔ اجرا

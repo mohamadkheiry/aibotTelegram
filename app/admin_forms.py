@@ -248,7 +248,7 @@ add("report", "ساخت گزارش و دریافت فایل", "reports", choice(
 add("rewards", "فهرست قواعد پاداش", "rewards")
 add("reward_add", "افزودن قانون پاداش", "rewards", choice("event", "رویداد پاداش", (
     ("شروع ربات", "start"), ("اولین خرید", "first_purchase"),
-    ("خرید محصول", "product_purchase"), ("شرط‌های ترکیبی", "combined"))), AMOUNT,
+    ("خرید محصول", "product_purchase"), ("شرط‌های ترکیبی", "combined"))),
     mutation=True, pipe=True)
 add("reward_toggle", "تغییر وضعیت قانون پاداش", "rewards", entity("reward", "انتخاب قانون"), mutation=True)
 
@@ -274,6 +274,20 @@ def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
             fields.append(replace(PRODUCT, default="all"))
         fields.extend((START, END))
     if action.key == "reward_add" and values.get("event"):
+        if values["event"] == "start":
+            fields.append(AMOUNT)
+        else:
+            fields.append(choice("amount_mode", "نوع محاسبه پاداش", (
+                ("مبلغ ثابت", "fixed"), ("درصد از قیمت کامل محصول", "percent"))))
+            if values.get("amount_mode") == "fixed":
+                fields.append(AMOUNT)
+            elif values.get("amount_mode") == "percent":
+                fields.extend((
+                    Field("percentage", "درصد پاداش", "positive",
+                          hint="عدد صحیح ۱ تا ۱۰۰؛ از قیمت محصول قبل از تخفیف محاسبه و رو به پایین گرد می‌شود."),
+                    Field("maximum_amount", "سقف پاداش به تومان", "nonnegative", default="0",
+                          hint="صفر یعنی بدون سقف."),
+                ))
         if values["event"] != "start" and not values.get("_product_scope"):
             fields.append(RULE_PRODUCT)
         if values["event"] == "combined":
@@ -349,7 +363,13 @@ def arguments(action: Action, values: dict, *, page: int = 1) -> tuple[str, list
             "finance": ["finance"],
         }[kind] + [values["start"], values["end"]]
     elif key == "reward_add":
-        parts = [values["event"], values["amount"], values.get("product", "0")]
+        amount_mode = values.get("amount_mode", "fixed")
+        amount_token = (
+            f"percent:{values['percentage']}:{values.get('maximum_amount', '0')}"
+            if amount_mode == "percent"
+            else f"fixed:{values['amount']}"
+        )
+        parts = [values["event"], amount_token, values.get("product", "0")]
         if values["event"] == "combined":
             conditions = {name: int(values[name]) for name in (
                 "minimum_successful_purchases", "minimum_referrals", "minimum_qualified_referrals", "minimum_order_amount"

@@ -6,7 +6,7 @@
 
 Actor مدیر/مالک فعالِ اثبات‌شده در private chat؛ محرک دکمهٔ «چیدمان دکمه‌های کاربران» در مدیریت کلی ربات است. مدیر گروه، صفحه و در صورت نیاز دسته/محصول مشخص را انتخاب می‌کند؛ روی پیش‌نمایش امن دکمه را برمی‌گزیند و ردیف/ستون/ترتیب یا جایگاه فهرست را تغییر می‌دهد. پیش‌نویس اثر عمومی ندارد. مرور نهایی و تأیید، تنظیم را اتمیک منتشر می‌کند و نمایش بعدی کاربر آن را اعمال می‌کند. پس‌شرط موفق: همان دکمه‌ها و payloadهای مجاز، با آرایش تأییدشده؛ هیچ اثر مالی/کاتالوگ جدید ساخته نشده است.
 
-جریان جایگزین: لغو بدون انتشار؛ واگرد حداکثر ۱۰ نسخه و reset پیش‌فرض با تأیید؛ صفحهٔ تک‌دکمه‌ای بدون تفاوت ظاهری؛ conditionalهای غایب غایب می‌مانند؛ مورد تازه در انتهای ترتیب سفارشی؛ تغییر هم‌زمان نسخه conflict و نیازمند بازخوانی؛ revoke/گروه/actor جعلی/stale رد؛ crash پس از commit با همان update و بدون تاریخچهٔ اضافه بازیابی می‌شود. پیام‌های قدیمی ویرایش جمعی نمی‌شوند. [ماتریس ۳۹ صفحه، قواعد و تست‌ها](CUSTOMER_LAYOUTS.md)، BR-UI-01، `tests/test_admin_layouts.py` و `tests/test_customer_layouts.py`.
+جریان جایگزین: لغو بدون انتشار؛ واگرد حداکثر ۱۰ نسخه و reset پیش‌فرض با تأیید؛ صفحهٔ تک‌دکمه‌ای بدون تفاوت ظاهری؛ conditionalهای غایب غایب می‌مانند؛ مورد تازه در انتهای ترتیب سفارشی؛ تغییر هم‌زمان نسخه conflict و نیازمند بازخوانی؛ revoke/گروه/actor جعلی/stale رد؛ crash پس از commit با همان update و بدون تاریخچهٔ اضافه بازیابی می‌شود. پیام‌های قدیمی ویرایش جمعی نمی‌شوند. [ماتریس ۴۳ صفحه، قواعد و تست‌ها](CUSTOMER_LAYOUTS.md)، BR-UI-01، `tests/test_admin_layouts.py` و `tests/test_customer_layouts.py`.
 
 ## UC-UI-03 — اداره کانال‌های جوین اجباری
 
@@ -234,7 +234,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 5. یک OrderDiscount در transaction ثبت و summary تازه نمایش داده می‌شود.
 6. اگر مبلغ نهایی صفر باشد، فقط دکمه «پرداخت» با `confirm_zero_payable_order` مالکیت، مهلت و نبود پوشش کیف پول/پرداخت بیرونی را بررسی و Order را paid می‌کند؛ اعلان موفقیت و سپس fulfillment اجرا می‌شوند و Payment صفرمبلغ ساخته نمی‌شود.
 
-**جریان‌های جایگزین/خطا:** code ناموجود/منقضی/خارج دامنه/مصرف‌شده پیام عمومی نامعتبر می‌گیرد؛ تخفیف دوم هم‌زمان رد می‌شود؛ سفارش expired با تخفیف ۱۰۰٪ احیا نمی‌شود؛ بازگشت state ورودی را پاک می‌کند.
+**جریان‌های جایگزین/خطا:** code ناموجود/منقضی/خارج دامنه/مصرف‌شده پیام عمومی نامعتبر می‌گیرد؛ تخفیف دوم هم‌زمان رد می‌شود؛ سفارش expired با تخفیف ۱۰۰٪ احیا نمی‌شود؛ بازگشت فقط state ورودی را پاک می‌کند. «لغو سفارش» صفحه تأیید با شماره سفارش می‌آورد و فقط پس از تأیید، سفارش pending، hold کیف پول و رزرو تخفیف را اتمیک آزاد می‌کند؛ کد دوباره قابل استفاده است.
 
 **قواعد:** BR-DSC-01..05، BR-ORD-07..09.<br>
 **پیاده‌سازی:** state `discount_code` و callback `checkout` در `app/bot.py`; `Database.apply_discount`, `confirm_zero_payable_order`.<br>
@@ -511,7 +511,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 **هدف:** نمایش لینک/آمار و اعطای پاداش خرید به دعوت‌کننده.
 
 **بازیگر اصلی:** ACT-R؛ **رویدادساز:** ACT-U<br>
-**محرک:** «دعوت و کسب درآمد» یا paidشدن خرید تجاری invitee.
+**محرک:** «دعوت و کسب درآمد» یا تکمیل/تحویل خرید تجاری invitee.
 
 **پیش‌شرط‌ها:** ACT-R User معتبر؛ برای پاداش خرید Referral و rule منطبق وجود دارد و Order از نوع `order_origin=customer` با `subtotal_amount > 0` است.
 
@@ -520,18 +520,19 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 **جریان اصلی:**
 
 1. سامانه bot username و Telegram ID کاربر را به deep link تبدیل می‌کند.
-2. summary دعوت، مجموع eventهای پاداش و توضیح تمام قانون‌های فعال داخل بازه فعلی را نمایش می‌دهد: نوع رویداد، مبلغ، محصولات مشمول، همه شروط ترکیبی و مرز زمانی صریح UTC. شروط تعداد خرید/دعوت متعلق به دوست دعوت‌شده‌اند. قانون غیرفعال، منقضی یا هنوز شروع‌نشده وعده داده نمی‌شود؛ نبود قانون جاری صریح اعلام می‌شود. خواندن قانون‌ها offset دارد و ادامه فهرست یا متن بلند حذف نمی‌شود؛ دکمه ارسال لینک در آخرین پیام می‌ماند.
-3. پس از خرید تجاری موفق invitee، ruleهای product_purchase، first_purchase و combined در زمان purchase ارزیابی می‌شوند.
-4. تمام شروط combined با AND بررسی می‌شوند.
-5. پاداش دعوت‌کننده credit و Referral qualified می‌شود.
-6. اعلان `reward:{id}:notice` پایدار queue و سپس marker پاداش Order ثبت می‌شود.
-7. maintenance مستقل از marker سفارش، همه `reward_event`های فاقد notice، از جمله `start`، را با cursor/wrap بازیابی می‌کند؛ fulfillment سفارش paid نیز selector جدا دارد.
+2. summary دعوت، مجموع eventهای پاداش و توضیح تمام قانون‌های فعال داخل بازه فعلی را نمایش می‌دهد: نوع رویداد، مبلغ ثابت یا درصد و سقف، محصولات مشمول، همه شروط ترکیبی و مرز زمانی صریح UTC. شروط تعداد خرید/دعوت متعلق به دوست دعوت‌شده‌اند. قانون غیرفعال، منقضی یا هنوز شروع‌نشده وعده داده نمی‌شود؛ نبود قانون جاری صریح اعلام می‌شود. خواندن قانون‌ها offset دارد و ادامه فهرست یا متن بلند حذف نمی‌شود؛ دکمه ارسال لینک در آخرین پیام می‌ماند.
+3. پس از رسیدن سفارش تجاری به `completed`، ruleهای product_purchase، first_purchase و combined با زمان purchase ارزیابی می‌شوند؛ وضعیت‌های میانی پاداش واریز نمی‌کنند.
+4. قانون درصدی مبلغ را از `subtotal_amount` پیش از تخفیف محاسبه، رو به پایین گرد و سپس با سقف اختیاری محدود می‌کند.
+5. تمام شروط combined با AND بررسی می‌شوند.
+6. پاداش دعوت‌کننده credit و Referral qualified می‌شود.
+7. اعلان `reward:{id}:notice` پایدار queue و سپس marker پاداش Order ثبت می‌شود.
+8. maintenance مستقل از marker سفارش، همه `reward_event`های فاقد notice، از جمله `start`، را با cursor/wrap بازیابی می‌کند؛ fulfillment سفارش paid نیز selector جدا دارد.
 
-**جریان‌های جایگزین/خطا:** بدون referral نتیجه noop است؛ rule خارج window/غیرفعال/بعد از خرید اعمال نمی‌شود؛ تخصیص `admin_assignment` و Order داخلی با subtotal صفر purchase event نیست و نخستین خرید واقعی را مصرف نمی‌کند؛ crash میان چند rule در maintenance ادامه می‌یابد؛ crash پس از credit و قبل از notice از `reward_event` commit‌شده بازیابی می‌شود؛ event تکراری reward دوم نمی‌دهد؛ refunded در تعریف خرید موفق جدید نیست و clawback خودکار خارج scope است.
+**جریان‌های جایگزین/خطا:** بدون referral نتیجه noop است؛ rule خارج window/غیرفعال/بعد از خرید اعمال نمی‌شود؛ تخصیص `admin_assignment` و Order داخلی با subtotal صفر purchase event نیست و نخستین خرید واقعی را مصرف نمی‌کند؛ crash میان چند rule در maintenance ادامه می‌یابد؛ crash پس از credit و قبل از notice از `reward_event` commit‌شده بازیابی می‌شود؛ event تکراری reward دوم نمی‌دهد؛ refunded در تعریف خرید موفق جدید نیست و clawback خودکار انجام نمی‌شود؛ مدیر پس از بررسی می‌تواند WalletEntry جبرانی منفی ثبت کند.
 
 **قواعد:** BR-REF-02..07.<br>
 **پیاده‌سازی:** `show_referral`, `_reconcile_purchase_rewards`, `_reconcile_reward_notices`, `list_reward_events_missing_notice`; reward methods در `app/db.py`.<br>
-**تست:** `test_referral_reward_is_exactly_once`، `test_first_purchase_reward_counts_paid_orders_waiting_for_stock`، `test_reward_reconciliation_survives_partial_grant_after_completion`، `test_reward_notice_recovery_rotates_past_start_reward_crashes`، `test_purchase_reward_window_uses_event_time_during_late_recovery`، `test_reward_rule_created_after_purchase_is_not_retroactive`، `test_admin_assignment_and_internal_free_order_are_not_commercial_purchases`، `test_referral_explains_active_reward_amounts_scope_conditions_and_window`، `test_referral_without_current_rule_does_not_promise_a_reward`، `test_referral_explanation_reaches_rules_beyond_default_repository_limit`.
+**تست:** `test_referral_reward_is_exactly_once`، `test_first_purchase_reward_waits_for_delivery_but_keeps_purchase_order`، `test_percentage_reward_uses_full_price_rounds_down_and_honours_cap`، `test_reward_reconciliation_survives_partial_grant_after_completion`، `test_reward_notice_recovery_rotates_past_start_reward_crashes`، `test_purchase_reward_window_uses_event_time_during_late_recovery`، `test_reward_rule_created_after_purchase_is_not_retroactive`، `test_admin_assignment_and_internal_free_order_are_not_commercial_purchases`، `test_referral_explains_active_reward_amounts_scope_conditions_and_window`، `test_referral_without_current_rule_does_not_promise_a_reward`، `test_referral_explanation_reaches_rules_beyond_default_repository_limit`.
 
 ### UC-17 — مشاهده کانال رسمی
 
@@ -565,7 +566,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 
 **جریان اصلی:**
 
-1. startup و `app.main --check` schema 11، owner bootstrap و marker یکتای `is_bootstrap_owner` را idempotently ایجاد/اعتبارسنجی می‌کنند؛ DB پس از seed مرجع role/active است.
+1. startup و `app.main --check` schema 12، owner bootstrap و marker یکتای `is_bootstrap_owner` را idempotently ایجاد/اعتبارسنجی می‌کنند؛ DB پس از seed مرجع role/active است.
 2. bootstrap username-only یک root pending می‌سازد؛ فقط نخستین private update با همان username آن chat را اثبات می‌کند. با هر دو شناسه، binding در startup کامل است.
 3. owner/admin فهرست مدیران را همراه وضعیت «در انتظار تأیید هویت»، فعال یا غیرفعال می‌بیند.
 4. افزودن با هر دو username و chat ID و یکی از سه role انجام می‌شود. user شناخته‌شده فقط با تطبیق دقیق هر دو فوراً verify؛ زوج ناشناخته pending می‌شود تا همان chat/username یک update خصوصی معتبر—برای مثال `/start`—بفرستد.
@@ -824,7 +825,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 
 **پس‌شرط موفق:** webhook قدیمی با `drop_pending_updates=False` حذف؛ commandها ثبت؛ فقط message/callback poll؛ update پردازش و offset بعدی ذخیره می‌شود؛ mutation مدیریتی موفق journal `completed` دارد.
 
-**جریان اصلی:** در `--check`، initialize/migration تا schema 11، ایجاد/اعتبارسنجی bootstrap root پایدار و سپس `getMe`؛ در اجرای واقعی، همین bootstrap سپس `getMe`; `deleteWebhook`; setMyCommands؛ شروع callback server/worker اختیاری؛ loop `getUpdates(offset, timeout)`؛ `process_update_safe`. برای mutation مدیریتی: `begin_admin_update` با fingerprint، skip ردیف `completed` یا resume ردیف `started`، freeze مقصد toggle با `get_or_store_admin_update_effect`، اجرای API idempotent دامنه، و `complete_admin_update` پس از بازگشت عادی. فقط پس از ACK handler، offset همان update ذخیره و پردازش batch ادامه می‌یابد.
+**جریان اصلی:** در `--check`، initialize/migration تا schema 12، ایجاد/اعتبارسنجی bootstrap root پایدار و سپس `getMe`؛ در اجرای واقعی، همین bootstrap سپس `getMe`; `deleteWebhook`; setMyCommands؛ شروع callback server/worker اختیاری؛ loop `getUpdates(offset, timeout)`؛ `process_update_safe`. برای mutation مدیریتی: `begin_admin_update` با fingerprint، skip ردیف `completed` یا resume ردیف `started`، freeze مقصد toggle با `get_or_store_admin_update_effect`، اجرای API idempotent دامنه، و `complete_admin_update` پس از بازگشت عادی. فقط پس از ACK handler، offset همان update ذخیره و پردازش batch ادامه می‌یابد.
 
 **جریان‌های جایگزین/خطا:** `--check` در identity conflict پیش از Telegram fail closed است، read-only نیست و owner غیرفعال را re-enable نمی‌کند. خطای موقت پایهٔ `DatabaseError`/SQLite—شامل begin، mutation یا complete journal—از `process_update_safe` مقدار `False` می‌دهد؛ poller offset را ذخیره نمی‌کند، updateهای بعدی همان batch را اجرا نمی‌کند و همان offset را با backoff نمایی سقف‌دار/stop-aware دوباره می‌گیرد. در replay، `started` همان payload و اثر freezeشده/idempotent را resume و `completed` را skip می‌کند؛ update ID یکسان با fingerprint متفاوت conflict است. diagnostic موقت فقط بار اول تلاش و failure خودش نادیده گرفته می‌شود تا NACK حفظ شود. خطای terminal از subclassهای دامنه و خطای پاسخ Telegram ACK است تا poison update صف را نبندد؛ هر بازگشت دیگر، از جمله `None`، ACK محسوب می‌شود. این journal/ACK ارسال Telegram را exactly-once نمی‌کند. token در خطای transport redacted است؛ SIGINT/SIGTERM پس از request جاری retry/backoff را لغو می‌کند، update dispatch‌نشده را بدون advance offset برای restart می‌گذارد، worker non-daemon را join می‌کند و callback listener/requestهای non-daemon در حال اجرا را تا سقف مهلت shutdown drain می‌کند؛ دو instance باعث conflict عملیاتی و ممنوع است.
 
@@ -926,7 +927,7 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 
 | entity/status | اقدام مجاز مشتری | اقدام عملیاتی معمول |
 |---|---|---|
-| Order `pending_payment` | تخفیف، انتخاب روش؛ لغو فقط card pending بدون فیش | انقضا فقط بدون crypto فعال یا مشاهده |
+| Order `pending_payment` | تخفیف، انتخاب روش؛ لغو صریح سفارش پیش از intent یا لغو card pending بدون فیش | انقضا فقط بدون crypto فعال یا مشاهده |
 | Order `awaiting_confirmation` | مشاهده، در صورت مجاز فیش | approve/reject |
 | Order `paid` | مشاهده | reward + fulfillment فوری |
 | Order `awaiting_stock` | مشاهده | تأمین و FIFO assignment |

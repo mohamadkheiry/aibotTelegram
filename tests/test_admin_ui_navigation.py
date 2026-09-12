@@ -360,6 +360,7 @@ class AdminNavigationTests(unittest.TestCase):
     def test_multiselect_old_click_cannot_toggle_selection_twice(self):
         self.begin("reward_add")
         self.click(label="شرط‌های ترکیبی")
+        self.click(label="مبلغ ثابت")
         self.send_message(self.OWNER, text="100")
         self.click(label="همه / بدون محدودیت")
         self.click(ending=":default:0")

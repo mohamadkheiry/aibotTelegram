@@ -372,16 +372,32 @@ class Database:
                        OR idempotency_key LIKE 'admin-inventory:%'
                     """
                 )
+            connection.execute("DROP INDEX IF EXISTS idx_orders_reward_pending")
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_orders_reward_pending
                 ON orders(status, id)
                 WHERE reward_processed_at IS NULL
-                  AND status IN (
-                      'paid','awaiting_stock','awaiting_info','processing','completed'
-                  )
+                  AND status = 'completed'
                 """
             )
+            reward_rule_columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    "PRAGMA table_info(reward_rules)"
+                ).fetchall()
+            }
+            if "amount_mode" not in reward_rule_columns:
+                connection.execute(
+                    "ALTER TABLE reward_rules ADD COLUMN amount_mode TEXT "
+                    "NOT NULL DEFAULT 'fixed' "
+                    "CHECK (amount_mode IN ('fixed', 'percent'))"
+                )
+            if "maximum_amount" not in reward_rule_columns:
+                connection.execute(
+                    "ALTER TABLE reward_rules ADD COLUMN maximum_amount INTEGER "
+                    "CHECK (maximum_amount IS NULL OR maximum_amount > 0)"
+                )
             backup_columns = {
                 str(row["name"])
                 for row in connection.execute("PRAGMA table_info(backups)").fetchall()
@@ -589,7 +605,7 @@ class Database:
                 )
             connection.execute(
                 """
-                INSERT INTO schema_meta(key, value) VALUES ('schema_version', '11')
+                INSERT INTO schema_meta(key, value) VALUES ('schema_version', '12')
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """
             )
@@ -2805,7 +2821,7 @@ class Database:
         offset: int = 0,
         after_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """List paid-order states whose reward pipeline has not fully finished."""
+        """List delivered orders whose reward pipeline has not fully finished."""
 
         cursor_clause = ""
         parameters: list[Any] = []
@@ -2824,9 +2840,7 @@ class Database:
                     f"""
                     SELECT * FROM orders
                     WHERE reward_processed_at IS NULL
-                      AND status IN (
-                          'paid','awaiting_stock','awaiting_info','processing','completed'
-                      )
+                      AND status = 'completed'
                       {cursor_clause}
                     ORDER BY id
                     LIMIT ? OFFSET ?
@@ -4009,7 +4023,16 @@ class Database:
                 result["balance"] = self._wallet_balance(connection, user_id)
                 return result
             self._required(connection, "SELECT id FROM users WHERE id = ?", (user_id,), "user")
-            if amount_signed < 0 and self._wallet_balance(connection, user_id) < -amount_signed:
+            allow_admin_debt = (
+                amount_signed < 0
+                and entry_type == "admin_adjustment"
+                and actor_admin_id is not None
+            )
+            if (
+                amount_signed < 0
+                and self._wallet_balance(connection, user_id) < -amount_signed
+                and not allow_admin_debt
+            ):
                 raise InsufficientFundsError("wallet balance is insufficient")
             cursor = connection.execute(
                 """
@@ -6374,6 +6397,73 @@ class Database:
                 )
             )
 
+    def cancel_user_order(
+        self,
+        order_id: int,
+        user_id: int,
+        *,
+        now: datetime | str | None = None,
+    ) -> dict[str, Any]:
+        """Cancel an unpaid user-owned order and atomically release its holds."""
+
+        stamp = _timestamp(now)
+        with self._transaction() as connection:
+            order = self._required(
+                connection,
+                "SELECT * FROM orders WHERE id = ? AND user_id = ?",
+                (int(order_id), int(user_id)),
+                "order",
+            )
+            if order["status"] == "cancelled":
+                return dict(order)
+            if order["status"] != "pending_payment":
+                raise ValidationError("only an unpaid order can be cancelled by its owner")
+            active_payment = connection.execute(
+                """
+                SELECT 1 FROM payments
+                WHERE order_id = ? AND status IN ('pending', 'verifying')
+                LIMIT 1
+                """,
+                (int(order_id),),
+            ).fetchone()
+            if active_payment is not None:
+                raise ConflictError(
+                    "an active external payment must use its dedicated cancellation workflow"
+                )
+            self._refund_wallet_hold(
+                connection,
+                order,
+                f"order:{order_id}:cancelled:wallet-release",
+                stamp,
+            )
+            self._release_active_discount(connection, int(order_id), stamp)
+            connection.execute(
+                """
+                UPDATE reminders SET status = 'cancelled', updated_at = ?
+                WHERE order_id = ? AND status IN ('pending', 'processing', 'failed')
+                """,
+                (stamp, int(order_id)),
+            )
+            connection.execute(
+                """
+                UPDATE reservations SET status = 'cancelled'
+                WHERE order_id = ? AND status = 'queued'
+                """,
+                (int(order_id),),
+            )
+            connection.execute(
+                "UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?",
+                (stamp, int(order_id)),
+            )
+            return dict(
+                self._required(
+                    connection,
+                    "SELECT * FROM orders WHERE id = ?",
+                    (int(order_id),),
+                    "order",
+                )
+            )
+
     def cancel_pending_payment(
         self,
         payment_id: int,
@@ -8564,6 +8654,8 @@ class Database:
         *,
         event_type: str,
         amount: int,
+        amount_mode: str = "fixed",
+        maximum_amount: int | None = None,
         product_id: int | None = None,
         conditions: Mapping[str, Any] | None = None,
         starts_at: datetime | str | None = None,
@@ -8575,8 +8667,20 @@ class Database:
             raise ValidationError("unsupported reward event type")
         if event_type == "start" and product_id is not None:
             raise ValidationError("start rewards cannot be product-specific")
+        clean_amount_mode = str(amount_mode).strip().lower()
+        if clean_amount_mode not in {"fixed", "percent"}:
+            raise ValidationError("unsupported reward amount mode")
         if amount <= 0:
             raise ValidationError("reward amount must be positive")
+        if clean_amount_mode == "percent":
+            if event_type == "start":
+                raise ValidationError("start rewards cannot use a percentage")
+            if int(amount) > 100:
+                raise ValidationError("reward percentage cannot exceed 100")
+        if maximum_amount is not None and int(maximum_amount) <= 0:
+            raise ValidationError("reward maximum amount must be positive")
+        if clean_amount_mode == "fixed" and maximum_amount is not None:
+            raise ValidationError("fixed rewards cannot have a maximum amount")
         normalized_conditions = self._validate_reward_conditions(event_type, conditions)
         key = rule_key.strip()
         if not key:
@@ -8615,6 +8719,13 @@ class Database:
                     existing["event_type"] != event_type
                     or existing["product_id"] != product_id
                     or int(existing["amount"]) != int(amount)
+                    or str(existing["amount_mode"] or "fixed") != clean_amount_mode
+                    or (
+                        int(existing["maximum_amount"])
+                        if existing["maximum_amount"] is not None
+                        else None
+                    )
+                    != (int(maximum_amount) if maximum_amount is not None else None)
                     or existing["conditions_json"] != _json_dump(normalized_conditions)
                     or existing["starts_at"] != start_value
                     or existing["ends_at"] != end_value
@@ -8626,15 +8737,18 @@ class Database:
             cursor = connection.execute(
                 """
                 INSERT INTO reward_rules(
-                    rule_key, event_type, product_id, amount, conditions_json,
+                    rule_key, event_type, product_id, amount, amount_mode,
+                    maximum_amount, conditions_json,
                     starts_at, ends_at, is_active, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
                     event_type,
                     product_id,
                     int(amount),
+                    clean_amount_mode,
+                    int(maximum_amount) if maximum_amount is not None else None,
                     _json_dump(normalized_conditions),
                     start_value,
                     end_value,
@@ -8796,6 +8910,12 @@ class Database:
                 """,
                 (event_type, product_id, stamp, stamp, stamp),
             ).fetchall()
+            source_order = None
+            if source_order_id is not None:
+                source_order = connection.execute(
+                    "SELECT subtotal_amount FROM orders WHERE id = ?",
+                    (int(source_order_id),),
+                ).fetchone()
             granted: list[dict[str, Any]] = []
             for rule in rules:
                 if rule["event_type"] == "combined" and not self._combined_reward_matches(
@@ -8806,6 +8926,21 @@ class Database:
                     source_order_id=source_order_id,
                 ):
                     continue
+                reward_amount = int(rule["amount"])
+                if str(rule["amount_mode"] or "fixed") == "percent":
+                    if source_order is None:
+                        raise ValidationError(
+                            "percentage rewards require a source order"
+                        )
+                    reward_amount = (
+                        int(source_order["subtotal_amount"]) * reward_amount // 100
+                    )
+                    if rule["maximum_amount"] is not None:
+                        reward_amount = min(
+                            reward_amount, int(rule["maximum_amount"])
+                        )
+                    if reward_amount <= 0:
+                        continue
                 prior = connection.execute(
                     """
                     SELECT re.* FROM reward_events re
@@ -8830,7 +8965,7 @@ class Database:
                     (
                         referral["inviter_user_id"],
                         source_order_id,
-                        rule["amount"],
+                        reward_amount,
                         f"Referral reward: {rule['rule_key']}",
                         wallet_key,
                         stamp,
@@ -8848,7 +8983,7 @@ class Database:
                         referral["id"],
                         event_key,
                         source_order_id,
-                        rule["amount"],
+                        reward_amount,
                         wallet_cursor.lastrowid,
                         stamp,
                     ),
@@ -9190,18 +9325,14 @@ class Database:
     ) -> list[dict[str, Any]]:
         with self._read() as connection:
             order = self._required(connection, "SELECT * FROM orders WHERE id = ?", (order_id,), "order")
-            if order["status"] not in {
-                "paid",
-                "awaiting_stock",
-                "awaiting_info",
-                "processing",
-                "completed",
-            }:
-                raise ValidationError("purchase rewards require a successfully paid order")
             if order["order_origin"] != "customer" or int(
                 order["subtotal_amount"]
             ) <= 0:
                 return []
+            if order["status"] != "completed":
+                raise ValidationError(
+                    "purchase rewards require a delivered or activated order"
+                )
             first_successful = connection.execute(
                 """
                 SELECT id FROM orders
@@ -9263,14 +9394,10 @@ class Database:
                 (int(order_id),),
                 "order",
             )
-            if order["status"] not in {
-                "paid",
-                "awaiting_stock",
-                "awaiting_info",
-                "processing",
-                "completed",
-            }:
-                raise ValidationError("cannot complete rewards for an unpaid order")
+            if order["status"] != "completed":
+                raise ValidationError(
+                    "cannot complete rewards before order delivery or activation"
+                )
             connection.execute(
                 """
                 UPDATE orders

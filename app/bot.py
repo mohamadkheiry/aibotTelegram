@@ -193,6 +193,9 @@ class BotApplication:
                 # Manual payment approval must run the same exactly-once
                 # referral and delivery pipeline as automatic confirmation.
                 fulfill_order=lambda order: self._after_order_paid(int(order["id"])),
+                order_completed=lambda order: self._reconcile_purchase_rewards(
+                    int(order["id"])
+                ),
             )
         except ImportError:
             LOG.warning("Admin controller is not available")
@@ -1955,6 +1958,13 @@ class BotApplication:
                             style="primary",
                         )
                     ],
+                    [
+                        callback_button(
+                            "لغو سفارش",
+                            f"cancelorder:{created_order['id']}",
+                            style="danger",
+                        )
+                    ],
                     [back_button(f"prod:{created_order['product_id']}")],
                 ]
             )
@@ -2009,12 +2019,16 @@ class BotApplication:
             order = found
         if order["user_id"] != user["id"]:
             raise NotFoundError("سفارش پیدا نشد.")
+        if order["status"] != "pending_payment":
+            self.show_order(user, int(order["id"]), query=query)
+            return
         view = self._order_view(order)
         balance = self.db.wallet_balance(user["id"])
         markup = customer_keyboard("order_summary",
             [
                 [callback_button("پرداخت", f"checkout:{order['id']}", style="success")],
                 [callback_button("ثبت کد تخفیف", f"discount:{order['id']}", style="primary")],
+                [callback_button("لغو سفارش", f"cancelorder:{order['id']}", style="danger")],
                 [back_button(f"prod:{order['product_id']}")],
             ]
         )
@@ -2046,6 +2060,16 @@ class BotApplication:
             rows.append([callback_button("کارت به کارت", f"paycard:{order_id}", style="primary")])
         if self._crypto_payment_available():
             rows.append([callback_button("پرداخت ارزی", f"paycrypto:{order_id}", style="primary")])
+        if order["status"] == "pending_payment":
+            rows.append(
+                [
+                    callback_button(
+                        "لغو سفارش",
+                        f"cancelorder:{order_id}",
+                        style="danger",
+                    )
+                ]
+            )
         rows.append([back_button(f"ordersummary:{order_id}")])
         balance = self.db.wallet_balance(user["id"])
         content = texts.payment_methods(
@@ -2077,6 +2101,44 @@ class BotApplication:
         update: dict[str, Any],
     ) -> bool:
         query_id = query["id"]
+        if data.startswith("cancelorderconfirm:"):
+            order_id = self._callback_id(
+                data, "cancelorderconfirm", label="شناسه سفارش"
+            )
+            self.db.cancel_user_order(order_id, int(user["id"]))
+            self.db.clear_user_state(user["id"])
+            self.telegram.answer_callback_query(query_id, "سفارش لغو شد.")
+            self.show_main_menu(user)
+            return True
+        if data.startswith("cancelorder:"):
+            order_id = self._callback_id(data, "cancelorder", label="شناسه سفارش")
+            order = self.db.get_order(order_id)
+            if not order or int(order["user_id"]) != int(user["id"]):
+                raise NotFoundError("سفارش پیدا نشد.")
+            if order["status"] != "pending_payment":
+                raise ValidationError("فقط سفارش پرداخت‌نشده قابل لغو است.")
+            markup = customer_keyboard(
+                "order_cancel_confirm",
+                [
+                    [
+                        callback_button(
+                            "تأیید لغو سفارش",
+                            f"cancelorderconfirm:{order_id}",
+                            style="danger",
+                        )
+                    ],
+                    [back_button(f"ordersummary:{order_id}")],
+                ],
+            )
+            self._edit_or_send(
+                query,
+                "<b>لغو سفارش</b>\n\n"
+                f"شماره سفارش: <code>{escape(str(order['order_number']))}</code>\n"
+                "با تأیید، سفارش لغو و مبلغ رزروشده کیف پول و کد تخفیف آزاد می‌شود.",
+                markup,
+            )
+            self.telegram.answer_callback_query(query_id)
+            return True
         if data.startswith("ordersummary:"):
             order_id = self._callback_id(data, "ordersummary", label="شناسه سفارش")
             # A Back callback is also an explicit cancellation of the
@@ -3379,14 +3441,17 @@ class BotApplication:
                 order_id,
             )
             return
+        fulfilled = self.fulfill_order(order_id)
+        latest = self.db.get_order(order_id) or fulfilled
+        if not latest or latest.get("status") != "completed":
+            return
         try:
             self._reconcile_purchase_rewards(order_id)
         except Exception:
             LOG.exception("Could not grant referral reward for order %s", order_id)
-        self.fulfill_order(order_id)
 
     def _reconcile_purchase_rewards(self, order_id: int) -> None:
-        """Idempotently grant every purchase reward and enqueue its notice."""
+        """Grant purchase rewards only after delivery/activation is complete."""
 
         if not hasattr(self.db, "grant_purchase_rewards"):
             return
@@ -3684,7 +3749,7 @@ class BotApplication:
             try:
                 if order.get("status") == "paid":
                     self._after_order_paid(order_id)
-                else:
+                elif order.get("status") == "completed":
                     self._reconcile_purchase_rewards(order_id)
             except Exception:
                 LOG.exception("Could not reconcile paid order %s", order_id)
@@ -4033,6 +4098,7 @@ class BotApplication:
                 ),
                 idempotency_key=f"order:{order['id']}:delivery",
             )
+            self._reconcile_purchase_rewards(int(order["id"]))
 
     def _fulfill_processing_ready_inventory(self) -> None:
         """Recover paid non-reserved ready orders after stock is replenished."""
@@ -4062,6 +4128,7 @@ class BotApplication:
                 ),
                 idempotency_key=f"order:{fulfilled['id']}:delivery",
             )
+            self._reconcile_purchase_rewards(int(fulfilled["id"]))
 
     def _reconcile_completed_deliveries(self) -> None:
         """Create/send a missing durable delivery after a crash post-assignment."""

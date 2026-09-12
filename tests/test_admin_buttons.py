@@ -251,7 +251,7 @@ class AdminButtonTests(unittest.TestCase):
         self.fill("discount_add", {"code": "BUTTON10", "type": "percent", "amount": "10"})
         self.click("confirm")
         self.assertTrue(any(d["code"] == "BUTTON10" for d in self.db.list_discounts()))
-        self.fill("reward_add", {"event": "combined", "amount": "100", "first_purchase": "true",
+        self.fill("reward_add", {"event": "combined", "amount_mode": "fixed", "amount": "100", "first_purchase": "true",
                                  "minimum_successful_purchases": "1", "product_ids": [self.product["id"]]})
         self.click("confirm")
         rule = self.db.list_reward_rules()[-1]

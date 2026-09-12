@@ -15,6 +15,7 @@ from app.db import (
     ConflictError,
     Database,
     DatabaseError,
+    InsufficientFundsError,
     NotFoundError,
     OutOfStockError,
     ValidationError,
@@ -762,6 +763,38 @@ class CommerceTests(DatabaseTestCase):
         self.assertEqual(self.db.get_payment(pending["id"])["status"], "cancelled")
         self.assertEqual(self.db.get_order(other_order["id"])["status"], "cancelled")
 
+    def test_user_can_cancel_before_payment_and_reuse_discount(self) -> None:
+        user = self.user()
+        product = self.product(price=1_000, sku="cancel-before-payment")
+        discount = self.db.create_discount(
+            "REUSE", discount_type="fixed", value=100, max_uses=1, now=BASE_TIME
+        )
+        order = self.db.create_order(user["id"], product["id"], now=BASE_TIME)
+        self.db.apply_discount(order["id"], "REUSE", now=BASE_TIME)
+        self.db.credit_wallet(
+            user["id"], 300, reason="seed", idempotency_key="cancel-order-seed"
+        )
+        self.db.hold_wallet_funds(
+            order["id"], max_amount=300, idempotency_key="cancel-order-hold", now=BASE_TIME
+        )
+
+        cancelled = self.db.cancel_user_order(order["id"], user["id"], now=BASE_TIME)
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(self.db.wallet_balance(user["id"]), 300)
+        self.assertEqual(
+            next(row for row in self.db.list_discounts() if row["id"] == discount["id"])["used_count"],
+            0,
+        )
+        self.assertEqual(
+            self.db.cancel_user_order(order["id"], user["id"], now=BASE_TIME),
+            cancelled,
+        )
+        next_order = self.db.create_order(user["id"], product["id"], now=BASE_TIME)
+        self.assertEqual(
+            self.db.apply_discount(next_order["id"], "REUSE", now=BASE_TIME)["discount_amount"],
+            100,
+        )
+
     def test_partial_wallet_hold_is_idempotent_and_expiry_refunds(self) -> None:
         user = self.user()
         product = self.product(price=1_000, sku="wallet")
@@ -1440,6 +1473,28 @@ class CommerceTests(DatabaseTestCase):
 
 
 class SupportReferralAndOperationsTests(DatabaseTestCase):
+    def test_verified_admin_adjustment_can_record_reward_debt(self) -> None:
+        user = self.user(44)
+        admin_user = self.user(45)
+        admin = self.db.add_admin(
+            admin_user["username"], admin_user["chat_id"], role="admin"
+        )
+        entry = self.db.adjust_wallet(
+            user["id"],
+            -250,
+            reason="Manual reward clawback after reviewed refund",
+            idempotency_key="reward-clawback-debt",
+            actor_admin_id=admin["id"],
+        )
+        self.assertEqual(entry["balance"], -250)
+        with self.assertRaises(InsufficientFundsError):
+            self.db.adjust_wallet(
+                user["id"],
+                -1,
+                reason="Unaudited debit",
+                idempotency_key="unaudited-debit",
+            )
+
     def test_admin_assignment_and_internal_free_order_are_not_commercial_purchases(
         self,
     ) -> None:
@@ -1498,6 +1553,12 @@ class SupportReferralAndOperationsTests(DatabaseTestCase):
             idempotency_key="real-purchase-after-gift-hold",
             now=BASE_TIME + timedelta(minutes=1),
         )
+        self.db.add_inventory_item(
+            product["id"], "commercial-secret", now=BASE_TIME + timedelta(minutes=1)
+        )
+        self.db.assign_inventory(
+            paid_order["id"], now=BASE_TIME + timedelta(minutes=1)
+        )
         rewards = self.db.grant_purchase_rewards(paid_order["id"])
         self.assertEqual({int(reward["amount"]) for reward in rewards}, {30, 70})
         self.assertEqual(self.db.wallet_balance(inviter["id"]), 100)
@@ -1508,7 +1569,7 @@ class SupportReferralAndOperationsTests(DatabaseTestCase):
         self.assertEqual(summary["purchase_total"], 100)
         report = self.db.summary_report()
         self.assertEqual(report["order_count"], 3)
-        self.assertEqual(report["completed_order_count"], 1)
+        self.assertEqual(report["completed_order_count"], 2)
         self.assertEqual(report["gross_revenue"], 100)
 
     def test_faq_ticket_and_outbound_message_queues(self) -> None:
@@ -1616,10 +1677,16 @@ class SupportReferralAndOperationsTests(DatabaseTestCase):
             [],
         )
 
-    def test_first_purchase_reward_counts_paid_orders_waiting_for_stock(self) -> None:
+    def test_first_purchase_reward_waits_for_delivery_but_keeps_purchase_order(self) -> None:
         inviter = self.user(1)
         invitee = self.user(2)
         product = self.product(price=100, sku="first-purchase")
+        manual = self.product(
+            price=100,
+            sku="second-purchase",
+            product_type="manual",
+            reserve_enabled=False,
+        )
         self.db.record_referral(inviter["id"], invitee["id"], now=BASE_TIME)
         self.db.create_reward_rule(
             "first-order", event_type="first_purchase", amount=50, now=BASE_TIME
@@ -1634,7 +1701,6 @@ class SupportReferralAndOperationsTests(DatabaseTestCase):
         self.db.hold_wallet_funds(
             first["id"], idempotency_key="first-order-1-hold", now=BASE_TIME
         )
-        self.db.grant_purchase_rewards(first["id"], now=BASE_TIME)
         self.db.reserve_product(
             invitee["id"],
             product["id"],
@@ -1643,15 +1709,111 @@ class SupportReferralAndOperationsTests(DatabaseTestCase):
         )
 
         second = self.db.create_order(
-            invitee["id"], product["id"], idempotency_key="first-order-2", now=BASE_TIME
+            invitee["id"], manual["id"], idempotency_key="first-order-2", now=BASE_TIME
         )
         self.db.hold_wallet_funds(
             second["id"], idempotency_key="first-order-2-hold", now=BASE_TIME
         )
-        self.db.grant_purchase_rewards(second["id"], now=BASE_TIME)
+        second = self.db.update_order_status(second["id"], "awaiting_info", now=BASE_TIME)
+        second = self.db.submit_manual_order_info(
+            second["id"], invitee["id"], {"text": "account@example.test"}, now=BASE_TIME
+        )
+        self.db.complete_order(second["id"], "done", now=BASE_TIME)
+        self.assertEqual(self.db.grant_purchase_rewards(second["id"], now=BASE_TIME), [])
+
+        self.db.add_inventory_item(product["id"], "first-purchase-secret", now=BASE_TIME)
+        fulfilled = self.db.fulfill_next_available_reservation(now=BASE_TIME)
+        self.assertEqual(fulfilled["order_id"], first["id"])
+        self.db.grant_purchase_rewards(first["id"], now=BASE_TIME)
 
         self.assertEqual(self.db.wallet_balance(inviter["id"]), 50)
         self.assertEqual(self.db.user_summary(invitee["id"])["purchase_total"], 200)
+
+    def test_percentage_reward_uses_full_price_rounds_down_and_honours_cap(self) -> None:
+        inviter = self.user(31)
+        invitee = self.user(32)
+        product = self.product(price=12_345, sku="percent-reward-floor")
+        self.db.record_referral(inviter["id"], invitee["id"], now=BASE_TIME)
+        self.db.create_reward_rule(
+            "percent-seven",
+            event_type="product_purchase",
+            product_id=product["id"],
+            amount=7,
+            amount_mode="percent",
+            now=BASE_TIME,
+        )
+        self.db.create_discount(
+            "HALF-PERCENT-BASE", discount_type="percent", value=50, now=BASE_TIME
+        )
+        self.db.credit_wallet(
+            invitee["id"], 20_000, reason="seed", idempotency_key="percent-seed"
+        )
+        order = self.db.create_order(
+            invitee["id"], product["id"], idempotency_key="percent-order", now=BASE_TIME
+        )
+        order = self.db.apply_discount(order["id"], "HALF-PERCENT-BASE", now=BASE_TIME)
+        self.assertLess(int(order["payable_amount"]), int(order["subtotal_amount"]))
+        order = self.db.hold_wallet_funds(
+            order["id"], idempotency_key="percent-hold", now=BASE_TIME
+        )
+        with self.assertRaises(ValidationError):
+            self.db.grant_purchase_rewards(order["id"], now=BASE_TIME)
+        self.db.add_inventory_item(product["id"], "percent-secret", now=BASE_TIME)
+        self.db.assign_inventory(order["id"], now=BASE_TIME)
+        rewards = self.db.grant_purchase_rewards(order["id"], now=BASE_TIME)
+        self.assertEqual([int(item["amount"]) for item in rewards], [864])
+
+        capped_inviter = self.user(33)
+        capped_invitee = self.user(34)
+        capped_product = self.product(price=20_000, sku="percent-reward-cap")
+        self.db.record_referral(
+            capped_inviter["id"], capped_invitee["id"], now=BASE_TIME
+        )
+        self.db.create_reward_rule(
+            "percent-seven-capped",
+            event_type="product_purchase",
+            product_id=capped_product["id"],
+            amount=7,
+            amount_mode="percent",
+            maximum_amount=1_000,
+            now=BASE_TIME,
+        )
+        self.db.credit_wallet(
+            capped_invitee["id"],
+            20_000,
+            reason="seed",
+            idempotency_key="percent-cap-seed",
+        )
+        capped_order = self.db.create_order(
+            capped_invitee["id"],
+            capped_product["id"],
+            idempotency_key="percent-cap-order",
+            now=BASE_TIME,
+        )
+        capped_order = self.db.hold_wallet_funds(
+            capped_order["id"], idempotency_key="percent-cap-hold", now=BASE_TIME
+        )
+        self.db.add_inventory_item(capped_product["id"], "cap-secret", now=BASE_TIME)
+        self.db.assign_inventory(capped_order["id"], now=BASE_TIME)
+        capped_rewards = self.db.grant_purchase_rewards(
+            capped_order["id"], now=BASE_TIME
+        )
+        self.assertEqual([int(item["amount"]) for item in capped_rewards], [1_000])
+
+        with self.assertRaises(ValidationError):
+            self.db.create_reward_rule(
+                "invalid-start-percent",
+                event_type="start",
+                amount=5,
+                amount_mode="percent",
+            )
+        with self.assertRaises(ValidationError):
+            self.db.create_reward_rule(
+                "invalid-percent",
+                event_type="product_purchase",
+                amount=101,
+                amount_mode="percent",
+            )
 
     def test_reminders_backup_reports_and_foreign_keys(self) -> None:
         user = self.user()

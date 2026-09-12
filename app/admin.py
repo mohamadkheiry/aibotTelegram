@@ -316,6 +316,8 @@ class AdminController:
     ``notify_user`` must accept ``(chat_id, html_text)``. ``fulfill_order`` is
     called as ``fulfill_order(order_dict)`` after manual payment approval,
     making automatic inventory delivery reusable from the main bot service.
+    ``order_completed`` is a best-effort post-completion hook; durable
+    maintenance remains responsible for retrying reward processing.
     """
 
     def __init__(
@@ -325,12 +327,14 @@ class AdminController:
         settings: Any,
         notify_user: NotifyUser | None = None,
         fulfill_order: FulfillOrder | None = None,
+        order_completed: FulfillOrder | None = None,
     ) -> None:
         self.db = db
         self.telegram = telegram
         self.settings = settings
         self.notify_user = notify_user
         self.fulfill_order = fulfill_order
+        self.order_completed = order_completed
         self.log = logging.getLogger(__name__)
         self._button_context: dict[str, Any] | None = None
         from .admin_ui import AdminButtonUI
@@ -636,6 +640,7 @@ class AdminController:
                     notification,
                     idempotency_key=notification_key,
                 )
+                self._notify_order_completed(updated)
                 self._answer(callback_id, "سفارش تکمیل شد.")
                 self._send(
                     chat_id,
@@ -2304,7 +2309,19 @@ class AdminController:
             notification,
             idempotency_key=notification_key,
         )
+        self._notify_order_completed(updated)
         self._send(self._chat_id(message, user), f"سفارش <code>{escape(updated['order_number'])}</code> تکمیل شد.")
+
+    def _notify_order_completed(self, order: Mapping[str, Any]) -> None:
+        if self.order_completed is None:
+            return
+        try:
+            self.order_completed(dict(order))
+        except Exception:
+            self.log.exception(
+                "Could not run post-completion processing for order %s",
+                order.get("id"),
+            )
 
     def _request_info(self, rest: str, message: dict[str, Any], user: dict[str, Any], _admin: dict[str, Any]) -> None:
         parts = self._command_parts(rest, 2)
@@ -4218,6 +4235,29 @@ class AdminController:
                 "[| START_DATE|0 | END_DATE|0]"
             )
             raise AdminInputError(f"نمونه: {example}")
+        amount_mode = "fixed"
+        maximum_amount: int | None = None
+        raw_amount = normalize_digits(parts[1]).strip().lower()
+        if raw_amount.startswith("fixed:"):
+            raw_amount = raw_amount.removeprefix("fixed:")
+        elif raw_amount.startswith("percent:"):
+            amount_mode = "percent"
+            amount_parts = raw_amount.split(":")
+            if len(amount_parts) != 3:
+                raise AdminInputError("قالب درصد پاداش معتبر نیست.")
+            raw_amount = amount_parts[1]
+            try:
+                maximum_amount = parse_amount(amount_parts[2]) if amount_parts[2] != "0" else None
+            except ValueError as exc:
+                raise AdminInputError("سقف پاداش باید مبلغ صحیح مثبت یا صفر باشد.") from exc
+        try:
+            reward_amount = parse_amount(raw_amount)
+        except ValueError as exc:
+            raise AdminInputError(
+                "درصد یا مبلغ پاداش باید عدد صحیح مثبت باشد."
+            ) from exc
+        if amount_mode == "percent" and reward_amount > 100:
+            raise AdminInputError("درصد پاداش باید بین ۱ تا ۱۰۰ باشد.")
         try:
             product_id = int(normalize_digits(parts[2]))
         except ValueError as exc:
@@ -4267,7 +4307,9 @@ class AdminController:
                 self._admin_idempotency_key(message, "reward-create")
                 or f"{event}:{product_id or 'all'}:{secrets.token_hex(4)}",
                 event_type=event,
-                amount=parse_amount(parts[1]),
+                amount=reward_amount,
+                amount_mode=amount_mode,
+                maximum_amount=maximum_amount,
                 product_id=product_id or None,
                 conditions=conditions,
                 starts_at=starts_at,

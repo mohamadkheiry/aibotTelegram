@@ -73,8 +73,8 @@ def migrate(source: Path, target: Path, archive: Path, *, source_bot_id: int,
         origin.row_factory = sqlite3.Row
         integrity(origin)
         version = origin.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
-        if not version or str(version[0]) != "11":
-            raise ValueError("Only the reviewed schema 11 is supported")
+        if not version or str(version[0]) != "12":
+            raise ValueError("Only the reviewed schema 12 is supported")
         identity = origin.execute("SELECT value_json FROM settings WHERE key='bot_username'").fetchone()
         if not identity or str(json.loads(identity[0])).casefold() != source_username.casefold():
             raise ValueError("Source database bot username does not match")
@@ -154,7 +154,7 @@ def migrate(source: Path, target: Path, archive: Path, *, source_bot_id: int,
             backup.close()
     return {
         "result": "verified", "source_bot_id": source_bot_id, "target_bot_id": target_bot_id,
-        "target_username": target_username, "schema_version": 11,
+        "target_username": target_username, "schema_version": 12,
         "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
         "destination_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
         "archived_counts": {name: len(values) for name, values in before.items()},
