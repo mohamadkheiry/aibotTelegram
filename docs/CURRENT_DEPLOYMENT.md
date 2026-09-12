@@ -1,5 +1,55 @@
 # مقصد انتشار جاری
 
+## انتشار قواعد مالی و لغو سفارش — ۲۰۲۶-۰۹-۱۲، ساعت ۱۳:۱۵ تهران
+
+کد **`856eb256c9f17d60916ee1c9a0401d5dca0e23d5`** روی **`192.168.10.111`** در
+`/opt/alone-account-bot` برای **`@ElevenaccountsTestbot`** منتشر شد. این بخش
+وضعیت جاری است و بخش‌های پایین شواهد تاریخی‌اند. schema از ۱۱ به **۱۲** ارتقا
+یافت.
+
+- دو گروه بازخورد مالی/لغو سفارش به هشت اصلاح فنی تبدیل شدند: پاداش خرید فقط
+  پس از تکمیل و تحویل موفق؛ مبلغ ثابت یا درصدی؛ مبنای مبلغ قبل از تخفیف با گردکردن
+  رو به پایین؛ سقف اختیاری؛ امکان بدهکارشدن فقط برای اصلاح حسابرسی‌شده مدیر؛ لغو
+  صریح سفارش پرداخت‌نشده با تأیید؛ آزادسازی وجه رزروشده و کد تخفیف؛ و حذف دکمه
+  لغو پس از ایجاد درخواست پرداخت بیرونی. جزئیات و تصمیم‌های باز در
+  [FINANCIAL_DECISIONS_2026-09-12.md](FINANCIAL_DECISIONS_2026-09-12.md) ثبت شده‌اند.
+- Windows: مجموعه کامل پیش از آخرین guard رابط **۵۶۹ تست در ۹۴۰٫۶۴۱ ثانیه**،
+  بدون failure/error و با دو skip صرفاً POSIX؛ سپس دو تست رگرسیون لغو روی کد نهایی
+  در ۲٫۸۵۱ ثانیه موفق شدند. compile، Ruff و `git diff --check` نیز موفق بودند.
+  Linux میزبان: checkout دقیق همین commit، **۵۷۰ تست در ۷۰٫۳۴۶ ثانیه**، بدون
+  failure/error/skip و compile موفق؛ Ruff در venv سرور نصب نیست و نتیجه Ruff
+  مربوط به محیط توسعه است.
+- کد و اسناد روی `main` مخزن GitHub کاربر push شدند. checkout عملیاتی دقیقاً همین
+  commit است؛ فایل env، token، DB و helperهای خصوصی وارد گیت نشدند.
+- backup آنلاین پیش از توقف:
+  `/srv/backups/alone-account-bot/feedback-20260912-093939/before-release.sqlite3`
+  با SHA-256 `1acab58f26816302e5bb65a662e57e509f0ea59d9deb22a2af003b22384bf2ca`.
+  backup نهایی در حالت توقف:
+  `/srv/backups/alone-account-bot/feedback-20260912-094358/before-release.sqlite3`
+  با SHA-256 `2c1b291704141f290f077fc9fdea961e085c7a3a554373cf27dacc1a2f7d3818`.
+  هر دو schema ۱۱، integrity=ok، FK=0 و restore ایزولهٔ برابر داشتند. snapshot
+  پس از migration در
+  `/srv/backups/alone-account-bot/feedback-20260912-094457/before-release.sqlite3`
+  با SHA-256 `fb36544fbad92a8cd35010561d67b2a43ad3a05e45bf087cd100b5e23b048483`
+  نیز schema ۱۲، integrity=ok، FK=0 و restore تأییدشده دارد.
+- `--migrate-only` و `--check` با حساب `alonebot` موفق بودند. سرویس از
+  **۱۳:۱۵:۰۴** active/running است؛ PID آغاز انتشار `3235467`، NRestarts=0 و فقط
+  یک process `python -m app.main` دیده شد. journal فقط شروع getUpdates با offset
+  محفوظ `157802930` را ثبت کرد و خطای تازه‌ای نداشت.
+- health نهایی: getMe برابر `ElevenaccountsTestbot`، webhook خالی، pending update
+  صفر، bot_enabled=true، schema=12، integrity=ok، FK=0، رنگ `colored` و هر ۴۵
+  آیکون سفارشی فعال‌اند. هیچ خرید/پرداخت/نقش یا دادهٔ تجاری برای تست در production
+  ساخته نشد. ۱۸ outbox failed تاریخی پاک یا دوباره‌ارسال نشدند؛ outbox sent در
+  لحظه health برابر ۱۱۳ بود.
+- مطابق آخرین درخواست کاربر، تلگرام کارفرما به‌صورت دوره‌ای بررسی نشد و پیام
+  تازه‌ای نیز در این انتشار ارسال نشد؛ بررسی بعدی فقط با دستور صریح کاربر انجام
+  می‌شود.
+
+Rollback کد به **`70e04854230f0e1d7db47b3d98423f5fca9a20a1`** فقط پس از توقف همین unit،
+حفظ DB جاری و بررسی سازگاری schema ۱۲ انجام شود. snapshot schema ۱۱ را روی دادهٔ
+جدید restore نکنید؛ rollback ایمن باید migration رو به جلو و داده‌های ثبت‌شده پس
+از انتشار را حفظ کند.
+
 ## انتشار پیگیری — ۲۰۲۶-۰۹-۰۹، ساعت ۰۹:۴۹ تهران
 
 کد **`34084f698065c5590180bd20e5e07e896eb17f2f`** روی **`192.168.10.111`** در `/opt/alone-account-bot` برای **`@ElevenaccountsTestbot`** منتشر شد. این بخش وضعیت جاری است؛ بخش‌های پایین تاریخی‌اند. schema همچنان ۱۱ است.
