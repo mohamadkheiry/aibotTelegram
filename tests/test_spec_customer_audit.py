@@ -90,6 +90,12 @@ class CustomerSourceSpecificationTests(unittest.TestCase):
 
     def test_referral_explains_active_reward_amounts_scope_conditions_and_window(self) -> None:
         now = utc_now()
+        # Product-specific rules are mutually exclusive after the client's
+        # 2026-09-13 decision. Still exercise every combined-condition label.
+        combined_product = self.db.create_product(
+            self.category["id"], "محصول ترکیبی <دوم>",
+            product_type="manual", price_amount=160_000,
+        )
         self.db.create_reward_rule("start-reward", event_type="start", amount=1700)
         self.db.create_reward_rule(
             "first-reward", event_type="first_purchase", amount=2300
@@ -106,7 +112,7 @@ class CustomerSourceSpecificationTests(unittest.TestCase):
                 "minimum_referrals": 3,
                 "minimum_qualified_referrals": 1,
                 "minimum_order_amount": 125_000,
-                "product_ids": [self.product["id"]],
+                "product_ids": [combined_product["id"]],
             },
         )
         self.db.create_reward_rule(
@@ -125,6 +131,7 @@ class CustomerSourceSpecificationTests(unittest.TestCase):
         for expected in (
             "1,700 تومان", "2,300 تومان", "3,100 تومان", "4,300 تومان",
             "اولین خرید", "محصول &lt;آزمایشی&gt;", "125,000 تومان",
+            "محصول ترکیبی &lt;دوم&gt;",
             "حداقل 2 خرید", "حداقل 3 دعوت", "حداقل 1 دعوت واجد پاداش",
             (now + timedelta(days=2)).strftime("%Y-%m-%d"),
         ):
