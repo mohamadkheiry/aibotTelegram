@@ -530,7 +530,9 @@ Actor: مدیر یا مالک فعال و اثبات‌شده در private chat.
 
 **جریان‌های جایگزین/خطا:** بدون referral نتیجه noop است؛ rule خارج window/غیرفعال/بعد از خرید اعمال نمی‌شود؛ تخصیص `admin_assignment` و Order داخلی با subtotal صفر purchase event نیست و نخستین خرید واقعی را مصرف نمی‌کند؛ crash میان چند rule در maintenance ادامه می‌یابد؛ crash پس از credit و قبل از notice از `reward_event` commit‌شده بازیابی می‌شود؛ event تکراری reward دوم نمی‌دهد؛ refunded در تعریف خرید موفق جدید نیست و clawback خودکار انجام نمی‌شود؛ مدیر پس از بررسی می‌تواند WalletEntry جبرانی منفی ثبت کند.
 
-**قواعد:** BR-REF-02..07.<br>
+در ساخت و فعال‌سازی، قانون صریح محصول (شامل فهرست combined) با بازه مشترک قانون فعال دیگری برای همان محصول رد می‌شود؛ مدیر باید قانون قبلی را غیرفعال یا بازه جدا انتخاب کند. بررسی داخل transaction نهایی است، نه فقط پیش‌نمایش فرم. قواعد عمومی/تاریخی خودکار تغییر نمی‌کنند. شاهد: `test_product_reward_exclusivity.py` و دو تست فرم متداخل در `test_followup_feedback.py`.
+
+**قواعد:** BR-REF-02..07، BR-REF-11.<br>
 **پیاده‌سازی:** `show_referral`, `_reconcile_purchase_rewards`, `_reconcile_reward_notices`, `list_reward_events_missing_notice`; reward methods در `app/db.py`.<br>
 **تست:** `test_referral_reward_is_exactly_once`، `test_first_purchase_reward_waits_for_delivery_but_keeps_purchase_order`، `test_percentage_reward_uses_full_price_rounds_down_and_honours_cap`، `test_reward_reconciliation_survives_partial_grant_after_completion`، `test_reward_notice_recovery_rotates_past_start_reward_crashes`، `test_purchase_reward_window_uses_event_time_during_late_recovery`، `test_reward_rule_created_after_purchase_is_not_retroactive`، `test_admin_assignment_and_internal_free_order_are_not_commercial_purchases`، `test_referral_explains_active_reward_amounts_scope_conditions_and_window`، `test_referral_without_current_rule_does_not_promise_a_reward`، `test_referral_explanation_reaches_rules_beyond_default_repository_limit`.
 

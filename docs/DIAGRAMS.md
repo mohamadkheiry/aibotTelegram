@@ -805,6 +805,8 @@ flowchart TD
     R -.-> GR
     R -.-> L
     S -.-> P
+    Rules["تعریف و فعال‌سازی قانون محصول: رد تداخل بازه و محصول در transaction؛ ثابت یا درصدی، نه هر دو"]
+    Rules -.-> I
 ```
 
 ## ۱۳. State machine سفارش

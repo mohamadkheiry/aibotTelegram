@@ -230,6 +230,8 @@ eligibility خرید فقط برای Order با `order_origin=customer` و `subt
 
 هر reward event به entry یکتای کیف پول وصل است. grant خرید فقط برای Order `completed` اجرا می‌شود؛ وضعیت‌های میانی صرفاً ترتیب نخستین خرید را حفظ می‌کنند و اعتبار کیف پول نمی‌سازند. `orders.reward_processed_at` فقط بعد از grant همه ruleها و ثبت durable noticeها پر می‌شود؛ failure قبل از outbox آن را NULL نگه می‌دارد تا recovery ممکن باشد. علاوه بر marker سفارش، query مستقل `list_reward_events_missing_notice` تمام eventهای فاقد `reward:{id}:notice`، از جمله پاداش `start`، را با cursor/wrap می‌یابد. این marker فقط متعلق به reward است؛ `list_paid_orders_pending_fulfillment` سفارش status=`paid` را مستقل انتخاب می‌کند تا completion پاداش، تحویل محصول را پنهان نکند.
 
+کنترل تداخل قواعد صریح محصول در `create_reward_rule` و `set_reward_rule_active` زیر transaction نویسنده انجام می‌شود؛ دو درخواست هم‌زمان نمی‌توانند دو قانون متداخل فعال بسازند. بازه inclusive و intersection محصول/شرط combined ملاک‌اند. schema جدید، حذف سوابق یا index یکتای ساده استفاده نشده است، چون بازه‌های غیرمتداخل برای یک محصول مجازند. قواعد عمومی موضوع تصمیم جدا هستند.
+
 ## outbox و retry
 
 کلید `payment:{id}:topup-expired` اعلان انقضای شارژ کیف پول است. `list_expired_wallet_topups_missing_notice` فقط Paymentهای منقضی فاقد notice را برای بازیابی محدود انتخاب می‌کند؛ terminal شدن notice جلوی تکرار را می‌گیرد. این مسیر status پرداخت یا مانده کیف پول را تغییر نمی‌دهد.

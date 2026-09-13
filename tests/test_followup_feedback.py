@@ -448,6 +448,43 @@ class FollowupCatalogTests(unittest.TestCase):
         self.assertEqual(rule["amount"], 7)
         self.assertEqual(rule["maximum_amount"], 1000)
 
+    def test_product_reward_form_rejects_second_rule_at_confirmation(self):
+        old = self.db.create_reward_rule(
+            "existing-product", event_type="product_purchase", amount=100,
+            product_id=self.product["id"],
+        )
+        self.open_product()
+        self.click(label="پاداش معرف این محصول")
+        self.click(label="افزودن پاداش این محصول")
+        self.assertIn("فقط یک پاداش فعال", self.prompt()["text"])
+        self.click(label="خرید محصول")
+        self.click(label="درصد از قیمت کامل محصول")
+        self.send_message(self.OWNER, text="15")
+        self.send_message(self.OWNER, text="200000")
+        self.click(ending=":default:0")
+        self.click(ending=":default:0")
+        self.click(label="تأیید و اجرا")
+        self.assertEqual(self.db.list_reward_rules(), [old])
+        self.assertTrue(any("ابتدا قانون قبلی را غیرفعال کنید" in m["text"]
+                            and "پاداش فعال دارد" in m["text"]
+                            for m in self.telegram.messages))
+
+    def test_product_reward_toggle_rechecks_concurrently_activated_rule(self):
+        inactive = self.db.create_reward_rule(
+            "inactive-product", event_type="product_purchase", amount=15,
+            amount_mode="percent", product_id=self.product["id"], active=False,
+        )
+        self.open_product()
+        self.click(label="پاداش معرف این محصول")
+        self.click(ending=f":reward:{self.product['id']}:{inactive['id']}")
+        self.click(label="فعال‌کردن پاداش")
+        self.db.create_reward_rule("racing-active", event_type="product_purchase",
+                                   amount=100, product_id=self.product["id"])
+        self.click(label="تأیید و اجرا")
+        active = self.db.list_reward_rules(active_only=True)
+        self.assertEqual([item["rule_key"] for item in active], ["racing-active"])
+        self.assertTrue(any("پاداش فعال دارد" in m["text"] for m in self.telegram.messages))
+
     def test_ready_stock_limit_is_in_inventory_and_manual_legacy_link_cannot_edit_it(self):
         self.open_product()
         self.click(label="انبار محصول")

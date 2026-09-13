@@ -1,5 +1,9 @@
 # راهنمای استقرار و بازگردانی
 
+## کنترل تداخل پاداش محصول — ۲۰۲۶-۰۹-۱۳
+
+این تغییر schema/داده را عوض نمی‌کند. پیش از rollout همه قواعد فعالِ صریح محصول و combined را از DB جاری، خواندنی بررسی کنید؛ اگر تداخل زمانی/محصول وجود دارد، قانون برنده را با مالک تعیین کنید، نه با حذف/انتخاب خودکار. backup آنلاین و backup توقف، integrity/FK/restore، تست کل suite روی Linux و check با حساب سرویس لازم‌اند. سپس فقط همان unit روی میزبان مصوب restart شود. rollback کد با DB جاری ممکن است ولی guard ثبت پاداش متداخل را برمی‌دارد؛ سوابق و ledger را restore یا بازنویسی نکنید. این انتشار شامل سیاست تازه کم/اضافه‌واریزی یا اولویت قواعد عمومی نیست.
+
 ## انتشار مالی و لغو سفارش — ۲۰۲۶-۰۹-۱۲
 
 این نسخه migration افزایشی تا schema 12 دارد: `reward_rules.amount_mode` با default `fixed` و `maximum_amount` nullable افزوده می‌شوند و index پردازش پاداش فقط سفارش‌های `completed` را انتخاب می‌کند. پیش از rollout از DB جاری سرور backup آنلاین و پس از توقف تنها unit، backup نهایی بگیرید؛ integrity/FK و restore ایزوله را تأیید کنید. سپس commit تست‌شده را نصب، دسترسی خواندن حساب `alonebot` را کنترل، `python -m app.main --migrate-only` و `--check` را با همان env/user اجرا و فقط `alone-account-bot.service` را شروع کنید. env، token، manifest آیکون، رنگ `colored`، تنظیمات تجاری، offset و outbox تاریخی بازنویسی نشوند.

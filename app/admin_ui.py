@@ -820,7 +820,7 @@ class AdminButtonUI:
                 text += "\n" + escape(field.hint)
         if state["values"].get("_product_scope"):
             product = self.catalog._product(int(state["values"]["product"]))
-            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nپاداش ثابت یا درصدی این محصول قابل تنظیم است؛ قواعد عمومی موجود بدون تغییر می‌مانند."
+            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nبرای این محصول در هر بازه فقط یک پاداش فعال تعریف کنید: مبلغ ثابت یا درصدی با سقف اختیاری. برای جایگزینی، ابتدا قانون قبلی را غیرفعال کنید. قواعد عمومی موجود بدون تغییر می‌مانند."
         if state["step"] > state.get("minimum_step", 0):
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
         rows.append([self._button("لغو و بازگشت", self.return_route(state) if state.get("return_to") else "g:" + action.group, style="danger")])

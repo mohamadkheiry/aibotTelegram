@@ -8734,6 +8734,11 @@ class Database:
                         "reward rule key already exists with different terms"
                     )
                 return dict(existing)
+            if active:
+                self._validate_product_reward_exclusivity(
+                    connection, product_id=product_id, conditions=normalized_conditions,
+                    starts_at=start_value, ends_at=end_value,
+                )
             cursor = connection.execute(
                 """
                 INSERT INTO reward_rules(
@@ -8789,6 +8794,13 @@ class Database:
                 "reward rule",
             )
             next_active = not bool(rule["is_active"]) if active is None else bool(active)
+            if next_active and not rule["is_active"]:
+                self._validate_product_reward_exclusivity(
+                    connection, product_id=rule["product_id"],
+                    conditions=_json_load(rule["conditions_json"], {}),
+                    starts_at=rule["starts_at"], ends_at=rule["ends_at"],
+                    exclude_id=int(rule_id),
+                )
             connection.execute(
                 "UPDATE reward_rules SET is_active = ?, updated_at = ? WHERE id = ?",
                 (int(next_active), stamp, int(rule_id)),
@@ -8801,6 +8813,46 @@ class Database:
                     "reward rule",
                 )
             )
+
+    @staticmethod
+    def _validate_product_reward_exclusivity(
+        connection: sqlite3.Connection,
+        *,
+        product_id: int | None,
+        conditions: Mapping[str, Any],
+        starts_at: str | None,
+        ends_at: str | None,
+        exclude_id: int | None = None,
+    ) -> None:
+        # Explicit product scope includes combined-rule selectors. General
+        # rules retain their existing policy pending the owner's clarification.
+        products = (
+            {int(product_id)} if product_id is not None
+            else {int(value) for value in conditions.get("product_ids", [])}
+        )
+        if not products:
+            return
+        rules = connection.execute(
+            """
+            SELECT * FROM reward_rules
+            WHERE is_active = 1 AND event_type <> 'start'
+              AND (? IS NULL OR id <> ?)
+              AND (? IS NULL OR ends_at IS NULL OR ends_at >= ?)
+              AND (? IS NULL OR starts_at IS NULL OR starts_at <= ?)
+            """,
+            (exclude_id, exclude_id, starts_at, starts_at, ends_at, ends_at),
+        )
+        for rule in rules:
+            other_products = (
+                {int(rule["product_id"])} if rule["product_id"] is not None
+                else set(_json_load(rule["conditions_json"], {}).get("product_ids", []))
+            )
+            if products & other_products:
+                raise ConflictError(
+                    "این محصول در بازه انتخاب‌شده پاداش فعال دارد؛ "
+                    "ابتدا قانون قبلی را غیرفعال کنید یا بازه جدا انتخاب کنید. "
+                    "پاداش محصول فقط یکی است: مبلغ ثابت یا درصدی با سقف اختیاری."
+                )
 
     @staticmethod
     def _validate_reward_conditions(
