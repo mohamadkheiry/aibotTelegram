@@ -334,6 +334,12 @@ class UserFlowAdversarialRegressionTests(unittest.TestCase):
             event_type="first_purchase",
             amount=200,
         )
+        # Product priority now suppresses the general first-purchase rule.
+        # Keep a second, independent combined event to exercise partial recovery.
+        self.db.create_reward_rule(
+            "reward-reconciliation-general-combined", event_type="combined",
+            amount=200, conditions={"minimum_order_amount": 1},
+        )
         self.db.credit_wallet(
             self.user["id"],
             1_000,
@@ -400,6 +406,11 @@ class UserFlowAdversarialRegressionTests(unittest.TestCase):
         self.assertIsNotNone(self.db.get_order(order["id"])["reward_processed_at"])
         self.assertEqual(self.db.wallet_balance(inviter["id"]), 300)
         self.assertEqual(self.db.referral_summary(inviter["id"])["reward_total"], 300)
+        with self.db._read() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM reward_events WHERE event_key=?",
+                (f"order:{order['id']}:first-purchase",),
+            ).fetchone()[0], 0)
         notices = [
             message
             for message in self.telegram.messages

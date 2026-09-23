@@ -132,6 +132,15 @@ class AmountSettlementTests(fixture.DatabaseTestCase):
 
 
 class RewardPriorityTests(fixture.DatabaseTestCase):
+    def test_product_scoped_first_purchase_overrides_general_first_purchase(self):
+        inviter, invitee, product = self.user(1), self.user(2), self.product()
+        self.db.record_referral(inviter["id"], invitee["id"], now=fixture.BASE_TIME)
+        self.db.create_reward_rule("general-first", event_type="first_purchase", amount=60, now=fixture.BASE_TIME)
+        self.db.create_reward_rule("product-first", event_type="first_purchase", amount=40, product_id=product["id"], now=fixture.BASE_TIME)
+        order = self.db.create_order(invitee["id"], product["id"], now=fixture.BASE_TIME)
+        self.db.grant_referral_reward(invitee["id"], "first_purchase", "first", product_id=product["id"], source_order_id=order["id"], now=fixture.BASE_TIME)
+        self.assertEqual(self.db.wallet_balance(inviter["id"]), 40)
+
     def test_combined_scoped_only_wins_when_all_conditions_match(self):
         inviter, invitee, product = self.user(1), self.user(2), self.product()
         self.db.record_referral(inviter["id"], invitee["id"], now=fixture.BASE_TIME)
@@ -189,19 +198,47 @@ class AmountFormTests(unittest.TestCase):
     for _name in ("setUp", "tearDown", "message", "callback", "_take_update_id", "send_message", "send_callback", "actor_user", "state", "prompt", "button_update", "click", "buttons"):
         locals()[_name] = getattr(ui_fixture.AdminCatalogHierarchyTests, _name)
 
-    def prepare_form(self):
+    def prepare_form(self, *, order=False, amount="۶۰۰۰۰"):
         self.send_message(self.OWNER, text="/start")
         owner = self.actor_user()
-        payment = self.db.create_wallet_topup_payment(owner["id"], 100000, "card", idempotency_key="ui-topup", now=fixture.BASE_TIME)
+        if order:
+            record = self.db.create_order(owner["id"], self.product["id"], now=fixture.BASE_TIME)
+            payment = self.db.create_order_payment(record["id"], "card", idempotency_key="ui-order", now=fixture.BASE_TIME)
+        else:
+            payment = self.db.create_wallet_topup_payment(owner["id"], 100000, "card", idempotency_key="ui-topup", now=fixture.BASE_TIME)
         self.db.submit_payment_receipt(payment["id"], "receipt", now=fixture.BASE_TIME+timedelta(minutes=2))
         self.send_callback(self.OWNER, "adm:ui:a:approve_payment")
         self.click(label=self.buttons()[0]["text"])
         self.click(label="مبلغ متفاوت؛ ثبت مبلغ واقعی")
-        for value in ("۶۰۰۰۰", "ui-bank-ref", "ورود وجه به حساب بررسی شد"):
+        for value in (amount, "ui-bank-ref", "ورود وجه به حساب بررسی شد"):
             self.send_message(self.OWNER, text=value)
         self.assertEqual(self.state()["status"], "confirm")
-        self.assertIn("60,000", self.prompt()["text"])
+        self.assertIn("افزایش کیف پول", self.prompt()["text"])
         return owner, payment
+
+    def test_overpaid_order_delivers_once_after_canonical_notice(self):
+        owner, payment = self.prepare_form(order=True, amount="120000")
+        update = self.button_update(label="تأیید و اجرا")
+        self.app.process_update(update)
+        self.app.process_update(copy.deepcopy(update))
+        self.assertEqual(self.db.get_order(payment["order_id"])["status"], "completed")
+        self.assertEqual(self.db.wallet_balance(owner["id"]), 20000)
+        bodies = [m["text"] for m in self.telegram.messages if m["chat_id"] == owner["chat_id"]]
+        notice = next(i for i, body in enumerate(bodies) if "مبلغ واقعی دریافتی" in body)
+        delivery = [i for i, body in enumerate(bodies) if "login@example.test" in body]
+        self.assertEqual(len(delivery), 1)
+        self.assertLess(notice, delivery[0])
+
+    def test_underpaid_order_does_not_deliver_or_claim_success(self):
+        owner, payment = self.prepare_form(order=True)
+        self.click(label="تأیید و اجرا")
+        self.app._reconcile_paid_payment_notices()
+        self.app._reconcile_paid_orders()
+        self.assertEqual(self.db.get_order(payment["order_id"])["status"], "cancelled")
+        self.assertEqual(self.db.wallet_balance(owner["id"]), 60000)
+        self.assertFalse(any("login@example.test" in m["text"] for m in self.telegram.messages))
+        body = self.db.get_outbound_message_by_idempotency_key(f"payment:{payment['id']}:order-confirmed")["body"]
+        self.assertIn("کافی نبود", body)
 
     def test_actual_amount_keyboard_confirmation_and_replay(self):
         owner, payment = self.prepare_form()
@@ -238,6 +275,7 @@ class AmountFormTests(unittest.TestCase):
         with patch.object(self.db, "settle_card_receipt_amount", side_effect=fail_after):
             self.assertIs(self.app.process_update_safe(copy.deepcopy(update)), False)
             self.assertEqual(self.state()["status"], "executing")
+            self.app._reconcile_paid_payment_notices()
             self.assertIsNot(self.app.process_update_safe(copy.deepcopy(update)), False)
         self.assertEqual(self.db.wallet_balance(owner["id"]), before+60000)
         self.assertEqual(self.state()["status"], "done")

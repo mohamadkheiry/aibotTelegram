@@ -6743,7 +6743,8 @@ class Database:
     @staticmethod
     def card_amount_settlement(payment: Mapping[str, Any]) -> dict[str, Any] | None:
         payload = _json_load(dict(payment).get("raw_payload_json"), {})
-        if isinstance(payload, dict) and payload.get("source") == "verified_card_amount_v1":
+        if (payment["method"] == "card" and isinstance(payload, dict)
+                and payload.get("source") == "verified_card_amount_v1"):
             return payload
         return None
 
@@ -9557,7 +9558,7 @@ class Database:
             SELECT r.*, EXISTS(SELECT 1 FROM reward_events e
                 WHERE e.reward_rule_id=r.id AND e.source_order_id=?) AS already_granted
             FROM reward_rules r
-            WHERE event_type IN ('product_purchase', 'combined')
+            WHERE event_type IN ('product_purchase', 'first_purchase', 'combined')
               AND (product_id IS NULL OR product_id=?)
               AND ((is_active=1 AND created_at<=?
                     AND (starts_at IS NULL OR starts_at<=?)
@@ -9570,7 +9571,7 @@ class Database:
             conditions = _json_load(rule["conditions_json"], {})
             if rule["product_id"] is None and product_id not in conditions.get("product_ids", []):
                 continue
-            if rule["already_granted"] or rule["event_type"] == "product_purchase":
+            if rule["already_granted"] or rule["event_type"] != "combined":
                 return True
             if self._combined_reward_matches(
                 connection, rule, invitee_user_id=invitee_user_id,

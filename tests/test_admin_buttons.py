@@ -475,6 +475,9 @@ class AdminButtonTests(unittest.TestCase):
         controller = self.app.admin_controller
         ui = controller.button_ui
         captured = []
+        receipt_user = self.db.upsert_user(9876, 9876, username="receipt_fixture")
+        receipt = self.db.create_wallet_topup_payment(receipt_user["id"], 1000, "card", idempotency_key="form-routing-receipt")
+        self.db.submit_payment_receipt(receipt["id"], "synthetic-receipt")
         self.db.create_discount("DEMO", discount_type="percent", value=10)
         self.db.create_reward_rule("DEMO", event_type="start", amount=10)
         category = self.db.create_faq_category("دسته ساختگی تأیید وضعیت")

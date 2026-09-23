@@ -285,7 +285,7 @@ class SourceEndToEndTests(unittest.TestCase):
         self.click(self.CUSTOMER, "ارسال فیش واریز")
         self.send(self.CUSTOMER, photo=[{"file_id": "audit-receipt-photo", "width": 80, "height": 80}])
         self.assertEqual(self.db.get_payment(payment["id"])["status"], "verifying")
-        self.action("approve_payment", {"target": payment["payment_number"]})
+        self.action("approve_payment", {"target": payment["payment_number"], "amount_mode": "exact"})
         completed = self.db.get_order(order["id"])
         self.assertEqual(completed["status"], "completed")
         self.assertEqual(completed["wallet_captured_amount"], 30000)
