@@ -2488,7 +2488,28 @@ class AdminController:
             raise AdminInputError("این فیش دیگر در وضعیت قابل بررسی نیست.")
 
     def _approve_payment(self, rest: str, message: dict[str, Any], user: dict[str, Any], admin: dict[str, Any]) -> None:
-        payment = self._require_payment(rest)
+        parts = self._command_parts(rest, 1)
+        payment = self._require_payment(parts[0])
+        if len(parts) != 1:
+            if len(parts) != 5 or parts[1] != "actual":
+                raise AdminInputError("شماره پرداخت | actual | مبلغ واقعی به تومان | شماره پیگیری | توضیح بررسی")
+            snapshot = (self._button_context or {}).get("state", {}).get("receipt_snapshot", {})
+            if snapshot and snapshot.get("payment_id") != payment["id"]:
+                raise AdminInputError("فیش انتخاب‌شده تغییر کرده است.")
+            approved = self.db.settle_card_receipt_amount(
+                int(payment["id"]), _as_int(parts[2], "مبلغ واقعی"), parts[3], int(admin["id"]), parts[4],
+                receipt_file_id=snapshot.get("file_id", payment.get("receipt_file_id")),
+            )
+            settlement = self.db.card_amount_settlement(approved)
+            target = self.db.get_user(int(payment["user_id"]))
+            suffix = "topup-confirmed" if payment["purpose"] == "wallet_topup" else "order-confirmed"
+            delivered = self._deliver_prequeued_notification(target, texts.card_amount_settled(approved, settlement),
+                idempotency_key=f"payment:{payment['id']}:{suffix}")
+            order = self.db.get_order(int(payment["order_id"])) if payment.get("order_id") else None
+            if delivered and order and order["status"] == "paid" and self.fulfill_order:
+                self.fulfill_order(dict(order))
+            self._send(self._chat_id(message, user), "مبلغ واقعی واریز تأیید و تسویه شد.")
+            return
         self._approve_payment_record(payment, int(admin["id"]), source="admin_command")
         self._send(self._chat_id(message, user), "پرداخت تأیید شد.")
 
@@ -2533,6 +2554,13 @@ class AdminController:
             lines.append(
                 f"سفارش: <code>{escape(order['order_number'])}</code>"
             )
+        settlement = self.db.card_amount_settlement(payment)
+        if settlement:
+            lines.extend([f"مبلغ واقعی تأییدشده: {money(settlement['received_amount'])}",
+                          f"افزوده به کیف پول: {money(settlement['wallet_credit'])}",
+                          f"سهم سفارش: {money(settlement['applied_amount'])}",
+                          f"شماره پیگیری: <code>{escape(settlement['bank_reference'])}</code>",
+                          f"توضیح بررسی: {escape(settlement['note'])}"])
         if payment.get("receipt_file_id"):
             lines.append("فیش ذخیره‌شده در پیام بعدی ارسال می‌شود.")
         self._send(chat_id, "\n".join(lines))
@@ -2921,6 +2949,16 @@ class AdminController:
             first_purchase_at = (aggregate or {}).get("first_purchase_at") or "—"
             last_purchase_at = (aggregate or {}).get("last_purchase_at") or "—"
         referral = self.db.referral_summary(target_id)
+        upstream = self.db.get_referral_by_invitee(target_id)
+        inviter = self.db.get_user(int(upstream["inviter_user_id"])) if upstream else None
+        inviter_text = "ثبت نشده؛ کاربر بدون لینک دعوت وارد شده است."
+        if inviter:
+            inviter_name = " ".join(filter(None, (inviter.get("first_name"), inviter.get("last_name")))) or "بدون نام"
+            inviter_text = (
+                f"{escape(inviter_name)} | @{escape(inviter.get('username') or '—')}"
+                f" | chat_id: <code>{int(inviter['chat_id'])}</code>"
+                f" | شناسه داخلی: <code>{int(inviter['id'])}</code>"
+            )
         transactions = self.db.list_user_transactions(target_id, limit=10)
         transaction_count = self.db.count_user_transactions(target_id)
         currency = getattr(self.settings, "currency_label", "تومان")
@@ -2941,6 +2979,7 @@ class AdminController:
             f"\nاولین خرید: {escape(display_datetime(first_purchase_at, self.settings.timezone))}"
             f"\nآخرین خرید: {escape(display_datetime(last_purchase_at, self.settings.timezone))}"
             f"\nدعوت‌شده‌ها: {int(referral.get('invited_count') or 0)}"
+            f"\nمعرف این کاربر: {inviter_text}"
             f"\nپاداش دعوت: {money(int(referral.get('reward_total') or 0), currency)}"
             f"\nتعداد تراکنش‌ها: {transaction_count:,}"
         ]

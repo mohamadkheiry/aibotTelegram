@@ -20,6 +20,22 @@ STATUS_LABELS = {
 }
 
 
+def card_amount_settled(payment: Mapping[str, Any], settlement: Mapping[str, Any]) -> str:
+    lines = ["<b>واریز بانکی پس از بررسی مدیر تأیید شد</b>",
+             f"شماره پرداخت: <code>{escape(payment['payment_number'])}</code>",
+             f"مبلغ واقعی دریافتی: {money(settlement['received_amount'])}"]
+    if settlement.get("order_number"):
+        lines.extend([f"سفارش: <code>{escape(settlement['order_number'])}</code>",
+                      f"محصول: {escape(settlement.get('product_name') or 'محصول')}"])
+        if settlement["applied_amount"]:
+            lines.append(f"سهم پرداخت بانکی سفارش: {money(settlement['applied_amount'])}")
+            lines.append("پرداخت سفارش کامل شد؛ ادامهٔ تحویل طبق نوع محصول انجام می‌شود.")
+        else:
+            lines.append("مبلغ برای این سفارش کافی نبود؛ سفارش قبلی لغو شد و وجه رزروشدهٔ کیف پول آزاد شد. برای خرید دوباره از کیف پول استفاده کنید.")
+    lines.append(f"مبلغ افزوده‌شده به کیف پول: {money(settlement['wallet_credit'])}")
+    return "\n".join(lines)
+
+
 def transaction_type(entry_type: str | None, method: str | None = None) -> str:
     """Keep transaction kind visible independently of its free-form reason."""
     labels = {

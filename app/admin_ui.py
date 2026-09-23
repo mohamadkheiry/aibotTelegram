@@ -719,6 +719,19 @@ class AdminButtonUI:
         rows: list[list[dict]] = []
         if state["status"] == "confirm":
             lines = [f"<b>تأیید نهایی: {action.label}</b>"]
+            if action.key == "approve_payment":
+                payment = self.controller._require_payment(state["values"]["target"])
+                state["receipt_snapshot"] = {"payment_id": payment["id"], "file_id": payment.get("receipt_file_id")}
+                lines.extend([f"مبلغ پایه: {money(payment['base_amount'])}",
+                              f"مبلغ دقیق درخواست با شناسه تطبیق: {money(payment['payable_amount'])}"])
+                if state["values"].get("amount_mode") == "actual":
+                    received = int(state["values"]["received_amount"])
+                    due = int(payment["base_amount"])
+                    credit = received if payment["purpose"] == "wallet_topup" or received < due else received - due
+                    lines.append(f"افزایش کیف پول: {money(credit)}")
+                    if payment["purpose"] == "order":
+                        lines.append("سفارش لغو و وجه رزروشده آزاد می‌شود؛ خرید مجدد از کیف پول." if received < due else "پرداخت سفارش تکمیل می‌شود و فقط اضافه‌واریزی به کیف پول می‌رود.")
+                lines.append("تأیید یعنی واریز به حساب بانکی را شخصاً بررسی کرده‌اید؛ این بررسی خودکار تصویر فیش نیست.")
             if action.key in {"faq_toggle", "faq_category_toggle"}:
                 identifier = int(state["values"]["target"])
                 category = action.key == "faq_category_toggle"
@@ -820,7 +833,7 @@ class AdminButtonUI:
                 text += "\n" + escape(field.hint)
         if state["values"].get("_product_scope"):
             product = self.catalog._product(int(state["values"]["product"]))
-            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nبرای این محصول در هر بازه فقط یک پاداش فعال تعریف کنید: مبلغ ثابت یا درصدی با سقف اختیاری. برای جایگزینی، ابتدا قانون قبلی را غیرفعال کنید. قواعد عمومی موجود بدون تغییر می‌مانند."
+            text += f"\n\nمحصول ثابت: {escape(product['name'])} | شناسه: {product['id']}\nبرای این محصول در هر بازه فقط یک پاداش فعال تعریف کنید: مبلغ ثابت یا درصدی با سقف اختیاری. برای جایگزینی، ابتدا قانون قبلی را غیرفعال کنید. پاداش محصول با پاداش عمومی اولین خرید جمع نمی‌شود؛ سایر قواعد عمومی مستقل‌اند."
         if state["step"] > state.get("minimum_step", 0):
             rows.append([self._form_button(state, "مرحله قبل / اصلاح", "back")])
         rows.append([self._button("لغو و بازگشت", self.return_route(state) if state.get("return_to") else "g:" + action.group, style="danger")])

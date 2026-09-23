@@ -3906,8 +3906,12 @@ class Database:
                         UNION ALL
                         SELECT 'payment:' || p.id AS transaction_key,
                                COALESCE(p.confirmed_at, p.updated_at, p.created_at),
-                               -p.base_amount, 'external_purchase',
+                               -CASE WHEN json_extract(p.raw_payload_json, '$.source')='verified_card_amount_v1'
+                                     THEN CAST(json_extract(p.raw_payload_json, '$.received_amount') AS INTEGER)
+                                     ELSE p.base_amount END, 'external_purchase',
                                 CASE
+                                    WHEN json_extract(p.raw_payload_json, '$.source')='verified_card_amount_v1'
+                                    THEN 'واریز بانکی با مبلغ واقعی؛ سهم سفارش و اعتبار کیف پول جدا ثبت شدند'
                                     WHEN EXISTS (
                                         SELECT 1 FROM wallet_entries late_credit
                                         WHERE late_credit.payment_id = p.id
@@ -3974,7 +3978,9 @@ class Database:
                          "WHERE we.id=? AND we.user_id=?")
             else:
                 query = ("SELECT p.id, COALESCE(p.confirmed_at,p.created_at) created_at, "
-                         "CASE WHEN p.purpose='wallet_topup' THEN p.base_amount ELSE -p.base_amount END amount_signed, "
+                         "(CASE WHEN p.purpose='wallet_topup' THEN 1 ELSE -1 END) * "
+                         "(CASE WHEN json_extract(p.raw_payload_json, '$.source')='verified_card_amount_v1' "
+                         "THEN CAST(json_extract(p.raw_payload_json, '$.received_amount') AS INTEGER) ELSE p.base_amount END) amount_signed, "
                          "CASE WHEN p.purpose='wallet_topup' THEN 'topup' ELSE 'external_purchase' END entry_type, "
                          "'' reason, p.order_id, p.id payment_id, o.order_number, p.payment_number, p.method, p.status "
                          "FROM payments p LEFT JOIN orders o ON o.id=p.order_id WHERE p.id=? AND p.user_id=?")
@@ -6564,6 +6570,9 @@ class Database:
         payment_id = int(payment["id"])
         user_id = int(payment["user_id"])
         amount = int(payment["base_amount"])
+        settlement = self.card_amount_settlement(payment)
+        if settlement:
+            amount = int(settlement["received_amount"])
         reason = "Confirmed wallet top-up"
         idempotency_key = f"payment:{payment_id}:wallet-credit"
         existing = connection.execute(
@@ -6731,6 +6740,101 @@ class Database:
             )
         )
 
+    @staticmethod
+    def card_amount_settlement(payment: Mapping[str, Any]) -> dict[str, Any] | None:
+        payload = _json_load(dict(payment).get("raw_payload_json"), {})
+        if isinstance(payload, dict) and payload.get("source") == "verified_card_amount_v1":
+            return payload
+        return None
+
+    def settle_card_receipt_amount(
+        self, payment_id: int, received_amount: int, bank_reference: str,
+        actor_admin_id: int, note: str, *, receipt_file_id: str,
+        now: datetime | str | None = None,
+    ) -> dict[str, Any]:
+        """One verified transfer: settle the order or credit the actual receipt.
+
+        This is manual bank verification, never OCR or amount-only matching.
+        Frozen terms, ledger effects and the canonical notice commit together.
+        """
+        if type(received_amount) is not int or not 0 < received_amount <= 10**12:
+            raise ValidationError("مبلغ واقعی باید عدد صحیح مثبت به تومان باشد.")
+        reference, clean_note = str(bank_reference).strip(), str(note).strip()
+        if not reference or len(reference) > 120 or not clean_note or len(clean_note) > 1000:
+            raise ValidationError("شماره پیگیری بانکی و توضیح بررسی معتبر الزامی است.")
+        stamp = _timestamp(now)
+        terms = dict(source="verified_card_amount_v1", received_amount=received_amount,
+                     bank_reference=reference, actor_admin_id=int(actor_admin_id),
+                     note=clean_note, receipt_file_id=str(receipt_file_id))
+        with self._transaction() as connection:
+            self._required(connection,
+                "SELECT id FROM admins WHERE id=? AND role IN ('owner','admin') "
+                "AND is_active=1 AND identity_verified_at IS NOT NULL",
+                (int(actor_admin_id),), "verified financial administrator")
+            payment = self._required(connection, "SELECT * FROM payments WHERE id=?",
+                                     (int(payment_id),), "payment")
+            prior = self.card_amount_settlement(payment)
+            if prior:
+                if any(prior.get(key) != value for key, value in terms.items()):
+                    raise ConflictError("این پرداخت قبلاً با اطلاعات متفاوت تسویه شده است.")
+                return dict(payment)
+            if payment["method"] != "card" or payment["status"] != "verifying":
+                raise ConflictError("فقط فیش کارتِ در انتظار بررسی قابل تسویه است.")
+            if not receipt_file_id or payment["receipt_file_id"] != receipt_file_id:
+                raise ConflictError("فیش تغییر کرده است؛ فیش جدید را دوباره بررسی کنید.")
+            if received_amount == int(payment["payable_amount"]):
+                raise ValidationError("مبلغ با درخواست برابر است؛ از تأیید مبلغ دقیق استفاده کنید.")
+            if connection.execute("SELECT 1 FROM card_payment_events WHERE reference=?", (reference,)).fetchone():
+                raise ConflictError("این شماره پیگیری در رخدادهای بانکی ثبت شده؛ ابتدا همان رخداد را تعیین تکلیف کنید.")
+            order = None
+            applied, credited = 0, received_amount
+            if payment["order_id"] is not None:
+                order = self._required(connection, "SELECT * FROM orders WHERE id=?",
+                                       (payment["order_id"],), "order")
+                held = int(order["wallet_held_amount"]) - int(order["wallet_refunded_amount"])
+                due = int(order["subtotal_amount"]) - int(order["discount_amount"]) - int(order["external_paid_amount"]) - held
+                if order["status"] not in {"pending_payment", "awaiting_confirmation"} or due != int(payment["base_amount"]) or due <= 0:
+                    raise ConflictError("وضعیت یا مبلغ سفارش تغییر کرده؛ دوباره بررسی کنید.")
+                other = connection.execute("SELECT 1 FROM payments WHERE order_id=? AND id<>? AND status IN ('pending','verifying')",
+                                           (order["id"], payment_id)).fetchone()
+                if other:
+                    raise ConflictError("سفارش پرداخت فعال دیگری دارد.")
+                if received_amount >= due:
+                    applied, credited = due, received_amount - due
+                    connection.execute(
+                        "UPDATE orders SET external_paid_amount=external_paid_amount+?, wallet_captured_amount=?, status='paid', paid_at=?, updated_at=? WHERE id=?",
+                        (due, held, self._allocate_paid_timestamp(connection, stamp), stamp, order["id"]))
+                else:
+                    self._refund_wallet_hold(connection, order,
+                        f"order:{order['id']}:underpayment-release", stamp)
+                    self._release_active_discount(connection, order["id"], stamp)
+                    connection.execute("UPDATE orders SET status='cancelled', updated_at=? WHERE id=?", (stamp, order["id"]))
+                    connection.execute("UPDATE reservations SET status='cancelled' WHERE order_id=? AND status='queued'", (order["id"],))
+                    connection.execute("UPDATE reminders SET status='cancelled', updated_at=? WHERE order_id=? AND status IN ('pending','processing','failed')", (stamp, order["id"]))
+            terms.update(applied_amount=applied, wallet_credit=credited,
+                         order_number=order["order_number"] if order else None,
+                         product_name=order["product_name_snapshot"] if order else None)
+            try:
+                connection.execute(
+                    "UPDATE payments SET status='paid', external_reference=?, raw_payload_json=?, confirmed_at=?, updated_at=? WHERE id=?",
+                    (reference, _json_dump(terms), stamp, stamp, payment_id))
+            except sqlite3.IntegrityError as exc:
+                raise ConflictError("شماره پیگیری بانکی قبلاً استفاده شده است.") from exc
+            settled = self._required(connection, "SELECT * FROM payments WHERE id=?", (payment_id,), "payment")
+            if payment["purpose"] == "wallet_topup":
+                self._ensure_wallet_topup_credit(connection, settled, stamp)
+            elif credited:
+                connection.execute(
+                    "INSERT INTO wallet_entries(user_id, payment_id, order_id, amount_signed, entry_type, reason, actor_admin_id, idempotency_key, created_at) VALUES(?,?,?,?, 'manual_credit', ?,?,?,?)",
+                    (payment["user_id"], payment_id, payment["order_id"], credited,
+                     "Verified card receipt amount adjustment", actor_admin_id,
+                     f"payment:{payment_id}:actual-credit", stamp))
+            from .texts import card_amount_settled
+            suffix = "topup-confirmed" if payment["purpose"] == "wallet_topup" else "order-confirmed"
+            self._queue_user_message_in_transaction(connection, int(payment["user_id"]),
+                card_amount_settled(dict(settled), terms), f"payment:{payment_id}:{suffix}", stamp)
+            return dict(settled)
+
     def set_payment_status(
         self,
         payment_id: int,
@@ -6775,6 +6879,9 @@ class Database:
         stamp = _timestamp(now)
         with self._transaction() as connection:
             payment = self._required(connection, "SELECT * FROM payments WHERE id = ?", (payment_id,), "payment")
+            if self.card_amount_settlement(payment):
+                if status != "paid" or card_event_requested or outbound_body is not None:
+                    raise ConflictError("این پرداخت قبلاً با مبلغ واقعی تسویه شده است.")
             if payment["status"] == status:
                 if (
                     status == "paid"
@@ -8970,6 +9077,14 @@ class Database:
                 ).fetchone()
             granted: list[dict[str, Any]] = []
             for rule in rules:
+                if (event_type == "first_purchase" and rule["product_id"] is None
+                        and source_order_id is not None
+                        and self._has_product_reward_priority(
+                            connection, invitee_user_id, product_id, source_order_id, stamp
+                        )):
+                    # The product reward replaces the general first-purchase
+                    # reward. Other general/combined policies remain intact.
+                    continue
                 if rule["event_type"] == "combined" and not self._combined_reward_matches(
                     connection,
                     rule,
@@ -9432,6 +9547,37 @@ class Database:
             )
         )
         return rewards
+
+    def _has_product_reward_priority(
+        self, connection: sqlite3.Connection, invitee_user_id: int,
+        product_id: int | None, order_id: int, stamp: str,
+    ) -> bool:
+        candidates = connection.execute(
+            """
+            SELECT r.*, EXISTS(SELECT 1 FROM reward_events e
+                WHERE e.reward_rule_id=r.id AND e.source_order_id=?) AS already_granted
+            FROM reward_rules r
+            WHERE event_type IN ('product_purchase', 'combined')
+              AND (product_id IS NULL OR product_id=?)
+              AND ((is_active=1 AND created_at<=?
+                    AND (starts_at IS NULL OR starts_at<=?)
+                    AND (ends_at IS NULL OR ends_at>?))
+                   OR EXISTS(SELECT 1 FROM reward_events e
+                     WHERE e.reward_rule_id=r.id AND e.source_order_id=?))
+            """, (order_id, product_id, stamp, stamp, stamp, order_id),
+        ).fetchall()
+        for rule in candidates:
+            conditions = _json_load(rule["conditions_json"], {})
+            if rule["product_id"] is None and product_id not in conditions.get("product_ids", []):
+                continue
+            if rule["already_granted"] or rule["event_type"] == "product_purchase":
+                return True
+            if self._combined_reward_matches(
+                connection, rule, invitee_user_id=invitee_user_id,
+                product_id=product_id, source_order_id=order_id,
+            ):
+                return True
+        return False
 
     def mark_order_rewards_processed(
         self, order_id: int, *, now: datetime | str | None = None

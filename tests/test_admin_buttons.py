@@ -397,7 +397,7 @@ class AdminButtonTests(unittest.TestCase):
         self.db.submit_payment_receipt(payment["id"], "test-photo-id", file_kind="photo")
         self.fill("payment_detail", {"target": payment["payment_number"]})
         self.assertTrue(self.telegram.photos)
-        self.fill("approve_payment", {"target": payment["payment_number"]})
+        self.fill("approve_payment", {"target": payment["payment_number"], "amount_mode": "exact"})
         self.assertEqual(self.db.get_payment(payment["id"])["status"], "verifying")
         update = self.callback(self.OWNER, self.form_data("confirm"))
         self.app.process_update(update)

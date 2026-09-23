@@ -3828,7 +3828,12 @@ class BotApplication:
             if user is None:
                 cursor = int(payment["id"])
                 continue
-            if payment["purpose"] == "wallet_topup":
+            settlement = self.db.card_amount_settlement(payment)
+            if settlement:
+                suffix = "topup-confirmed" if payment["purpose"] == "wallet_topup" else "order-confirmed"
+                self._notify_user_durable(user, texts.card_amount_settled(payment, settlement),
+                    idempotency_key=f"payment:{int(payment['id'])}:{suffix}")
+            elif payment["purpose"] == "wallet_topup":
                 balance = self.db.wallet_balance(int(user["id"]))
                 self._notify_user_durable(
                     user,

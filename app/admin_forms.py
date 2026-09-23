@@ -175,7 +175,10 @@ add("complete", "تکمیل سفارش دستی", "orders", entity("manual_order
     Field("delivery", "متن کامل تحویل", "secret", hint="متن نهایی تحویل را بفرستید؛ اطلاعات محرمانه در پیش‌نمایش بازنشر نمی‌شود."), mutation=True, pipe=True)
 add("request_info", "درخواست اصلاح اطلاعات", "orders", ORDER, BODY, mutation=True, pipe=True)
 add("payment_detail", "جزئیات پرداخت و دریافت فیش", "payments", PAYMENT)
-add("approve_payment", "تأیید فیش پرداخت", "payments", entity("receipt", "انتخاب فیش در انتظار بررسی"), mutation=True)
+add("approve_payment", "تأیید فیش پرداخت", "payments", entity("receipt", "انتخاب فیش در انتظار بررسی"),
+    choice("amount_mode", "مبلغ واریز پس از بررسی حساب بانکی", (
+        ("مبلغ دقیق درخواست پرداخت", "exact"), ("مبلغ متفاوت؛ ثبت مبلغ واقعی", "actual"))),
+    mutation=True, pipe=True)
 add("reject_payment", "رد فیش پرداخت", "payments", entity("receipt", "انتخاب فیش در انتظار بررسی"),
     NOTE, mutation=True, pipe=True)
 add("card_reviews", "رخدادهای بانکی نیازمند بررسی", "payments")
@@ -256,6 +259,11 @@ add("reward_toggle", "تغییر وضعیت قانون پاداش", "rewards", e
 def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
     """Resolve branches from *collected* values; no user-authored JSON/code."""
     fields = list(action.fields)
+    if action.key == "approve_payment" and values.get("amount_mode") == "actual":
+        fields.extend((Field("received_amount", "مبلغ واقعی واریزشده به تومان", "positive",
+                             hint="فقط مبلغی که ورود آن به حساب بانکی را بررسی کرده‌اید؛ عکس فیش به‌تنهایی کافی نیست."),
+                       Field("bank_reference", "شماره پیگیری یکتای بانکی"),
+                       Field("note", "توضیح بررسی واریز")))
     if action.key == "orders" and values.get("range") == "custom":
         fields.extend((START, END))
     if action.key == "users":
@@ -335,10 +343,16 @@ def form_fields(action: Action, values: dict) -> tuple[Field, ...]:
 
 def arguments(action: Action, values: dict, *, page: int = 1) -> tuple[str, list[str] | None]:
     """Return legacy arguments plus lossless structured pipe fields."""
+    if action.key == "approve_payment" and "amount_mode" not in values:
+        # A confirmed/executing form saved by the previous release remains an
+        # exact-amount approval, never an implicit amount-adjustment operation.
+        return str(values["target"]), [str(values["target"])]
     fields = form_fields(action, values)
     parts = [str(values[field.key]) for field in fields]
     pipe = action.separator == " | "
     key = action.key
+    if key == "approve_payment" and values.get("amount_mode") == "exact":
+        parts = [values["target"]]
     if key == "orders":
         parts = [values["status"]]
         if values["range"] == "custom":
