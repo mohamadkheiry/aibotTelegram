@@ -1,5 +1,19 @@
 # مقصد انتشار جاری
 
+## پاسخ‌های کارفرما و تسویه مبلغ واقعی — ۲۰۲۶-۰۹-۲۳، ساعت ۲۲:۴۸ تهران
+
+کد **`143e05928e6d568dce5aac139b3706c9b35f5a34`** روی `192.168.10.111`، مسیر `/opt/alone-account-bot` و ربات **`@ElevenaccountsTestbot`** منتشر شد. این بخش وضعیت جاری و موارد بعدی سابقه‌اند. [قرارداد چهار اصلاح](CLIENT_DECISIONS_2026-09-23.md).
+
+- نمایش معرف در جزئیات کاربر؛ اولویت قانون صریح محصول بر اولین خرید عمومی؛ کم‌واریزیِ تأییدشده به کیف پول همراه لغو سفارش/آزادسازی hold؛ اضافه‌واریزی با تسویه سفارش و اعتبار فقط مازاد. فرم مبلغ واقعی، شماره پیگیری و دلیل با تأیید نهایی دارد. تأیید خودکار تصویر فیش یا اتصال تازه بانک/ارز انجام نشده است.
+- **۵۹۸ تست کامل Linux روی همین SHA، ۷۳٫۶۴۴ ثانیه، OK، بدون skip**. ۱۸ تست اختصاصی افزوده شد. Windows: ۱۸ تست اختصاصی نهایی، ۱۵٫۴۹۴ ثانیه؛ lint، compile، ۸ تست اسناد/hygiene و diff check موفق. نمودارهای پرداخت/پاداش و SVGها بازتولید شدند. دور اولیه QA سه ناسازگاری fixture داشت: انتخاب‌نکردن مرحله تازه مبلغ، فیش فرضی فاقد رکورد برای پیش‌نمایش، و انتظار سیاست قدیمی جمع پاداش‌ها؛ fixtureهای واقعی و قرارداد جدید اصلاح و suite کامل دو بار پس از آن موفق شد.
+- artifact bundle SHA-256: `79fd9588265a5a4ac808fdff8d0fb2cd8d08e04d53873ebcd27decbc407f365c`؛ clone تست جدا در `/tmp/alone-decisions-qa.xjbCNr` بدون env/token واقعی بود. source در origin/main ثبت شد.
+- backup آنلاین: `/srv/backups/alone-account-bot/feedback-20260923-191744/before-release.sqlite3`، SHA-256 `c6ffb910cde26b8d1a4fe6a151f306ca151f3efcdd0bb05ef6d215d53c20fe3e`.
+- backup نهایی پس از توقف سرویس و MainPID=0: `/srv/backups/alone-account-bot/feedback-20260923-191808/before-release.sqlite3`، SHA-256 `3840d540188e7c45d5816baa1afff93745bd1007d3112b5eb5e779807c751496`. هر دو integrity=ok، FK=0 و restore در حافظه با fingerprint یکسان تأیید شدند.
+- schema همان ۱۲؛ `--check` با حساب alonebot موفق. سرویس از ۲۲:۴۸:۳۵ active/running، MainPID=2314957، NRestarts=0 و فقط یک process برنامه است. NeedDaemonReload=no؛ unit یا تنظیمات سایر پروژه‌ها تغییر نکردند.
+- health پس از انتشار: هویت درست، webhook خالی، pending=0، bot_enabled=true، schema12، integrity=ok، FK=0، colored و ۴۵ آیکون. outbox برابر ۱۱۹ sent و ۱۸ failed تاریخی، بدون پاک‌کردن یا retry اجباری سابقه؛ reward candidate صفر. هیچ خرید/کیف پول/قانون زنده برای تست ایجاد یا تغییر نکردیم.
+- کارت با شماره/صاحب حساب تنظیم‌شده و کیف پول فعال‌اند؛ callback secret/public callback و کلید Plisio تنظیم نشده‌اند و crypto خاموش است. این دو اتصال هنوز راه‌اندازی واقعی نشده‌اند و نباید تکمیل‌شده معرفی شوند.
+- rollback پس از تسویه مبلغ متفاوت باید reader/guard `verified_card_amount_v1` را حفظ کند؛ به نسخه قدیمی کور برنگردید و DB قدیمی را روی معاملات تازه restore نکنید.
+
 ## یکتایی پاداش محصول — ۲۰۲۶-۰۹-۱۳، ساعت ۱۱:۲۱ تهران
 
 کد `8e2b9eee9d0576c07c4452e79fcdaa026ddc992f` (تغییر اجرایی `17ce4cbb380ba7b457769eedcb369c91f4274922`) روی `192.168.10.111` در `/opt/alone-account-bot` برای `@ElevenaccountsTestbot` منتشر شد. schema همان ۱۲ است. این بخش وضعیت جاری و بخش‌های پایین سابقه‌اند.
