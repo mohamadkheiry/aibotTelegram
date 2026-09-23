@@ -90,7 +90,7 @@ class AmountSettlementTests(fixture.DatabaseTestCase):
 
     def test_stale_receipt_revoked_role_and_invalid_amount_fail_closed(self):
         user, _, payment, admin = self.prepare()
-        for amount in (0, -10, True, 0.5, 10**13, payment["payable_amount"]):
+        for amount in (0, -10, True, 0.5, 2**63, payment["payable_amount"]):
             with self.assertRaises(ValidationError):
                 self.settle(payment, admin, amount)
         self.db.submit_payment_receipt(payment["id"], "new-receipt", now=fixture.BASE_TIME + timedelta(minutes=2))

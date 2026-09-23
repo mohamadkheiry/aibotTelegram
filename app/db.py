@@ -6758,7 +6758,7 @@ class Database:
         This is manual bank verification, never OCR or amount-only matching.
         Frozen terms, ledger effects and the canonical notice commit together.
         """
-        if type(received_amount) is not int or not 0 < received_amount <= 10**12:
+        if type(received_amount) is not int or not 0 < received_amount < 2**63:
             raise ValidationError("مبلغ واقعی باید عدد صحیح مثبت به تومان باشد.")
         reference, clean_note = str(bank_reference).strip(), str(note).strip()
         if not reference or len(reference) > 120 or not clean_note or len(clean_note) > 1000:
@@ -6815,6 +6815,8 @@ class Database:
             terms.update(applied_amount=applied, wallet_credit=credited,
                          order_number=order["order_number"] if order else None,
                          product_name=order["product_name_snapshot"] if order else None)
+            if self._wallet_balance(connection, int(payment["user_id"])) + credited >= 2**63:
+                raise ValidationError("موجودی حاصل از واریز از ظرفیت عددی پایگاه داده بیشتر است.")
             try:
                 connection.execute(
                     "UPDATE payments SET status='paid', external_reference=?, raw_payload_json=?, confirmed_at=?, updated_at=? WHERE id=?",
